@@ -3,7 +3,7 @@
   "name": "runtime-boundary",
   "title": "[Phase 1 · 02] Runtime Foundation — Runtime Boundary Extraction",
   "description": "Phase 1 Task B: 抽出 shared runtime 边界，依赖 01",
-  "status": "done",
+  "status": "completed",
   "dev_type": "backend",
   "scope": null,
   "package": null,

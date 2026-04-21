@@ -3,7 +3,7 @@
   "name": "test-baseline",
   "title": "[Phase 1 · 01] Runtime Foundation — Test Baseline",
   "description": "Phase 1 Task A: 建立测试基线，为后续 runtime 迁移提供护栏",
-  "status": "done",
+  "status": "completed",
   "dev_type": "backend",
   "scope": null,
   "package": null,

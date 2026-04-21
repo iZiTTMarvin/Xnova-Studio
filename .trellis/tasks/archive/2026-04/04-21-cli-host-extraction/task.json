@@ -3,7 +3,7 @@
   "name": "cli-host-extraction",
   "title": "[Phase 1 · 03] Runtime Foundation — CLI Host Extraction & Runtime Contract Docs",
   "description": "Phase 1 Task C+D: CLI host 收敛 + runtime contract 文档化，依赖 02",
-  "status": "done",
+  "status": "completed",
   "dev_type": "backend",
   "scope": null,
   "package": null,
