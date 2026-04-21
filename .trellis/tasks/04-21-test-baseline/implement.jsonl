@@ -1,0 +1,6 @@
+{"file": ".trellis/workflow.md", "reason": "Project workflow and conventions"}
+{"file": ".trellis/spec/backend/index.md", "reason": "Backend development guide"}
+{"file": ".trellis/spec/backend/config-toml-migration.md", "reason": "5.6 占位测试的目标契约"}
+{"file": ".trellis/spec/backend/agent-schema-v1.md", "reason": "5.6 占位测试的目标契约"}
+{"file": ".trellis/spec/backend/runtime-boundary.md", "reason": "了解后续 task 将切分的模块，避免测试写死在即将搬走的路径"}
+{"file": ".trellis/spec/backend/quality-guidelines.md", "reason": "TDD 与测试门禁规则"}

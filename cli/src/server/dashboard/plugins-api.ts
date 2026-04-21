@@ -67,7 +67,7 @@ export function createPluginsRoutes(): Hono {
   api.post('/import-claude', async (c) => {
     try {
       const body = await c.req.json() as { name: string; sourcePath: string }
-      const targetDir = join(ccodePluginsDir(), body.name)
+      const targetDir = join(xnovaPluginsDir(), body.name)
 
       if (existsSync(targetDir)) {
         return c.json({ error: `插件 ${body.name} 已存在` }, 400)
@@ -90,7 +90,7 @@ export function createPluginsRoutes(): Hono {
   api.post('/delete', async (c) => {
     try {
       const body = await c.req.json() as { name: string }
-      const targetDir = join(ccodePluginsDir(), body.name)
+      const targetDir = join(xnovaPluginsDir(), body.name)
 
       if (!existsSync(targetDir)) {
         return c.json({ error: `插件 ${body.name} 不存在` }, 400)

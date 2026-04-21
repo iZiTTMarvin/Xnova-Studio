@@ -1,0 +1,8 @@
+{"file": ".trellis/workflow.md", "reason": "Project workflow and conventions"}
+{"file": ".trellis/spec/backend/index.md", "reason": "Backend development guide"}
+{"file": ".trellis/spec/backend/runtime-boundary.md", "reason": "本 task 主契约"}
+{"file": ".trellis/spec/backend/directory-structure.md", "reason": "v1 演进落点，禁止 apps/packages 大搬家"}
+{"file": ".trellis/spec/backend/config-toml-migration.md", "reason": "ResolvedConfig 字段归属另一份 spec，不自造"}
+{"file": ".trellis/spec/backend/agent-schema-v1.md", "reason": "runtime agent registry 必须复用该 schema"}
+{"file": ".trellis/spec/backend/error-handling.md", "reason": "runtime 初始化降级与事件暴露"}
+{"file": ".trellis/spec/guides/cross-layer-thinking-guide.md", "reason": "跨层结构变更必读"}

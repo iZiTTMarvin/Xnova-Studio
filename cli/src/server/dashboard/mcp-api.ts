@@ -82,11 +82,11 @@ export function createMcpRoutes(): Hono {
       const body = await c.req.json() as { name: string }
       const xnovaMcpPath = MCP_CONFIG_PATHS[0]!.path()
 
-      if (!existsSync(ccodeMcpPath)) {
+      if (!existsSync(xnovaMcpPath)) {
         return c.json({ error: '~/.xnovacode/.mcp.json 不存在' }, 400)
       }
 
-      const data = JSON.parse(readFileSync(ccodeMcpPath, 'utf-8'))
+      const data = JSON.parse(readFileSync(xnovaMcpPath, 'utf-8'))
       if (!data.mcpServers?.[body.name]) {
         return c.json({ error: `只能删除 ~/.xnovacode/.mcp.json 中的 Server（其他来源的配置请手动编辑）` }, 400)
       }

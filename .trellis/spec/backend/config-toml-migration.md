@@ -66,6 +66,16 @@ function loadResolvedConfig(cwd: string): ResolvedConfig
 function migrateLegacyJsonToToml(): MigrationResult
 ```
 
+> **类型引用约定（spec 层契约骨架）**：
+>
+> 上述签名中出现但本 spec 未展开定义的类型（`ProviderConfigToml`、`MemoryConfigToml`、`UserAgentDefaults`、`UserModeConfig`、`UserFeatureConfig`、`CCodeConfigLike`、`MigrationResult`）只作为 **契约骨架占位**。
+>
+> - `ProviderConfigToml` / `MemoryConfigToml`：字段应与 `cli/src/config/config-manager.ts` 中现行 `ProviderConfig` / `MemoryConfig` 一一对应；本次迁移只变格式（JSON → TOML），**不借迁移夹带字段重命名或语义变更**。
+> - `CCodeConfigLike`：等价于当前 CLI 运行时实际消费的 `CCodeConfig` 合并结果，由 Phase 2 `2-*` 对应 `prd.md` 落到具体字段列表。
+> - `UserAgentDefaults` / `UserModeConfig` / `UserFeatureConfig`：字段集由 Phase 2 对应 `prd.md` 结合 `agent-schema-v1.md` 的字段契约共同锁定。
+> - `MigrationResult`：至少包含 `success / error / fallback / writtenPath / kept` 五类语义，用于支撑 `Validation & Error Matrix`。
+> - **实现约束**：子代理实现阶段不得私自扩字段；新增字段须同步更新本 spec 与对应 prd，并在 `ResolvedConfig.effective` 上做向后兼容。
+
 ### 3. Contracts
 
 #### 文件位置

@@ -24,6 +24,7 @@
 | [state-management.md](./state-management.md) | 本地状态、单例状态、EventBus、配置同步 | 基础版 |
 | [type-safety.md](./type-safety.md) | TS 严格模式、事件联合、外部数据校验 | 基础版 |
 | [quality-guidelines.md](./quality-guidelines.md) | 页面状态、TDD、验证命令、设计回归点 | 基础版 |
+| [project-shell-v1.md](./project-shell-v1.md) | project-aware 主壳：默认入口、侧栏、上下文条、Mode 切换、SubAgent UX | 专项 spec |
 
 ## Pre-Development Checklist
 
@@ -38,11 +39,13 @@
    - 组件/页面调整：读 [component-guidelines.md](./component-guidelines.md)
    - 自定义 Hook / 事件订阅：读 [hook-guidelines.md](./hook-guidelines.md)
    - 跨端状态同步、Bridge、项目恢复：读 [state-management.md](./state-management.md) 与 [type-safety.md](./type-safety.md)
+   - 默认入口、左侧信息架构、上下文条、Mode 切换、SubAgent UX：加读 [project-shell-v1.md](./project-shell-v1.md)
 4. 若改动面向 `Xnova Studio v1` 主体验，还要核对设计文档中的：
    - `Default Main Page`
    - `Left Sidebar v1`
    - `Mode Switch`
    - `SubAgent UX`
+   > 以上四条的硬约束已固化到 [project-shell-v1.md](./project-shell-v1.md)，实现以本规范为准。
 5. 任何新增页面都必须先想清楚：
    - loading / empty / error / disabled 四类状态
    - 项目级语义与全局语义是否清晰分离
@@ -57,3 +60,16 @@
 - 失败态、空态、禁用态不是靠注释说明，而是界面上真实可见。
 - 没有新增第二个“模式切换真入口”；`Standard / XForge` 必须保持单一主切换点。
 - 若形成新的稳定交互约束，及时回写本目录 spec。
+
+## 专项 Spec 触发器
+
+下列改动默认必须读取对应专项 spec：
+
+- `project-shell-v1.md`
+  - 改动默认首页路由或冷启动恢复逻辑
+  - 改动 `cli/web/src/components/Sidebar.tsx` 一级导航或二级 block
+  - 新增或迁移 `Standard / XForge` 模式切换入口
+  - 新增/调整输入框附近的上下文信息条
+  - 改动主 Agent 选择器、Agents 页面、管理 Agents 面板
+  - 改动 SubAgent 在聊天流 / 会话树的呈现
+  - 未来 `studio/src/renderer/` 首次实现上述任意一项

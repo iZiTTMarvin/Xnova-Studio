@@ -9,13 +9,17 @@
 ```bash
 pnpm typecheck
 pnpm test
+# 等价别名（Phase 1 基线入口）
+pnpm test:baseline
 ```
 
 Web 面板在 `cli/web/` 下验证：
 
 ```bash
-pnpm build:check
+pnpm build
 ```
+
+> 注：`pnpm build:check` 脚本不存在，web 面板用 `pnpm build` 验证构建。
 
 ## TDD 基线
 

@@ -1,0 +1,8 @@
+{"file": ".trellis/workflow.md", "reason": "Project workflow and conventions"}
+{"file": ".trellis/spec/backend/index.md", "reason": "Backend development guide"}
+{"file": ".trellis/spec/backend/runtime-boundary.md", "reason": "CLI host 职责段是本 task 主契约"}
+{"file": ".trellis/spec/backend/directory-structure.md", "reason": "cli/src/host/cli/ 落点；禁止大搬家"}
+{"file": ".trellis/spec/backend/error-handling.md", "reason": "错误传播分层约束"}
+{"file": ".trellis/spec/backend/logging-guidelines.md", "reason": "runtime event 与 host 日志分工"}
+{"file": ".trellis/spec/guides/cross-layer-thinking-guide.md", "reason": "host 与 runtime 是跨层变更"}
+{"file": ".trellis/spec/guides/code-reuse-thinking-guide.md", "reason": "Phase 4 复用前必须先查本 task 抽象"}

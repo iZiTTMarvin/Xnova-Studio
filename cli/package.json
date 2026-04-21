@@ -20,6 +20,7 @@
     "build:web": "node scripts/ensure-web.cjs && cd web && pnpm build",
     "build:all": "tsup && node scripts/ensure-web.cjs && cd web && pnpm build",
     "test": "vitest run",
+    "test:baseline": "vitest run",
     "test:watch": "vitest",
     "test:coverage": "vitest run --coverage",
     "lint": "tsc --noEmit",

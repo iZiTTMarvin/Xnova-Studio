@@ -3,29 +3,18 @@
 /**
  * PipeRunner — 非交互模式执行器。
  *
- * 不启动 React/Ink，直接驱动 AgentLoop，纯文本输出到 stdout。
- * 支持：
- * - 位置参数 / -p 传入 prompt
- * - stdin 管道输入作为上下文前缀
- * - --yes 自动批准工具执行
- * - --json 结构化输出
- * - --no-tools 禁用工具调用
+ * Phase 1 修复点：
+ * - Pipe Mode 不再直接 new AgentLoop
+ * - 统一改由 runtime/createRuntime() 驱动单轮执行
+ * - PipeRunner 只负责：组装输入、桥接 stdout/stderr、计算退出码
  */
 
 import { buildArgsSummary, formatDuration } from '../ui/format-utils.js'
-import { configManager } from '@config/config-manager.js'
-import { getOrCreateProvider } from '@providers/registry.js'
-import { AgentLoop } from './agent-loop.js'
+import { configManager } from '../config/config-manager.js'
+import { closeDb } from '../persistence/index.js'
+import { createRuntime } from '../runtime/index.js'
+import type { RuntimeEvent, RuntimeHostBridge } from '../runtime/types.js'
 import type { Message } from './types.js'
-import {
-  sessionLogger, tokenMeter,
-  getRegistry, ensureMcpInitialized, registerMcpTools,
-  hookManager,
-  getSystemPrompt,
-  bootstrapAll,
-} from './bootstrap.js'
-import { PermissionManager } from '@config/permissions.js'
-import { closeDb } from '@persistence/index.js'
 
 export interface PipeOptions {
   prompt: string
@@ -48,139 +37,120 @@ export async function runPipe(options: PipeOptions): Promise<void> {
   const providerName = options.provider ?? config.defaultProvider ?? ''
   const modelName = options.model ?? config.defaultModel ?? ''
 
-  const globalProvider = getOrCreateProvider(providerName, config)
-  const provider = globalProvider.createSession?.() ?? globalProvider
-  const registry = getRegistry()
-
-  // 构建用户消息：stdin 内容 + prompt
   let userContent = options.prompt
   if (options.stdinContent) {
     userContent = `<stdin>\n${options.stdinContent}\n</stdin>\n\n${options.prompt}`
   }
 
   const history: Message[] = [{ role: 'user', content: userContent }]
-
-  // 初始化 session 和 observability
-  const sid = sessionLogger.ensureSession(providerName, modelName)
-  if (sid) tokenMeter.bind(sid, providerName, modelName)
-  sessionLogger.logUserMessage(userContent)
-
-  // 统一启动编排 + MCP（Pipe 模式一次性执行，必须等 MCP 就绪）
-  await Promise.all([
-    bootstrapAll(),
-    options.noTools ? Promise.resolve() : ensureMcpInitialized(),
-  ])
-  if (!options.noTools) {
-    registerMcpTools(registry)
-  }
-  const systemPrompt = getSystemPrompt()
-
-  const controller = new AbortController()
-
-  // SIGINT 时优雅退出
-  const onSigint = () => { controller.abort() }
-  process.on('SIGINT', onSigint)
-
-  const loop = new AgentLoop(provider, options.noTools ? getRegistry() : registry, {
-    model: modelName,
-    provider: providerName,
-    signal: controller.signal,
-    nonInteractive: true,
-    hookManager,
-    config,
-    ...(systemPrompt !== undefined ? { systemPrompt } : {}),
-    ...(sid ? { sessionId: sid } : {}),
-  })
-
-  let accumulated = ''
   let exitCode = 0
 
-  try {
-    for await (const event of loop.run(history)) {
-      // observability
-      sessionLogger.consume(event)
-      tokenMeter.consume(event)
-
-      if (event.type === 'text') {
-        accumulated += event.text
-        // 非 JSON 模式下实时流式输出
-        if (!options.json) {
-          process.stdout.write(event.text)
-        }
-      } else if (event.type === 'tool_start' && options.verbose) {
-        // --verbose: 在 stderr 输出工具进度（不污染 stdout 管道数据）
-        const summary = buildArgsSummary(event.toolName, event.args)
-        process.stderr.write(`[tool] ${event.toolName}: ${summary}...`)
-      } else if (event.type === 'tool_done' && options.verbose) {
-        const icon = event.success ? '✓' : '✗'
-        const duration = formatDuration(event.durationMs)
-        const meta = event.resultSummary ? `  ${event.resultSummary.split('\n')[0]!.slice(0, 60)}` : ''
-        process.stderr.write(` ${icon}${meta}  ${duration}\n`)
-      } else if (event.type === 'permission_request') {
-        // 权限检查：项目级白名单 → --yes 全部放行 → 拒绝
-        const toolNames = registry.getAll().map(t => t.name)
-        const pm = PermissionManager.fromProjectDir(process.cwd(), toolNames)
-        if (pm.isAllowed(event.toolName)) {
-          event.resolve(true)
-        } else {
-          event.resolve(options.yes === true)
-        }
-      } else if (event.type === 'error') {
+  const bridge: RuntimeHostBridge = {
+    emit(event: RuntimeEvent): void {
+      handlePipeEvent(event, options)
+      if (event.type === 'error') {
         exitCode = 1
-        if (!options.json) {
-          process.stderr.write(`Error: ${event.error}\n`)
-        }
-        break
-      } else if (event.type === 'done') {
-        break
+      }
+    },
+
+    async requestPermission(input) {
+      if (options.noTools) {
+        return { allow: false }
+      }
+      return { allow: options.yes === true }
+    },
+  }
+
+  const runtime = await createRuntime({
+    cwd: process.cwd(),
+    config,
+    mode: 'standard',
+  }, bridge)
+
+  // SIGINT 时优雅中断本轮 runtime
+  const onSigint = () => { runtime.abort() }
+  process.on('SIGINT', onSigint)
+
+  try {
+    const result = await runtime.submit({
+      text: userContent,
+      provider: providerName,
+      model: modelName,
+      history,
+      loggedUserContent: userContent,
+      nonInteractive: true,
+      waitForMcp: options.noTools !== true,
+    })
+
+    if (result.error) {
+      exitCode = 1
+      if (!options.json) {
+        process.stderr.write(`Error: ${result.error}\n`)
       }
     }
 
-    // 记录助手回复
-    if (accumulated) {
-      sessionLogger.logAssistantMessage(accumulated, modelName)
-    }
-  } catch (err) {
-    if ((err as Error).name !== 'AbortError') {
-      exitCode = 1
-      const msg = err instanceof Error ? err.message : String(err)
-      if (!options.json) {
-        process.stderr.write(`Error: ${msg}\n`)
+    if (options.json) {
+      const output = {
+        response: result.text,
+        model: modelName,
+        provider: providerName,
+        usage: {
+          inputTokens: result.usage.inputTokens,
+          outputTokens: result.usage.outputTokens,
+          cacheReadTokens: result.usage.cacheReadTokens,
+          cacheWriteTokens: result.usage.cacheWriteTokens,
+        },
+        exitCode,
       }
+      process.stdout.write(JSON.stringify(output, null, 2) + '\n')
+    } else if (result.text && !result.text.endsWith('\n')) {
+      process.stdout.write('\n')
     }
   } finally {
-    provider.dispose?.()
     process.off('SIGINT', onSigint)
+    await runtime.dispose()
+    closeDb()
   }
-
-  // JSON 模式：一次性输出结构化数据
-  if (options.json) {
-    const stats = tokenMeter.getSessionStats()
-    const costEntries = Object.entries(stats.costByCurrency).filter(([, v]) => v > 0)
-    const output = {
-      response: accumulated,
-      model: modelName,
-      provider: providerName,
-      usage: {
-        inputTokens: stats.totalInputTokens,
-        outputTokens: stats.totalOutputTokens,
-        cacheReadTokens: stats.totalCacheReadTokens,
-        cacheWriteTokens: stats.totalCacheWriteTokens,
-        cost: costEntries.length > 0 ? Object.fromEntries(costEntries) : null,
-      },
-      exitCode,
-    }
-    process.stdout.write(JSON.stringify(output, null, 2) + '\n')
-  } else if (accumulated && !accumulated.endsWith('\n')) {
-    // 确保输出以换行结尾
-    process.stdout.write('\n')
-  }
-
-  // 清理
-  sessionLogger.finalize()
-  closeDb()
 
   process.exit(exitCode)
+}
+
+function handlePipeEvent(event: RuntimeEvent, options: PipeOptions): void {
+  if (event.type === 'text_delta') {
+    const text = typeof event.payload?.['text'] === 'string' ? event.payload['text'] : ''
+    if (!options.json && text) {
+      process.stdout.write(text)
+    }
+    return
+  }
+
+  if (event.type === 'tool_start' && options.verbose) {
+    const toolName = typeof event.payload?.['toolName'] === 'string' ? event.payload['toolName'] : 'unknown'
+    const args = isObjectRecord(event.payload?.['args']) ? event.payload['args'] : {}
+    const summary = buildArgsSummary(toolName, args)
+    process.stderr.write(`[tool] ${toolName}: ${summary}...`)
+    return
+  }
+
+  if (event.type === 'tool_end' && options.verbose) {
+    const success = event.payload?.['success'] === true
+    const durationMs = typeof event.payload?.['durationMs'] === 'number' ? event.payload['durationMs'] : 0
+    const resultSummary = typeof event.payload?.['resultSummary'] === 'string' ? event.payload['resultSummary'] : ''
+    const icon = success ? '✓' : '✗'
+    const duration = formatDuration(durationMs)
+    const meta = resultSummary ? `  ${resultSummary.split('\n')[0]!.slice(0, 60)}` : ''
+    process.stderr.write(` ${icon}${meta}  ${duration}\n`)
+    return
+  }
+
+  if (event.type === 'error' && !options.json) {
+    const message = typeof event.payload?.['error'] === 'string' ? event.payload['error'] : 'unknown error'
+    process.stderr.write(`Error: ${message}\n`)
+  }
+}
+
+function isObjectRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null
 }
 
 /** 从 stdin 读取管道内容（非 TTY 时） */

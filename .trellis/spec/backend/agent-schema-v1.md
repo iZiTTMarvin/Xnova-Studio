@@ -126,7 +126,10 @@ interface LoadedAgentDefinitionV1 {
 - 主 Agent 候选池：`primary | all`
 - SubAgent 候选池：`subagent | all`
 - `agent.default` 只能引用 `primary | all`
-- `agent.max_parallel_subagents` 是硬上限，默认 `5`
+- `agent.max_parallel_subagents` 是硬上限
+  - 本 spec 提议初始上限为 `5`，仅作为 **spec 层默认值占位**
+  - 核心设计文档尚未锁定该数字，正式数值须在 Phase 3 / Phase 5 对应 `prd.md` 里和产品决策一起最终确认
+  - 实现前不允许把 `5` 当作已锁定硬编码到 runtime；推荐用带注释的常量指向本段
 - 用户手动切换主 Agent 后，项目级最近选择优先于项目默认值恢复
 
 ### 4. Validation & Error Matrix

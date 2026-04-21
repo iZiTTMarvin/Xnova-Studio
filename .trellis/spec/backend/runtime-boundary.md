@@ -4,13 +4,18 @@
 
 ## 当前事实
 
-- 当前运行时装配中心仍是 `cli/src/core/bootstrap.ts`
+- **Phase 1 已落定（2026-04-21）**：
+  - `cli/src/runtime/` 已创建，含 `types.ts` / `create-runtime.ts` / `tool-registry.ts` / `events.ts` / `bridge.ts` / `index.ts`
+  - `cli/src/host/cli/` 已创建，含 `repl.ts` / `pipe-mode.ts` / `lifecycle.ts` / `index.ts`
+  - `cli/bin/ccli.ts` 已重写为薄入口，委托给 `host/cli/`
+  - `runtime/` 已验证无 `ink` / `electron` / `ui/*` 依赖
+- 当前运行时装配中心仍是 `cli/src/core/bootstrap.ts`（过渡期保留，Phase 2 逐步迁移）
 - 当前主业务循环仍由 `cli/src/core/agent-loop.ts`、`cli/src/ui/useChat.ts` 和工具/存储单例共同驱动
 - 当前桌面宿主 `studio/` 尚未实现
 - 需求文档已锁定目标方向：
   - `shared runtime + dual host`
-  - 先抽 `cli/src/runtime/`
-  - 再由 `cli/src/host/cli/` 与未来 `studio/` 消费
+  - 先抽 `cli/src/runtime/`（已完成）
+  - 再由 `cli/src/host/cli/`（已完成）与未来 `studio/` 消费
 
 ## 场景：定义 shared runtime / host / renderer contract
 
@@ -42,7 +47,7 @@ interface RuntimeHostBridge {
 }
 
 interface RuntimeInstance {
-  submit(input: RuntimeSubmitInput): Promise<void>
+  submit(input: RuntimeSubmitInput): Promise<RuntimeTurnResult>
   abort(): void
   dispose(): Promise<void>
   getSnapshot(): RuntimeSnapshot
@@ -50,6 +55,19 @@ interface RuntimeInstance {
 
 function createRuntime(input: RuntimeConfigInput, bridge: RuntimeHostBridge): Promise<RuntimeInstance>
 ```
+
+> **类型引用约定（已落定，参见 `cli/src/runtime/types.ts`）**：
+>
+> 上述签名中的所有类型已由 Phase 1 `04-21-runtime-boundary` 落定到 `cli/src/runtime/types.ts`：
+>
+> - `ResolvedConfig`：Phase 1 直接复用 `CCodeConfig`（字段平移，不改名）。Phase 2 config-toml-migration 完成后扩展为 project > user > builtin 合并结果。
+> - `RuntimeEvent` / `RuntimeEventType`：已落定，含 `text_delta` / `tool_start` / `tool_end` / `agent_start` / `agent_end` / `turn_end` / `session_end` / `error` / `warning` / `context_update`。
+> - `PermissionRequest` / `PermissionResolution`：已落定，含 `toolName` / `args` / `sessionId` / `allow` / `remember`。
+> - `UserQuestionRequest` / `UserQuestionResult`：已落定，复用 `AgentLoop` 的 `UserQuestion` / `UserQuestionResult` 定义。
+> - `RuntimeSubmitInput`：已落定，主字段含 `text` / `provider?` / `model?` / `history?` / `loggedUserContent?` / `nonInteractive?` / `waitForMcp?` / `resumeLeafUuid?` / `attachments?`。
+> - `RuntimeSnapshot`：已落定，含 `sessionId` / `isRunning` / `provider` / `model` / `contextUsed` / `contextLimit` / `warnings`。
+> - `RuntimeTurnResult`：已落定，含 `text` / `thinking` / `stopReason` / `llmCallCount` / `toolCallCount` / `usage` / `aborted` / `historyCompacted` / `sessionId` / `error?`。
+> - **实现约束**：新增字段须同时更新本 spec 与 `cli/src/runtime/types.ts`。
 
 当前代码里的现实入口主要是：
 
@@ -131,6 +149,7 @@ function createRuntime(input: RuntimeConfigInput, bridge: RuntimeHostBridge): Pr
 - 回归测试：
   - CLI 不因拆 runtime 而失去现有主链路
   - runtime 不引入对 Ink UI 的直接依赖
+  - `useChat` / `pipe-runner` 不得再直接 new `AgentLoop`
 
 ### 7. Wrong vs Correct
 
@@ -157,13 +176,29 @@ await runtime.submit({ text: 'analyze current project' })
 
 ## 当前代码参考
 
-- 装配中心：`cli/src/core/bootstrap.ts`
-- 业务循环：`cli/src/core/agent-loop.ts`
-- 终端业务 Hook：`cli/src/ui/useChat.ts`
-- Bridge 适配：`cli/src/server/bridge/*`
+- Runtime 层（Phase 1 已落定）：
+  - 类型契约：`cli/src/runtime/types.ts`
+  - Factory 入口：`cli/src/runtime/create-runtime.ts`
+  - Bridge 实现：`cli/src/runtime/bridge.ts`（`NoopBridge` / `CallbackBridge`）
+- CLI Host 层（Phase 1 已落定）：
+  - REPL 启动：`cli/src/host/cli/repl.ts`
+  - Pipe Mode：`cli/src/host/cli/pipe-mode.ts`
+  - 生命周期：`cli/src/host/cli/lifecycle.ts`
+  - 薄入口：`cli/bin/ccli.ts`
+- Core 层（过渡期保留）：
+  - 装配中心：`cli/src/core/bootstrap.ts`
+  - 业务循环：`cli/src/core/agent-loop.ts`
+  - 终端业务 Hook：`cli/src/ui/useChat.ts`
+  - Bridge 适配：`cli/src/server/bridge/*`
 
 ## 反模式
 
 - 不要在 Phase 1 做目录搬家大于边界抽象。
 - 不要在 renderer 里偷连底层单例。
 - 不要让 runtime contract 只存在于聊天记录，而没有写进 spec 与测试。
+
+## 相关 spec
+
+- [`directory-structure.md`](./directory-structure.md) 已在 `v1 演进落点` 与 `Design Decision: 渐进式拆分优先于 monorepo 搬家` 段落中**显式禁止** Phase 1 直接把仓库改成 `apps/cli + apps/studio + packages/runtime` 布局。Runtime 切分的落点（`cli/src/runtime/`、`cli/src/host/cli/`）以那份 spec 为准，本 spec 不重复定义。
+- [`config-toml-migration.md`](./config-toml-migration.md) 定义 `ResolvedConfig` / `CCodeConfigLike` 的字段结构，runtime 输入的 `config` 必须是该结构的消费者。
+- [`agent-schema-v1.md`](./agent-schema-v1.md) 定义 agent 加载后的结构；runtime 的 agent registry 与 dispatch 逻辑必须复用该 schema，不得自造一套。

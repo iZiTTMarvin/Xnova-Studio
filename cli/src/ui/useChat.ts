@@ -15,25 +15,23 @@ import { useState, useCallback, useRef, useEffect } from 'react'
 import { randomUUID } from 'node:crypto'
 import { configManager } from '@config/config-manager.js'
 import { getOrCreateProvider } from '@providers/registry.js'
-import { AgentLoop, isAbortError } from '@core/agent-loop.js'
 import {
   sessionLogger, tokenMeter, getCurrentSessionId,
-  getRegistry, registerMcpTools, getMcpStatus,
-  hookManager,
-  getSystemPrompt,
-  bootstrapAll,
+  getMcpStatus,
 } from '@core/bootstrap.js'
 import type { ChatMessage } from './ChatView.js'
 import type { Message, MessageContent } from '@core/types.js'
 import type { UserQuestion, UserQuestionResult } from '@core/agent-loop.js'
 import type { ToolEvent, SubAgentEvent } from './ToolStatusLine.js'
 import type { ServerInfo } from '@mcp/mcp-manager.js'
+import type { ToolResultMeta } from '@tools/core/types.js'
+import { createRuntime } from '../runtime/index.js'
+import type { RuntimeEvent, RuntimeInstance } from '../runtime/types.js'
 import { sessionStore, generateEventId } from '@persistence/index.js'
 import { getTodos } from '@tools/ext/todo-store.js'
 import { stopAgent } from '@tools/agent/store.js'
 import { PermissionManager } from '@config/permissions.js'
 import { eventBus } from '@core/event-bus.js'
-import { contextTracker } from '@core/context-tracker.js'
 import type { ContextWindowState } from '@core/context-tracker.js'
 import { contextManager } from '@core/context-manager.js'
 import { updateBridgeSession, isBridgeConnected } from '@server/bridge/client.js'
@@ -45,8 +43,8 @@ export { sessionLogger, tokenMeter, getCurrentSessionId }
 interface PendingPermission {
   toolName: string
   args: Record<string, unknown>
-  /** 调用 resolve(true) 允许，resolve(false) 拒绝 */
-  resolve: (allow: boolean) => void
+  /** resolve 后解除 runtime 的权限等待 */
+  resolve: (result: { allow: boolean; remember?: boolean }) => void
 }
 
 /** 待用户回答的问题表单，暂停 AgentLoop 直到 resolve 被调用 */
@@ -136,7 +134,7 @@ export function useChat(): UseChatReturn {
   // 对应的 state 驱动 UI 重渲染
   const allowedToolsRef = useRef<Set<string>>(new Set())
   const toolEventsRef = useRef<ToolEvent[]>([])
-  const abortRef = useRef<AbortController | null>(null)
+  const runtimeRef = useRef<RuntimeInstance | null>(null)
   // Ref 守卫：同步判断是否处于 streaming，避免 React state 异步更新导致的闭包陷阱
   const isStreamingRef = useRef(false)
   // 每次 submit 分配递增 generation，finally 只清除属于自己 generation 的 ref，
@@ -148,7 +146,7 @@ export function useChat(): UseChatReturn {
 
   // 组件卸载时自动中止进行中的流式请求，防止更新已卸载组件的状态
   useEffect(() => {
-    return () => { abortRef.current?.abort() }
+    return () => { runtimeRef.current?.abort() }
   }, [])
 
   // 预创建 session（不等首次 submit），让 Bridge Server 连接时就能拿到 sessionId
@@ -208,7 +206,7 @@ export function useChat(): UseChatReturn {
         allowedToolsRef.current = newSet
         setAllowedTools(newSet)
       }
-      prev.resolve(allow)
+      prev.resolve({ allow, ...(always ? { remember: true } : {}) })
       return null
     })
   }, [])
@@ -234,15 +232,9 @@ export function useChat(): UseChatReturn {
     const generation = ++submitGenerationRef.current
 
     const config = configManager.load()
-    // 使用 state 中的 provider/model（可能已通过 /model 切换，与 config 文件不同）
-    const globalProvider = getOrCreateProvider(currentProvider, config)
-    const provider = globalProvider.createSession?.() ?? globalProvider
-    const registry = getRegistry()
-
-    // 首次 submit 时基于实际注册工具构建权限管理器
+    // 首次 submit 时加载项目级权限白名单
     if (!permissionManagerRef.current) {
-      const toolNames = registry.getAll().map(t => t.name)
-      permissionManagerRef.current = PermissionManager.fromProjectDir(process.cwd(), toolNames)
+      permissionManagerRef.current = PermissionManager.fromProjectDir(process.cwd())
     }
 
     const userMsg: ChatMessage = { id: randomUUID(), role: 'user', content: text }
@@ -252,6 +244,7 @@ export function useChat(): UseChatReturn {
     // 构建用户消息：有图片 + vision 启用时用结构化格式
     const hasImages = imageIds && imageIds.length > 0
     const visionEnabled = hasImages && configManager.isVisionEnabled(currentProvider, currentModel)
+    let loggedUserContent: string | MessageContent[] = text
 
     if (hasImages && visionEnabled) {
       // 结构化内容：文本 + 图片引用（base64 延迟到 Provider 层加载）
@@ -263,12 +256,17 @@ export function useChat(): UseChatReturn {
           mediaType: 'image/jpeg' as const,  // 前端统一压缩为 JPEG
         })),
       ]
+      loggedUserContent = content
       contextManager.pushUserContent(content)
     } else {
       contextManager.pushUser(text)
       // vision 未启用但有图片 → 提示用户
       if (hasImages && !visionEnabled) {
-        appendSystemMessage(`当前模型 ${currentModel} 未启用图片理解，${imageIds.length} 张图片已忽略`)
+        setMessages(prev => [...prev, {
+          id: randomUUID(),
+          role: 'system',
+          content: `当前模型 ${currentModel} 未启用图片理解，${imageIds.length} 张图片已忽略`,
+        }])
       }
     }
 
@@ -283,266 +281,277 @@ export function useChat(): UseChatReturn {
     setSubAgentEvents([])
     setIsStreaming(true)
     setError(null)
-
-    const controller = new AbortController()
-    // 主 Agent 多轮 LLM 调用 + 并行 SubAgent，每次 provider.chat() 都给 signal 加 listener，
-    // 默认 MaxListeners=10 在长会话中不够用，提高上限避免 Node.js 误报内存泄漏警告
-    import('node:events').then(({ setMaxListeners }) => setMaxListeners(200, controller.signal)).catch(() => {})
-    abortRef.current = controller
+    setStreamingMessage('⏳ 思考中...')
 
     // toolCallId → eventId 映射，保证多次调用同名工具时状态更新精确匹配
     const pendingToolIds = new Map<string, string>()
 
     ;(async () => {
-      let accumulated = ''
-      // 本轮统计变量
+      let runtime: RuntimeInstance | null = null
+      let streamingAccumulated = ''
       let thinkingAccumulated = ''
-      let turnInputTokens = 0
-      let turnOutputTokens = 0
-      let turnCacheReadTokens = 0
-      let turnCacheWriteTokens = 0
-      let turnToolCallCount = 0
-      let turnLlmCallCount = 0
-      let lastStopReason = ''
       try {
-        // 确保 session 已创建，记录用户消息
-        const sid = sessionLogger.ensureSession(currentProvider, currentModel)
-        if (sid) tokenMeter.bind(sid, currentProvider, currentModel)
-        // 有图片且 vision 启用时记录结构化内容，否则只记录纯文本
-        if (hasImages && visionEnabled) {
-          const logContent: MessageContent[] = [
-            { type: 'text' as const, text },
-            ...imageIds.map(id => ({
-              type: 'image' as const,
-              imageId: id,
-              mediaType: 'image/jpeg' as const,
-            })),
-          ]
-          sessionLogger.logUserMessage(logContent)
-        } else {
-          sessionLogger.logUserMessage(text)
-        }
+        runtime = await createRuntime({
+          cwd: process.cwd(),
+          config,
+          mode: 'standard',
+        }, {
+          emit: (event: RuntimeEvent) => {
+            if (event.type === 'thinking') {
+              const chunk = typeof event.payload?.['text'] === 'string' ? event.payload['text'] : ''
+              thinkingAccumulated += chunk
+              eventBus.emit({ type: 'thinking', text: chunk })
+              return
+            }
 
-        // 等待核心模块就绪（App mount 时已启动，此处大概率已完成）
-        // MCP 后台加载，已就绪则注册工具，未就绪不阻塞对话
-        await bootstrapAll()
-        registerMcpTools(registry)
-        const systemPrompt = getSystemPrompt()
+            if (event.type === 'text_delta') {
+              const chunk = typeof event.payload?.['text'] === 'string' ? event.payload['text'] : ''
+              streamingAccumulated += chunk
+              setStreamingMessage(streamingAccumulated)
+              eventBus.emit({ type: 'text', text: chunk })
+              return
+            }
 
-        // 上下文管理：auto-compact 检查 + tool 结果裁剪
-        // history 来自 ContextManager（完整结构化 Message[]），不从 UI ChatMessage 重建
-        const historyRef = contextManager.getHistoryRef()
-        const { compacted } = await contextManager.prepare(
-          historyRef, provider, { model: currentModel, ...(systemPrompt !== undefined ? { systemPrompt } : {}) },
-        )
-        if (compacted) {
-          // auto-compact 触发：ContextManager 内部已通过 prepare 更新，UI 侧同步
-          const compactedMsgs: ChatMessage[] = historyRef.map(m => ({
-            id: randomUUID(),
-            role: m.role as 'user' | 'assistant',
-            content: typeof m.content === 'string' ? m.content : JSON.stringify(m.content),
-          }))
+            if (event.type === 'tool_start') {
+              const toolCallId = typeof event.payload?.['toolCallId'] === 'string' ? event.payload['toolCallId'] : randomUUID()
+              const toolName = typeof event.payload?.['toolName'] === 'string' ? event.payload['toolName'] : 'unknown'
+              const args = isObjectRecord(event.payload?.['args']) ? event.payload['args'] : {}
+              const id = randomUUID()
+              pendingToolIds.set(toolCallId, id)
+              const newEvent: ToolEvent = { id, toolName, args, status: 'running', startedAt: Date.now() }
+              toolEventsRef.current = [...toolEventsRef.current, newEvent]
+              setToolEvents(toolEventsRef.current)
+              eventBus.emit({ type: 'tool_start', toolName, toolCallId, args })
+              return
+            }
+
+            if (event.type === 'tool_end') {
+              const toolCallId = typeof event.payload?.['toolCallId'] === 'string' ? event.payload['toolCallId'] : ''
+              const toolName = typeof event.payload?.['toolName'] === 'string' ? event.payload['toolName'] : 'unknown'
+              const matchId = pendingToolIds.get(toolCallId)
+              if (matchId) pendingToolIds.delete(toolCallId)
+              const matchedEvent = toolEventsRef.current.find(e => e.id === matchId)
+              toolEventsRef.current = toolEventsRef.current.filter(e => e.id !== matchId)
+              setToolEvents(toolEventsRef.current)
+
+              const durationMs = typeof event.payload?.['durationMs'] === 'number' ? event.payload['durationMs'] : 0
+              const success = event.payload?.['success'] === true
+              const resultSummary = typeof event.payload?.['resultSummary'] === 'string' ? event.payload['resultSummary'] : undefined
+              const resultFull = typeof event.payload?.['resultFull'] === 'string' ? event.payload['resultFull'] : undefined
+              const meta = isObjectRecord(event.payload?.['meta'])
+                ? event.payload['meta'] as ToolResultMeta
+                : undefined
+
+              const toolMsg: ChatMessage = {
+                id: matchId ?? randomUUID(),
+                role: 'tool',
+                content: '',
+                toolCall: {
+                  toolName,
+                  args: matchedEvent?.args ?? {},
+                  durationMs,
+                  success,
+                  ...(resultSummary !== undefined ? { resultSummary } : {}),
+                  ...(resultFull !== undefined ? { resultFull } : {}),
+                  ...(meta !== undefined ? { meta } : {}),
+                },
+              }
+              setMessages(prev => [...prev, toolMsg])
+              eventBus.emit({
+                type: 'tool_done',
+                toolName,
+                toolCallId,
+                durationMs,
+                success,
+                ...(resultSummary !== undefined ? { resultSummary } : {}),
+                ...(resultFull !== undefined ? { resultFull } : {}),
+                ...(meta !== undefined ? { meta } : {}),
+              })
+
+              if (toolName === 'todo_write') {
+                const currentTodos = getTodos()
+                setTodosState(currentTodos)
+                eventBus.emit({ type: 'todo_update', todos: currentTodos })
+              }
+              return
+            }
+
+            if (event.type === 'subagent_spawn') {
+              eventBus.emit({
+                type: 'subagent_spawn',
+                parentToolCallId: String(event.payload?.['parentToolCallId'] ?? ''),
+                agentId: String(event.payload?.['agentId'] ?? ''),
+                name: String(event.payload?.['name'] ?? ''),
+                agentType: String(event.payload?.['agentType'] ?? ''),
+                description: String(event.payload?.['description'] ?? ''),
+                maxTurns: Number(event.payload?.['maxTurns'] ?? 0),
+              })
+              return
+            }
+
+            if (event.type === 'subagent_progress') {
+              const payload = {
+                agentId: String(event.payload?.['agentId'] ?? ''),
+                name: String(event.payload?.['name'] ?? ''),
+                agentType: String(event.payload?.['agentType'] ?? ''),
+                description: String(event.payload?.['description'] ?? ''),
+                turn: Number(event.payload?.['turn'] ?? 0),
+                maxTurns: Number(event.payload?.['maxTurns'] ?? 0),
+                ...(typeof event.payload?.['currentTool'] === 'string' ? { currentTool: event.payload['currentTool'] } : {}),
+              }
+              setSubAgentEvents(prev => {
+                const idx = prev.findIndex(e => e.agentId === payload.agentId)
+                const updated: SubAgentEvent = {
+                  id: payload.agentId,
+                  agentId: payload.agentId,
+                  name: payload.name,
+                  agentType: payload.agentType,
+                  description: payload.description,
+                  status: 'running',
+                  turn: payload.turn,
+                  maxTurns: payload.maxTurns,
+                  ...(payload.currentTool !== undefined ? { currentTool: payload.currentTool } : {}),
+                }
+                if (idx >= 0) {
+                  const next = [...prev]
+                  next[idx] = updated
+                  return next
+                }
+                return [...prev, updated]
+              })
+              eventBus.emit({ type: 'subagent_progress', ...payload })
+              return
+            }
+
+            if (event.type === 'subagent_done') {
+              const payload = {
+                agentId: String(event.payload?.['agentId'] ?? ''),
+                name: String(event.payload?.['name'] ?? ''),
+                description: String(event.payload?.['description'] ?? ''),
+                success: event.payload?.['success'] === true,
+                output: String(event.payload?.['output'] ?? ''),
+              }
+              setSubAgentEvents(prev =>
+                prev.map(e => e.agentId === payload.agentId
+                  ? { ...e, status: 'done' as const, durationMs: Date.now() - (e.durationMs ?? 0) }
+                  : e
+                )
+              )
+              eventBus.emit({ type: 'subagent_done', ...payload })
+              return
+            }
+
+            if (event.type === 'context_update') {
+              const ctxState = {
+                usedPercentage: Number(event.payload?.['usedPercentage'] ?? 0),
+                lastInputTokens: Number(event.payload?.['lastInputTokens'] ?? 0),
+                effectiveWindow: Number(event.payload?.['effectiveWindow'] ?? 0),
+                level: String(event.payload?.['level'] ?? 'normal'),
+              }
+              setContextState(ctxState as ContextWindowState)
+              eventBus.emit({ type: 'context_update', ...ctxState })
+              return
+            }
+
+            if (event.type === 'error') {
+              const message = typeof event.payload?.['error'] === 'string' ? event.payload['error'] : 'unknown error'
+              setError(message)
+              eventBus.emit({ type: 'error', error: message })
+            }
+          },
+
+          requestPermission: async (input) => {
+            if (permissionManagerRef.current?.isAllowed(input.toolName)) {
+              return { allow: true }
+            }
+            if (allowedToolsRef.current.has(input.toolName)) {
+              return { allow: true }
+            }
+            eventBus.emit({
+              type: 'permission_request',
+              toolName: input.toolName,
+              args: input.args,
+              resolve: (_allow: boolean) => {},
+            })
+            return await new Promise<{ allow: boolean; remember?: boolean }>((resolve) => {
+              setPendingPermission({
+                toolName: input.toolName,
+                args: input.args,
+                resolve,
+              })
+            })
+          },
+
+          requestUserInput: async (input) => {
+            eventBus.emit({
+              type: 'user_question_request',
+              questions: input.questions,
+              resolve: (_result: UserQuestionResult) => {},
+            })
+            return await new Promise<UserQuestionResult>((resolve) => {
+              setPendingQuestion({ questions: input.questions, resolve })
+            })
+          },
+        })
+
+        runtimeRef.current = runtime
+
+        const result = await runtime.submit({
+          text,
+          provider: currentProvider,
+          model: currentModel,
+          history: contextManager.getHistoryRef(),
+          loggedUserContent,
+        })
+
+        if (result.historyCompacted) {
+          const compactedMsgs: ChatMessage[] = contextManager.getHistoryRef()
+            .filter(m => m.role === 'user' || m.role === 'assistant')
+            .map(m => ({
+              id: randomUUID(),
+              role: m.role as 'user' | 'assistant',
+              content: typeof m.content === 'string' ? m.content : JSON.stringify(m.content),
+            }))
           setMessages(compactedMsgs)
         }
 
-        const loop = new AgentLoop(provider, registry, {
-          model: currentModel,
-          provider: currentProvider,
-          signal: controller.signal,
-          hookManager,
-          config,
-          ...(systemPrompt !== undefined ? { systemPrompt } : {}),
-          ...(sid ? { sessionId: sid } : {}),
-        })
-
-        for await (const event of loop.run(historyRef)) {
-          // F9: 观测日志记录
-          sessionLogger.consume(event)
-          // F10: token 计量
-          tokenMeter.consume(event)
-          // 广播到 EventBus（CLI/Web 共享事件流）
-          // 但跳过会被白名单自动放行的 permission_request——
-          // 避免 Web 端收到一个"已经被 CLI 自动解决"的权限弹窗
-          const skipBroadcast = event.type === 'permission_request' && (
-            permissionManagerRef.current?.isAllowed(event.toolName) ||
-            allowedToolsRef.current.has(event.toolName)
-          )
-          if (!skipBroadcast) eventBus.emit(event)
-
-          if (event.type === 'thinking') {
-            thinkingAccumulated += event.text
-          } else if (event.type === 'llm_done') {
-            // 累积本轮 token 统计
-            turnInputTokens += event.inputTokens
-            turnOutputTokens += event.outputTokens
-            turnCacheReadTokens += event.cacheReadTokens
-            turnCacheWriteTokens += event.cacheWriteTokens
-            turnLlmCallCount++
-            lastStopReason = event.stopReason
-            // 广播上下文窗口状态（context-tracker 已在 agent-loop 中更新）
-            const ctxState = contextTracker.getState()
-            setContextState(ctxState)
-            eventBus.emit({
-              type: 'context_update',
-              usedPercentage: ctxState.usedPercentage,
-              lastInputTokens: ctxState.lastInputTokens,
-              effectiveWindow: ctxState.effectiveWindow,
-              level: ctxState.level,
-            })
-          } else if (event.type === 'llm_start') {
-            // 每轮 LLM 调用开始时显示思考提示（多轮工具调用间隙用户能看到 loading 态）
-            accumulated = ''
-            setStreamingMessage('⏳ 思考中...')
-          } else if (event.type === 'text') {
-            accumulated += event.text
-            setStreamingMessage(accumulated)
-          } else if (event.type === 'tool_start') {
-            const id = randomUUID()
-            pendingToolIds.set(event.toolCallId, id)
-            const newEvent: ToolEvent = { id, toolName: event.toolName, args: event.args, status: 'running', startedAt: Date.now() }
-            toolEventsRef.current = [...toolEventsRef.current, newEvent]
-            setToolEvents(toolEventsRef.current)
-          } else if (event.type === 'tool_done') {
-            turnToolCallCount++
-            const matchId = pendingToolIds.get(event.toolCallId)
-            if (matchId) pendingToolIds.delete(event.toolCallId)
-
-            // 从 toolEvents 中查找对应的 running 事件，获取 args
-            const matchedEvent = toolEventsRef.current.find(e => e.id === matchId)
-
-            // 从动态区移除已完成的工具（动态区只保留 running 状态）
-            toolEventsRef.current = toolEventsRef.current.filter(e => e.id !== matchId)
-            setToolEvents(toolEventsRef.current)
-
-            // 写入 messages 历史（Static 永久显示）
-            const toolMsg: ChatMessage = {
-              id: matchId ?? randomUUID(),
-              role: 'tool',
-              content: '',
-              toolCall: {
-                toolName: event.toolName,
-                args: matchedEvent?.args ?? {},
-                durationMs: event.durationMs,
-                success: event.success,
-                ...(event.resultSummary !== undefined ? { resultSummary: event.resultSummary } : {}),
-                ...(event.resultFull !== undefined ? { resultFull: event.resultFull } : {}),
-                ...(event.meta !== undefined ? { meta: event.meta } : {}),
-              },
-            }
-            setMessages(prev => [...prev, toolMsg])
-
-            // todo_write 完成后：同步更新 todos 状态并广播 todo_update 事件
-            if (event.toolName === 'todo_write') {
-              const currentTodos = getTodos()
-              setTodosState(currentTodos)
-              eventBus.emit({ type: 'todo_update', todos: currentTodos })
-            }
-          } else if (event.type === 'subagent_progress') {
-            // SubAgent 进度：按 agentId 更新或新增
-            setSubAgentEvents(prev => {
-              const idx = prev.findIndex(e => e.agentId === event.agentId)
-              const updated: SubAgentEvent = {
-                id: event.agentId,
-                agentId: event.agentId,
-                name: event.name,
-                agentType: event.agentType,
-                description: event.description,
-                status: 'running',
-                turn: event.turn,
-                maxTurns: event.maxTurns,
-                ...(event.currentTool !== undefined ? { currentTool: event.currentTool } : {}),
-              }
-              if (idx >= 0) {
-                const next = [...prev]
-                next[idx] = updated
-                return next
-              }
-              return [...prev, updated]
-            })
-          } else if (event.type === 'user_question_request') {
-            // AskUserQuestion 工具：暂停等待用户填写表单
-            setPendingQuestion({ questions: event.questions, resolve: event.resolve })
-          } else if (event.type === 'permission_request') {
-            // 权限检查优先级：项目级白名单 → session 级白名单 → 弹窗询问
-            if (permissionManagerRef.current?.isAllowed(event.toolName)) {
-              event.resolve(true)
-            } else if (allowedToolsRef.current.has(event.toolName)) {
-              event.resolve(true)
-            } else {
-              setPendingPermission({ toolName: event.toolName, args: event.args, resolve: event.resolve })
-            }
-          } else if (event.type === 'error') {
-            setError(event.error)
-            break
-          } else if (event.type === 'done') {
-            break
-          }
-        }
-
-        if (accumulated) {
+        if (result.text) {
           const assistantMsg: ChatMessage = {
             id: randomUUID(),
             role: 'assistant',
-            content: accumulated,
+            content: result.text,
             model: currentModel,
             provider: currentProvider,
             ...(thinkingAccumulated ? { thinking: thinkingAccumulated } : {}),
           }
           setMessages(prev => [...prev, assistantMsg])
-          // F9: 记录助手回复（携带本轮统计元数据）
-          sessionLogger.logAssistantMessage(accumulated, currentModel, currentProvider, {
-            ...(turnInputTokens > 0 ? { usage: { inputTokens: turnInputTokens, outputTokens: turnOutputTokens, cacheReadTokens: turnCacheReadTokens, cacheWriteTokens: turnCacheWriteTokens } } : {}),
-            ...(lastStopReason ? { stopReason: lastStopReason } : {}),
-            ...(turnLlmCallCount > 0 ? { llmCallCount: turnLlmCallCount } : {}),
-            ...(turnToolCallCount > 0 ? { toolCallCount: turnToolCallCount } : {}),
-            ...(thinkingAccumulated ? { thinking: thinkingAccumulated } : {}),
-          })
+        }
+
+        if (result.error) {
+          setError(result.error)
         }
       } catch (err) {
-        if (isAbortError(err)) {
-          // 用户中断：保存已累积的部分回复
-          if (accumulated) {
-            const partialMsg: ChatMessage = {
-              id: randomUUID(),
-              role: 'assistant',
-              content: accumulated,
-              model: currentModel,
-              provider: currentProvider,
-              ...(thinkingAccumulated ? { thinking: thinkingAccumulated } : {}),
-            }
-            setMessages(prev => [...prev, partialMsg])
-            sessionLogger.logAssistantMessage(accumulated, currentModel, currentProvider, {
-              ...(turnInputTokens > 0 ? { usage: { inputTokens: turnInputTokens, outputTokens: turnOutputTokens, cacheReadTokens: turnCacheReadTokens, cacheWriteTokens: turnCacheWriteTokens } } : {}),
-              ...(lastStopReason ? { stopReason: lastStopReason } : {}),
-              ...(turnLlmCallCount > 0 ? { llmCallCount: turnLlmCallCount } : {}),
-              ...(turnToolCallCount > 0 ? { toolCallCount: turnToolCallCount } : {}),
-              ...(thinkingAccumulated ? { thinking: thinkingAccumulated } : {}),
-            })
-          }
-          // 按 Claude Code 模式记录中断消息
-          sessionLogger.logUserMessage('[Request interrupted by user]')
-        } else {
-          setError(err instanceof Error ? err.message : String(err))
-        }
+        setError(err instanceof Error ? err.message : String(err))
       } finally {
-        provider.dispose?.()
+        if (runtimeRef.current === runtime) {
+          runtimeRef.current = null
+        }
         setStreamingMessage(null)
         // 只有当前 generation 才清除 ref，防止旧 loop finally 覆盖新 loop 的状态
         if (submitGenerationRef.current === generation) {
           isStreamingRef.current = false
           setIsStreaming(false)
-          abortRef.current = null
         }
       }
     })()
-  }, [messages, currentProvider, currentModel])
+  }, [currentProvider, currentModel])
 
-  /** 中止当前 AgentLoop 请求（用户主动取消或超时） */
-  const abort = useCallback(() => { abortRef.current?.abort() }, [])
+  /** 中止当前 runtime 请求（用户主动取消或超时） */
+  const abort = useCallback(() => { runtimeRef.current?.abort() }, [])
 
   /** 中断当前流并提交新消息 */
   const interruptAndSubmit = useCallback((text: string, source: 'cli' | 'web' = 'cli') => {
-    abortRef.current?.abort()
+    runtimeRef.current?.abort()
     isStreamingRef.current = false  // 同步清除，确保 submit 不被 ref 守卫拦截
     setTimeout(() => submit(text, source), 0)
   }, [submit])
@@ -867,4 +876,8 @@ export function useChat(): UseChatReturn {
     accumulatedMs,
     sessionStartTime,
   }
+}
+
+function isObjectRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null
 }

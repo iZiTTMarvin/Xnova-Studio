@@ -1,4 +1,40 @@
 ## 2026-04-21
+- **修复**：收口 shared runtime 主链路，修复 Gate A review finding
+  - `useChat` 与 `core/pipe-runner` 改为通过 `createRuntime()` 驱动执行，不再直接 new `AgentLoop`
+  - 新增 `host/cli/launcher.ts`，`cli/bin/ccli.ts` 进一步瘦身为参数解析后委托 host launcher
+  - 新增 runtime / pipe runner / launcher 回归测试，`pnpm typecheck` 与 `pnpm vitest run` 绿跑
+- **架构**：CLI Host 收敛 + Runtime Contract 文档化（task `04-21-cli-host-extraction`）
+  - 新建 `cli/src/host/cli/`：`repl.ts` / `pipe-mode.ts` / `lifecycle.ts` / `index.ts`
+  - 重写 `cli/bin/ccli.ts` 为薄入口（~270 行），委托给 `host/cli/`；runtime/ 验证无 ink/electron/ui 依赖
+  - 产出 `docs/architecture/xnova-runtime-boundary.md`；回写 `spec/backend/runtime-boundary.md` 当前事实与代码参考
+  - 新增 `host/cli/__tests__/lifecycle.baseline.test.ts`（7 个用例）；全套 37 passed / 11 skipped
+  - 任务详情已归档至 `.trellis/tasks/04-21-cli-host-extraction/`
+- **架构**：抽出 shared runtime 边界（task `04-21-runtime-boundary`）
+  - 新建 `cli/src/runtime/`：`types.ts` / `tool-registry.ts` / `events.ts` / `bridge.ts` / `create-runtime.ts` / `index.ts`
+  - 落定 spec 中 6 个占位类型（`ResolvedConfig` / `RuntimeEvent` / `PermissionRequest` / `PermissionResolution` / `UserQuestionRequest` / `UserQuestionResult` / `RuntimeSubmitInput` / `RuntimeSnapshot`）
+  - 实现 `createRuntime()` 工厂 + `NoopBridge` / `CallbackBridge`；runtime/ 无 ink/electron/ui 依赖
+  - 新增 `runtime/__tests__/create-runtime.test.ts`（11 个用例）；全套 30 passed / 11 skipped
+  - 回写 `spec/backend/runtime-boundary.md` 类型引用约定为已落定
+- **测试**：建立 Phase 1 测试基线（task `04-21-test-baseline`）
+  - 修复 `mcp-api.ts` / `plugins-api.ts` 两处旧变量名残留（`ccodeMcpPath` → `xnovaMcpPath`，`ccodePluginsDir` → `xnovaPluginsDir`），`pnpm typecheck` 恢复绿跑
+  - 扩展 `vitest.config.ts` include 模式，覆盖 `src/**/__tests__/**/*.test.ts`
+  - 新增三条基线测试（19 个用例全绿）：`config-manager.baseline.test.ts` / `dispatch-agent.baseline.test.ts` / `session-store.baseline.test.ts`
+  - 新增两个迁移占位文件（11 个 skip）：`config-toml-migration.todo.test.ts`（Phase 2）/ `agent-schema-v1.todo.test.ts`（Phase 3）
+  - `cli/package.json` 新增 `test:baseline` 别名；`spec/backend/quality-guidelines.md` 与 `spec/frontend/quality-guidelines.md` 更新测试命令说明
+
+
+- **任务**：拆出 Phase 1 Runtime Foundation 的三个 Trellis task 骨架
+  - 通过 `.trellis/scripts/task.py create` 新建 `04-21-test-baseline` / `04-21-runtime-boundary` / `04-21-cli-host-extraction`（均 `planning` · P0）
+  - 为每个 task 落地 `prd.md` 骨架：含 Problem / Goal / Scope / Dependencies / Subtasks / Related Files / Acceptance Criteria / Risks / Testing Strategy / DoD 段
+  - 通过 `init-context backend` + `add-context` 把 `workflow.md`、`backend/index.md` 及 `runtime-boundary.md` / `config-toml-migration.md` / `agent-schema-v1.md` / `directory-structure.md` / `error-handling.md` / `quality-guidelines.md` / `logging-guidelines.md` 等专项 spec 按需挂到各 task 的 `implement.jsonl`
+  - `task.py validate` 三个 task 的 jsonl 全部通过；`task.py list` 显示三者为当前 active
+  - 依赖链在 prd 内以 Blocks / Blocked-by 明示，不使用 `add-subtask`，保留平级 sibling 结构
+- **规范**：补齐 Xnova Studio v1 专项 spec 并完成索引闭环
+  - 新增 `.trellis/spec/frontend/project-shell-v1.md`，固化默认入口、左侧信息架构、上下文条、Mode 切换、SubAgent UX 硬约束
+  - `.trellis/spec/frontend/index.md` 接入 project-shell-v1 到指南索引、Pre-Development Checklist 与专项 Spec 触发器
+  - `.trellis/spec/backend/agent-schema-v1.md` 为 `agent.max_parallel_subagents` 默认值加 spec 层占位注解，避免实现期提前锁死未经产品确认的硬编码
+  - `.trellis/spec/backend/runtime-boundary.md` 补"类型引用约定"段，说明 `ResolvedConfig` 等骨架占位类型的定义归属；追加"相关 spec"段交叉引用 `directory-structure.md` 的 v1 禁止目录变更条款
+  - `.trellis/spec/backend/config-toml-migration.md` 补"类型引用约定"段，明确 `ProviderConfigToml` / `CCodeConfigLike` / `MigrationResult` 等骨架类型必须由 Phase 2 对应 prd 收敛
 - **文档**：补充 `Xnova Studio v1` 实现计划与交叉审批基线
   - 新增 `docs/plans/xnova-studio-v1-implementation-plan.md`，明确里程碑、任务拆解、迁移策略与测试映射
   - 建立仓库根 `CHANGELOG.md`，开始记录后续非微小变更

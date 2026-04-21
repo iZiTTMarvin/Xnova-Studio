@@ -14,6 +14,8 @@ pnpm test
 补充说明：
 
 - 当前 `pnpm lint` 与 `pnpm typecheck` 都是 `tsc --noEmit`
+- `pnpm test:baseline` 等价于 `pnpm test`（`vitest run`），是 Phase 1 基线测试的稳定入口
+- 测试文件落点：`src/**/__tests__/**/*.test.ts`（基线）和 `src/**/__tests__/**/*.todo.test.ts`（迁移占位）
 - 目前测试覆盖仍然稀薄，因此**新增非微小功能时必须先补失败测试**
 
 ## TDD 基线
