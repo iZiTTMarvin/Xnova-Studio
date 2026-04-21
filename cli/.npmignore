@@ -1,0 +1,30 @@
+# 源码（发布 dist 即可）
+src/
+bin/
+tests/
+# web 源码排除，但 dist/web/ 构建产物保留（--web 隐藏能力）
+/web/
+docs/
+scripts/
+a_res/
+
+# 配置文件
+tsconfig.json
+tsconfig.build.json
+tsup.config.ts
+vitest.config.ts
+.gitignore
+debug.log
+nul
+
+# 开发文件
+*.test.ts
+*.spec.ts
+.zcli/
+.xnovacode/
+test/
+*.sh
+.nvmrc
+
+# sourcemap 仅本地调试用，发布时不需要（11MB+ 占包体一半）
+*.map

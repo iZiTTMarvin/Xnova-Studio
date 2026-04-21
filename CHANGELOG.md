@@ -1,0 +1,25 @@
+## 2026-04-21
+- **文档**：补充 `Xnova Studio v1` 实现计划与交叉审批基线
+  - 新增 `docs/plans/xnova-studio-v1-implementation-plan.md`，明确里程碑、任务拆解、迁移策略与测试映射
+  - 建立仓库根 `CHANGELOG.md`，开始记录后续非微小变更
+  - 任务详情已归档至 [docs/plans/xnova-studio-v1-implementation-plan.md]
+- **文档**：拆分 `Xnova Studio v1` 分阶段实现任务
+  - 新增 `docs/implement/README.md` 与 7 份 phase 子文档，按开发顺序拆解任务、依赖、测试与验收标准
+  - 将原始开发文档进一步结构化，方便交叉审批与分模块推进开发
+  - 任务详情已归档至 [docs/implement/README.md]
+- **修复**：修正 Trellis 任务上下文生成时的无效检查路径
+  - 为 `.trellis/scripts/common/task_context.py` 增加回退逻辑，避免生成不存在的 `check` 指引文件路径
+  - 新增 `.trellis/scripts/tests/test_task_context.py` 回归测试，校验 `get_check_context()` 仅引用仓库内真实存在的文件
+  - 重新生成并通过校验 `.trellis/tasks/00-bootstrap-guidelines` 的上下文文件
+- **文档**：建立 Trellis 第一版 backend/frontend 基础规范
+  - 基于现有 `cli/` 代码骨架与 `docs/` 中的 v1 需求文档，补齐 `.trellis/spec/backend/*` 与 `.trellis/spec/frontend/*`
+  - 新增 `.trellis/scripts/tests/test_spec_bootstrap.py`，校验 spec 索引具备必需章节且不再保留占位模板
+  - 任务详情已归档至 [.trellis/tasks/00-bootstrap-guidelines/research/spec-baseline.md]
+- **文档**：补强启动前置项约束并归档 bootstrap 任务
+  - 将 `00-bootstrap-guidelines` 任务状态收口并归档到 `.trellis/tasks/archive/2026-04/00-bootstrap-guidelines`
+  - 在 backend 目录规范中明确 `runtime + host/cli + studio` 的渐进式拆分策略，禁止 Phase 1 直接做 `apps/packages` 重型搬家
+  - 新增最小测试基线检查记录，确认当前 `pnpm typecheck` / `pnpm test` / `pnpm build:check` 受限于未安装依赖
+- **文档**：补齐启动前 3 份专项 spec 并完善 Git 初始化忽略规则
+  - 新增 runtime boundary、config TOML migration、agent schema v1 三份 backend 专项 spec，并接入 backend index
+  - 扩展 spec 验收测试，要求 backend index 显式纳入 3 份专项 spec
+  - 重写仓库根 `.gitignore`，覆盖依赖、构建产物、本地运行态与 Trellis 本地工作区

@@ -1,0 +1,102 @@
+# =========================
+# 操作系统 / 编辑器
+# =========================
+.DS_Store
+Thumbs.db
+Desktop.ini
+
+.idea/
+.vscode/
+*.swp
+*.swo
+*~
+
+# =========================
+# Node / 包管理器
+# =========================
+**/node_modules/
+.pnpm-store/
+.npm/
+.yarn/
+.yarn-cache/
+.yarn/unplugged/
+.yarn/build-state.yml
+.yarn/install-state.gz
+
+# =========================
+# 构建 / 测试产物
+# =========================
+**/dist/
+**/build/
+**/out/
+**/coverage/
+**/.turbo/
+**/.vite/
+**/.cache/
+**/.parcel-cache/
+**/*.tsbuildinfo
+
+# cli/web 的 tsc 可能把 js 直接吐回 src
+cli/web/src/**/*.js
+
+# 桌面打包产物（后续 studio 引入后继续适用）
+release/
+*.asar
+*.exe
+*.dmg
+*.AppImage
+
+# =========================
+# 日志
+# =========================
+*.log
+npm-debug.log*
+pnpm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+
+# =========================
+# Python / 脚本缓存
+# =========================
+**/__pycache__/
+**/*.pyc
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.venv/
+venv/
+
+# =========================
+# 本地环境与临时文件
+# =========================
+.env
+.env.*
+!.env.example
+*.tmp
+*.temp
+
+# =========================
+# 项目本地运行态（保留可提交配置）
+# =========================
+.xnovacode/debug.log
+.xnovacode/*.log
+.xnovacode/data/
+.xnovacode/cache/
+.xnovacode/sessions/
+.xnovacode/tmp/
+.xnovacode/state/
+.xnovacode/*.db
+.xnovacode/*.db-*
+.xnovacode/*.sqlite
+.xnovacode/*.sqlite3
+.xnovacode/.session-id
+.xnovacode/.agent-log
+
+# Trellis 本地开发工作区（spec / tasks 仍需提交）
+.trellis/workspace/
+
+#AI
+.agents/
+.claude/
+.codex/
+.windsurf/
