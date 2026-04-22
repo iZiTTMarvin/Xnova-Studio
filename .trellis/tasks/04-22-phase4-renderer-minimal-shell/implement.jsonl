@@ -1,0 +1,7 @@
+{"file": ".trellis/workflow.md", "reason": "Project workflow and conventions"}
+{"file": ".trellis/spec/frontend/index.md", "reason": "Frontend development guide"}
+{"file": "docs/implement/phase4-electron-host.md", "reason": "renderer 最小接入来自 Phase 4 文档"}
+{"file": ".trellis/spec/frontend/directory-structure.md", "reason": "页面、组件、hook 落位规则"}
+{"file": ".trellis/spec/frontend/component-guidelines.md", "reason": "最小页面和组件拆分方式"}
+{"file": ".trellis/spec/frontend/type-safety.md", "reason": "host API 状态与 payload 需类型安全"}
+{"file": ".trellis/spec/frontend/project-shell-v1.md", "reason": "作为边界参考，避免提前做 Phase 5 壳结构"}

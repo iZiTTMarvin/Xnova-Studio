@@ -1,0 +1,7 @@
+{"file": ".trellis/workflow.md", "reason": "Project workflow and conventions"}
+{"file": ".trellis/spec/backend/index.md", "reason": "Backend development guide"}
+{"file": "docs/implement/phase4-electron-host.md", "reason": "主进程职责以 Phase 4 文档为准"}
+{"file": ".trellis/spec/backend/runtime-boundary.md", "reason": "避免把业务逻辑重新塞回 main process"}
+{"file": ".trellis/spec/backend/directory-structure.md", "reason": "main process 代码落位与边界"}
+{"file": ".trellis/spec/backend/error-handling.md", "reason": "workspace 打开与生命周期错误要可见"}
+{"file": ".trellis/spec/backend/logging-guidelines.md", "reason": "宿主启动日志与错误输出要求"}

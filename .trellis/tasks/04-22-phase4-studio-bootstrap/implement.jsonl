@@ -1,0 +1,7 @@
+{"file": ".trellis/workflow.md", "reason": "Project workflow and conventions"}
+{"file": ".trellis/spec/backend/index.md", "reason": "Backend development guide"}
+{"file": ".trellis/spec/frontend/index.md", "reason": "Frontend development guide"}
+{"file": "docs/implement/phase4-electron-host.md", "reason": "工程骨架任务直接来自 Phase 4 文档"}
+{"file": ".trellis/spec/backend/runtime-boundary.md", "reason": "studio 必须作为 runtime 消费者而非复制者"}
+{"file": ".trellis/spec/backend/directory-structure.md", "reason": "锁定 studio/ 目录与边界"}
+{"file": ".trellis/spec/frontend/directory-structure.md", "reason": "renderer 入口与页面目录落位"}

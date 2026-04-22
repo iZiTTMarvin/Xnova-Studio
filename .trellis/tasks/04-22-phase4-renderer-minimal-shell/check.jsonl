@@ -1,0 +1,4 @@
+{"file": ".claude/commands/trellis/finish-work.md", "reason": "Finish work checklist"}
+{"file": ".agents/skills/trellis-check/SKILL.md", "reason": "Code quality check spec"}
+{"file": ".trellis/spec/frontend/quality-guidelines.md", "reason": "loading/empty/error/disabled 四态与 build-check"}
+{"file": ".trellis/spec/guides/code-reuse-thinking-guide.md", "reason": "避免在 renderer 重复实现 host 状态逻辑"}

@@ -1,4 +1,33 @@
 ## 2026-04-22
+- **Phase 4 · Electron Verification**：补齐 Phase 4 的自动化验收与 smoke harness
+  - 新增 `studio/src/main/smoke.ts` 与对应测试，用环境变量驱动 `getState -> openWorkspace -> runtime.inspect` 的最小 smoke 链路
+  - 完成验证回归：`pnpm -C studio test / typecheck / build`、`pnpm -C cli test -- tests/studio-bootstrap.test.ts`、`pnpm -C cli test -- src/runtime/__tests__/inspect-runtime.test.ts`、`pnpm -C cli typecheck`
+  - 任务详情已归档至 `.trellis/tasks/04-22-phase4-electron-verification/`
+
+- **Phase 4 · Renderer Minimal Shell**：落定最小 renderer 页面与四态可见反馈
+  - 新增 `renderer` 的 `hooks/pages` 最小结构，页面真实展示 `disabled / empty / loading / error` 状态，并可触发“打开 Workspace”与最小 runtime inspect
+  - 新增 `renderer-shell.test.tsx`，锁定 bridge 缺失、Workspace 空态、打开目录、runtime inspect 成功反馈
+  - 任务详情已归档至 `.trellis/tasks/04-22-phase4-renderer-minimal-shell/`
+
+- **Phase 4 · Preload IPC Bridge**：建立唯一宿主入口与最小 runtime inspect 桥接
+  - 新增 `studio-* bridge` 契约与 preload/main 双侧实现，固定 `host state / open workspace / runtime inspect / 事件订阅` 的 API 与 channel 语义
+  - `preload` 通过参数校验和订阅清理收口 renderer 入口；`main` 只保留 host IPC，`runtime` 最小请求复用 `cli/src/runtime/inspect.ts`
+  - 新增 `studio` 侧 IPC / validators / preload bridge 测试与 `cli/src/runtime/__tests__/inspect-runtime.test.ts`
+  - 任务详情已归档至 `.trellis/tasks/04-22-phase4-preload-ipc-bridge/`
+
+- **Phase 4 · Main Process Workspace**：收口 Electron 主进程宿主职责与 workspace 目录选择能力
+  - 新增 `logger / lifecycle / window / workspace` 模块，主进程仅承载窗口、生命周期、目录选择与基础错误输出
+  - 新增 `studio` 主进程测试，覆盖窗口复用与销毁、`whenReady` / `window-all-closed` / `activate`，以及取消选择、空路径、无效路径、异常路径
+  - 完成 `pnpm -C studio test`、`pnpm -C studio typecheck`、`pnpm -C studio build`
+  - 任务详情已归档至 `.trellis/tasks/04-22-phase4-main-process-workspace/`
+
+## 2026-04-22
+- **Phase 4 · Studio Bootstrap**：建立 Electron 独立宿主骨架与最小可验证基线
+  - 新建 `studio/` 独立工程，落定 `main / preload / renderer` 入口、`electron-vite` 构建配置与 `dev / build / typecheck / test` 脚本
+  - 新增 `cli/tests/studio-bootstrap.test.ts` 与 `studio/tests/app-shell.test.ts`，锁定骨架文件存在性、边界约束与最小窗口装配辅助逻辑
+  - 完成最小验证：`pnpm test -- tests/studio-bootstrap.test.ts`、`pnpm -C studio test`、`pnpm -C studio typecheck`、`pnpm -C studio build`
+  - 任务详情已归档至 `.trellis/tasks/04-22-phase4-studio-bootstrap/`
+
 - **Phase 3 · Agent System 返工收口**：补齐继承链与校验细节，消除最后一批 Phase 3 契约风险
   - `catalog.ts` 改为按依赖顺序解析 user agent 继承，避免受文件排序影响，并确保 `user > builtin` 覆盖场景下 `inherits` 不会错误退回内置版本
   - `parser.ts` 补上 `inherits` 的 agent id 格式校验；新增 `catalog.test.ts` 与 `agent-schema-v1.test.ts` 回归用例锁住继承顺序与非法引用格式

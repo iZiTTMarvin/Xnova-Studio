@@ -1,0 +1,10 @@
+{"file": ".trellis/workflow.md", "reason": "Project workflow and conventions"}
+{"file": ".trellis/spec/backend/index.md", "reason": "Backend development guide"}
+{"file": ".trellis/spec/frontend/index.md", "reason": "Frontend development guide"}
+{"file": "docs/implement/phase4-electron-host.md", "reason": "Phase 4 主任务的直接来源文档"}
+{"file": ".trellis/spec/backend/runtime-boundary.md", "reason": "Electron host 必须消费 shared runtime 边界"}
+{"file": ".trellis/spec/backend/directory-structure.md", "reason": "明确 studio/ 与 runtime/host 的目录落点"}
+{"file": ".trellis/spec/backend/error-handling.md", "reason": "宿主错误与降级路径需要明确反馈"}
+{"file": ".trellis/spec/frontend/directory-structure.md", "reason": "renderer 代码的页面/组件落位要清晰"}
+{"file": ".trellis/spec/frontend/quality-guidelines.md", "reason": "renderer 状态与构建验证规则"}
+{"file": ".trellis/spec/guides/cross-layer-thinking-guide.md", "reason": "Phase 4 是典型跨层任务"}

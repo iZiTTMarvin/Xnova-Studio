@@ -1,0 +1,6 @@
+{"file": ".claude/commands/trellis/finish-work.md", "reason": "Finish work checklist"}
+{"file": ".agents/skills/trellis-check/SKILL.md", "reason": "Code quality check spec"}
+{"file": "docs/implement/phase4-electron-host.md", "reason": "验收必须回对 Phase 4 文档"}
+{"file": ".trellis/spec/backend/runtime-boundary.md", "reason": "检查 host/runtime 边界是否被破坏"}
+{"file": ".trellis/spec/backend/quality-guidelines.md", "reason": "后端与宿主层验证门禁"}
+{"file": ".trellis/spec/frontend/quality-guidelines.md", "reason": "renderer 构建与状态门禁"}

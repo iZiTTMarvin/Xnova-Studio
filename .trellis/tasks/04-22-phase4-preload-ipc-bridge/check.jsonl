@@ -1,0 +1,4 @@
+{"file": ".claude/commands/trellis/finish-work.md", "reason": "Finish work checklist"}
+{"file": ".agents/skills/trellis-check/SKILL.md", "reason": "Code quality check spec"}
+{"file": ".trellis/spec/backend/quality-guidelines.md", "reason": "IPC 参数校验与失败路径测试"}
+{"file": ".trellis/spec/frontend/type-safety.md", "reason": "预加载桥接类型与事件 payload 校验"}

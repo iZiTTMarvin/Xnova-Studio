@@ -1,0 +1,8 @@
+{"file": ".trellis/workflow.md", "reason": "Project workflow and conventions"}
+{"file": ".trellis/spec/backend/index.md", "reason": "Backend development guide"}
+{"file": ".trellis/spec/frontend/index.md", "reason": "Frontend development guide"}
+{"file": "docs/implement/phase4-electron-host.md", "reason": "preload 与 IPC 是 Phase 4 的核心范围"}
+{"file": ".trellis/spec/backend/runtime-boundary.md", "reason": "preload 是 host/runtime/renderer 的边界层"}
+{"file": ".trellis/spec/backend/error-handling.md", "reason": "IPC 错误与降级路径需要明确"}
+{"file": ".trellis/spec/frontend/type-safety.md", "reason": "renderer 可见 API 必须类型安全"}
+{"file": ".trellis/spec/frontend/hook-guidelines.md", "reason": "事件订阅与清理模式可复用"}

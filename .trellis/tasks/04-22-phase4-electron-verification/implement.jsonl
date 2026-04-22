@@ -1,0 +1,8 @@
+{"file": ".trellis/workflow.md", "reason": "Project workflow and conventions"}
+{"file": ".trellis/spec/backend/index.md", "reason": "Backend development guide"}
+{"file": ".trellis/spec/frontend/index.md", "reason": "Frontend development guide"}
+{"file": "docs/implement/phase4-electron-host.md", "reason": "验收必须逐条对照 Phase 4 文档"}
+{"file": ".trellis/spec/backend/runtime-boundary.md", "reason": "验证 host/runtime 边界没有回退"}
+{"file": ".trellis/spec/backend/quality-guidelines.md", "reason": "质量门禁与测试要求"}
+{"file": ".trellis/spec/frontend/quality-guidelines.md", "reason": "renderer 构建与状态验证"}
+{"file": ".trellis/spec/guides/cross-layer-thinking-guide.md", "reason": "验证跨层数据流和事件桥接"}

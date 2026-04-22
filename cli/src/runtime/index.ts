@@ -8,6 +8,7 @@
  */
 
 export { createRuntime } from './create-runtime.js'
+export { inspectRuntimeConfig } from './inspect.js'
 export { NoopBridge, CallbackBridge } from './bridge.js'
 export { makeEvent, makeWarningEvent, makeErrorEvent } from './events.js'
 export type {
@@ -25,3 +26,4 @@ export type {
   RuntimeHostBridge,
   RuntimeInstance,
 } from './types.js'
+export type { RuntimeInspectConfigInput, RuntimeInspectSnapshot } from './inspect.js'

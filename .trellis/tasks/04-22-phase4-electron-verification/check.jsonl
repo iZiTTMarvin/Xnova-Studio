@@ -1,0 +1,5 @@
+{"file": ".claude/commands/trellis/finish-work.md", "reason": "Finish work checklist"}
+{"file": ".agents/skills/trellis-check/SKILL.md", "reason": "Code quality check spec"}
+{"file": "docs/implement/phase4-electron-host.md", "reason": "最终验收按 Phase 4 完成标准"}
+{"file": ".trellis/spec/backend/quality-guidelines.md", "reason": "测试与失败路径门禁"}
+{"file": ".trellis/spec/frontend/quality-guidelines.md", "reason": "renderer 构建与界面状态门禁"}

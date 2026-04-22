@@ -1,0 +1,32 @@
+{
+  "id": "04-22-phase4-electron-host",
+  "name": "04-22-phase4-electron-host",
+  "title": "Phase 4 Electron Host",
+  "description": "根据 docs/implement/phase4-electron-host.md 拆解 Electron 宿主最小可运行骨架任务",
+  "status": "planning",
+  "dev_type": "fullstack",
+  "scope": null,
+  "package": null,
+  "priority": "P0",
+  "creator": "xuhaochen",
+  "assignee": "xuhaochen",
+  "createdAt": "2026-04-22",
+  "completedAt": null,
+  "branch": null,
+  "base_branch": "main",
+  "worktree_path": null,
+  "commit": null,
+  "pr_url": null,
+  "subtasks": [],
+  "children": [
+    "04-22-phase4-studio-bootstrap",
+    "04-22-phase4-main-process-workspace",
+    "04-22-phase4-preload-ipc-bridge",
+    "04-22-phase4-renderer-minimal-shell",
+    "04-22-phase4-electron-verification"
+  ],
+  "parent": null,
+  "relatedFiles": [],
+  "notes": "",
+  "meta": {}
+}
