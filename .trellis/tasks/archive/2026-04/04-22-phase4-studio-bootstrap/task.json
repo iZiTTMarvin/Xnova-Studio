@@ -19,7 +19,7 @@
   "pr_url": null,
   "subtasks": [],
   "children": [],
-  "parent": "04-22-phase4-electron-host",
+  "parent": null,
   "relatedFiles": [
     "studio/package.json",
     "studio/tsconfig.json",

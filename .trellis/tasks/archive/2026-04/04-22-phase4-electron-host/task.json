@@ -21,9 +21,7 @@
   "children": [
     "04-22-phase4-studio-bootstrap",
     "04-22-phase4-main-process-workspace",
-    "04-22-phase4-preload-ipc-bridge",
-    "04-22-phase4-renderer-minimal-shell",
-    "04-22-phase4-electron-verification"
+    "04-22-phase4-preload-ipc-bridge"
   ],
   "parent": null,
   "relatedFiles": [
