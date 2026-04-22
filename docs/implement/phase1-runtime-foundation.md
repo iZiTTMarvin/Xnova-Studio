@@ -117,3 +117,34 @@
 - 第一批测试基线
 - runtime contract 草案
 
+## 完成确认（2026-04-22）
+
+> 结论：基于当前代码实现、测试结果与 `.trellis` 任务记录，**Phase 1 判定为“基本完成”（可进行完成确认）**。  
+> 原因：阶段目标能力均已落地并可运行，但仍存在 1 个已识别的结构性遗留点（见下文“遗留点”）。
+
+### 关键证据
+
+- Runtime 边界已落地并进入主链路消费：
+  - `cli/src/runtime/types.ts`、`cli/src/runtime/create-runtime.ts`、`cli/src/runtime/bridge.ts`、`cli/src/runtime/events.ts`、`cli/src/runtime/index.ts` 已存在并可用。
+  - `cli/src/core/pipe-runner.ts` 与 `cli/src/ui/useChat.ts` 均通过 `createRuntime()` 驱动运行时，不再直接自行装配 AgentLoop 主流程。
+- CLI Host 收敛已落地：
+  - `cli/src/host/cli/repl.ts`、`cli/src/host/cli/pipe-mode.ts`、`cli/src/host/cli/lifecycle.ts`、`cli/src/host/cli/launcher.ts` 已形成宿主层入口与生命周期管理。
+  - `cli/bin/ccli.ts` 已作为薄入口，参数解析后委托 `runCliHost()`。
+- Runtime/Host 边界约束已具备验证证据：
+  - `cli/src/runtime/**` 未发现 `ink` / `electron` / `ui/*` 依赖。
+- 测试基线与阶段测试可稳定执行：
+  - `cli/package.json` 已固化 `test:baseline`。
+  - 实测命令：
+    - `pnpm -C cli exec vitest run src/runtime/__tests__/create-runtime.test.ts src/runtime/__tests__/integration.test.ts src/host/cli/__tests__/launcher.test.ts src/host/cli/__tests__/lifecycle.baseline.test.ts src/core/__tests__/pipe-runner.runtime.test.ts src/config/__tests__/config-manager.baseline.test.ts src/persistence/__tests__/session-store.baseline.test.ts src/tools/agent/__tests__/dispatch-agent.baseline.test.ts`
+  - 结果：`8 passed files / 42 passed tests`。
+- `.trellis` Phase 1 相关任务均为完成状态：
+  - `.trellis/tasks/archive/2026-04/04-21-test-baseline/task.json`：`status = completed`
+  - `.trellis/tasks/archive/2026-04/04-21-runtime-boundary/task.json`：`status = completed`
+  - `.trellis/tasks/archive/2026-04/04-21-cli-host-extraction/task.json`：`status = completed`
+
+### 遗留点（如实记录）
+
+- `cli/src/core/bootstrap.ts` 仍保留本地 `buildRegistry()` 并作为当前主要 registry 装配路径。
+- `cli/src/runtime/tool-registry.ts` 虽已实现 `buildToolRegistry()`，但**尚未成为主装配入口**。
+
+该遗留点不否定 Phase 1 的“基本完成”结论，但说明 Runtime 装配职责仍处于过渡态，建议在后续阶段继续收口。
