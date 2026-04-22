@@ -1,0 +1,6 @@
+{"file": ".trellis/workflow.md", "reason": "Project workflow and conventions"}
+{"file": ".trellis/spec/backend/index.md", "reason": "Backend development guide"}
+{"file": ".trellis/spec/backend/config-toml-migration.md", "reason": "Project resolver 的 merge 规则来自该专项规范"}
+{"file": ".trellis/spec/guides/cross-layer-thinking-guide.md", "reason": "该任务跨 config、initializer 与 runtime 消费边界"}
+{"file": ".trellis/spec/backend/quality-guidelines.md", "reason": "先锁定 merge 失败测试"}
+{"file": "docs/implement/phase2-config-migration.md", "reason": "Phase 2 任务 C 的上游来源"}

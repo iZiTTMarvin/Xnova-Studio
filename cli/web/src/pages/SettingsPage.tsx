@@ -239,15 +239,44 @@ function MemoryCard({ config, setConfig, toast }: {
 
 // ═══ Provider 配置 Tab ═══
 
+/** GET /api/settings 响应 shape（Phase 2 Task D 起返回 source + warnings） */
+interface SettingsReadResponseShape {
+  config: CCodeConfig
+  source?: {
+    userToml?: string
+    legacyJson?: string
+  }
+  warnings?: string[]
+}
+
+/** POST /api/settings/save 响应 shape */
+interface SettingsSaveResponseShape {
+  success: boolean
+  provider?: string
+  model?: string
+  source?: {
+    userToml?: string
+    legacyJson?: string
+  }
+  warnings?: string[]
+  error?: string
+}
+
 function ProvidersTab() {
   const toast = useToast()
   const [config, setConfig] = useState<CCodeConfig | null>(null)
   const [error, setError] = useState<string | null>(null)
   const [saving, setSaving] = useState(false)
+  const [source, setSource] = useState<SettingsReadResponseShape['source']>(undefined)
+  const [warnings, setWarnings] = useState<string[]>([])
 
   useEffect(() => {
-    apiGet<{ config: CCodeConfig }>('/api/settings')
-      .then(d => setConfig(d.config))
+    apiGet<SettingsReadResponseShape>('/api/settings')
+      .then(d => {
+        setConfig(d.config)
+        setSource(d.source)
+        setWarnings(d.warnings ?? [])
+      })
       .catch(e => setError(String(e)))
   }, [])
 
@@ -273,9 +302,17 @@ function ProvidersTab() {
     if (!config) return
     setSaving(true)
     try {
-      await apiPost('/api/settings/save', { config })
-      setError(null)
-      toast.success('配置已保存')
+      const res = await apiPost<SettingsSaveResponseShape>('/api/settings/save', { config })
+      if (!res.success) {
+        const msg = res.error ?? '保存失败'
+        setError(msg)
+        toast.error(msg)
+      } else {
+        setError(null)
+        setSource(res.source)
+        setWarnings(res.warnings ?? [])
+        toast.success('配置已保存')
+      }
     } catch (e) {
       setError(String(e))
       toast.error('保存失败')
@@ -288,6 +325,35 @@ function ProvidersTab() {
 
   return (
     <div className="space-y-4">
+      {/* 配置来源指示条（Phase 2 Task D）：让用户清楚看到 TOML / legacy JSON 状态 */}
+      {(source?.userToml || source?.legacyJson) && (
+        <div className="bg-elevated rounded-lg p-3 text-xs text-txt-secondary space-y-1">
+          {source?.userToml && (
+            <div>
+              <span className="text-txt-primary">当前配置文件：</span>
+              <code className="font-mono">{source.userToml}</code>
+            </div>
+          )}
+          {source?.legacyJson && (
+            <div>
+              <span className="text-warning">检测到 legacy JSON：</span>
+              <code className="font-mono">{source.legacyJson}</code>
+              <span className="ml-2">（保存将只写入 TOML）</span>
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* 降级 warning 条：任何 parse / validate / migration 问题都必须可见 */}
+      {warnings.length > 0 && (
+        <div className="bg-elevated border border-warning/40 rounded-lg p-3 text-xs space-y-1">
+          <div className="text-warning font-medium">配置加载警告</div>
+          {warnings.map((w, i) => (
+            <div key={i} className="text-txt-secondary font-mono break-all">- {w}</div>
+          ))}
+        </div>
+      )}
+
       {/* 默认设置 */}
       <div className="bg-elevated rounded-lg p-4">
         <h3 className="text-sm font-medium text-txt-primary mb-3">默认设置</h3>
@@ -357,7 +423,7 @@ function ProvidersTab() {
           <p className="text-xs text-txt-secondary mt-1">子 Agent 使用的模型（仅限当前 Provider 下的模型）。不填则继承主 Agent 模型，可用于降低成本</p>
         </div>
 
-        <p className="text-xs text-txt-secondary mt-2">修改后点击"保存配置"生效（写入 ~/.xnovacode/config.json）</p>
+        <p className="text-xs text-txt-secondary mt-2">修改后点击"保存配置"生效（写入 ~/.xnovacode/config.toml）</p>
       </div>
 
       {/* Memory / Embedding 配置 */}

@@ -25,7 +25,7 @@ import type { AgentEvent } from '@core/agent-loop.js'
 import { isAbortError } from '@core/agent-loop.js'
 import { sessionStore } from '@persistence/index.js'
 import { SessionLogger } from '@observability/session-logger.js'
-import { configManager } from '@config/config-manager.js'
+import { loadEffectiveRuntimeConfig } from '@config/resolver.js'
 import { getOrCreateProvider } from '@providers/registry.js'
 import {
   registerSubAgent, consumeAgentEvent, markSubAgentDone,
@@ -797,7 +797,8 @@ function resolveSubAgentProvider(
   modelArg: string | undefined,
   ctx: ToolContext,
 ): { provider: import('@providers/provider.js').LLMProvider; providerName: string; modelName: string } {
-  const config = ctx.config ?? configManager.load()
+  // Phase 2 fix-A：fallback 也走 resolved config，保证 subAgentModel 可被 project 级覆盖。
+  const config = ctx.config ?? loadEffectiveRuntimeConfig(process.cwd())
   const parentProvider = ctx.providerName ?? 'unknown'
 
   // 确定目标模型：LLM 显式指定 > config.subAgentModel > 继承父 Agent

@@ -17,14 +17,14 @@ vi.mock('../../runtime/index.js', () => ({
   makeEvent: vi.fn(),
 }))
 
-vi.mock('../../config/config-manager.js', () => ({
-  configManager: {
-    load: () => ({
-      defaultProvider: 'anthropic',
-      defaultModel: 'claude-sonnet-4-5',
-      providers: {},
-    }),
-  },
+// Phase 2 fix-A：pipe-runner 主链路改走 `loadEffectiveRuntimeConfig`（resolver），
+// mock 点必须跟着变，否则 ConfigManager 会去读真实 HOME 目录。
+vi.mock('../../config/resolver.js', () => ({
+  loadEffectiveRuntimeConfig: () => ({
+    defaultProvider: 'anthropic',
+    defaultModel: 'claude-sonnet-4-5',
+    providers: {},
+  }),
 }))
 
 vi.mock('../../persistence/index.js', () => ({

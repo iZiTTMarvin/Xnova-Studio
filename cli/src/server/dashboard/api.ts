@@ -25,6 +25,11 @@ import { Hono } from 'hono'
 import { sessionStore } from '@persistence/index.js'
 import { getDb } from '@persistence/db.js'
 import { configManager } from '@config/config-manager.js'
+import type { CCodeConfig } from '@config/config-manager.js'
+import {
+  buildSettingsReadResponse,
+  buildSettingsSaveResponse,
+} from '@config/settings-contract.js'
 import { TokenMeter } from '@observability/token-meter.js'
 import { createPluginsRoutes } from './plugins-api.js'
 import { createMcpRoutes } from './mcp-api.js'
@@ -308,8 +313,8 @@ export function createApiRoutes(): Hono {
 
   api.get('/settings', (c) => {
     try {
-      const config = configManager.load()
-      return c.json({ config })
+      const { config, source, warnings } = buildSettingsReadResponse(configManager)
+      return c.json({ config, source, warnings })
     } catch (err) {
       return c.json({ error: String(err) }, 500)
     }
@@ -319,14 +324,16 @@ export function createApiRoutes(): Hono {
     try {
       const body = await c.req.json() as { config: Record<string, unknown> }
       const current = configManager.load()
-      const merged = { ...current, ...body.config }
-      configManager.save(merged)
-      // 广播配置变更给所有 CLI 客户端（刷新内存中的 provider/model）
-      // 注意：当前是全局配置，所有 CLI 实例都会收到。后续可做项目级配置隔离。
-      const provider = String(merged.defaultProvider ?? '')
-      const model = String(merged.defaultModel ?? '')
-      broadcastToClients({ type: 'config_changed', provider, model }, 'cli')
-      return c.json({ success: true, provider, model })
+      const merged = { ...current, ...body.config } as CCodeConfig
+      const res = buildSettingsSaveResponse(configManager, merged)
+      if (res.success) {
+        // 广播配置变更给所有 CLI 客户端（刷新内存中的 provider/model）
+        broadcastToClients(
+          { type: 'config_changed', provider: res.provider, model: res.model },
+          'cli',
+        )
+      }
+      return c.json(res, res.success ? 200 : 500)
     } catch (err) {
       return c.json({ error: String(err) }, 500)
     }

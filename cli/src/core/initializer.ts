@@ -3,59 +3,35 @@
 /**
  * 启动初始化器 — 在 CLI 入口最早期执行，确保运行环境就绪。
  *
+ * Phase 2 fix-A：TOML-first 改造
+ * -------------------------------------------------------
+ * 规范：
+ * - `.trellis/spec/backend/config-toml-migration.md` · §3 迁移规则 / §4 错误矩阵
+ * - `docs/implement/phase2-config-migration.md` · 完成标准 #1/#2/#5
+ *
  * 职责：
- * 1. 确保 ~/.xnovacode/ 目录存在（全局配置）
- * 2. 确保 config.json 存在且关键字段完整
- * 3. 确保 .mcp.json 存在（空模板）
- * 4. 确保项目级 .xnovacode/ 目录和 settings.local.json 存在（项目权限配置）
- * 5. 启动诊断：当前 provider 是否配了 apiKey
+ * 1. 确保用户级 `~/.xnovacode/` 目录存在
+ * 2. 通过 `ConfigManager` 承担主配置落地：
+ *    - 仅 TOML 存在：直接读取，不改写
+ *    - 仅 legacy JSON 存在：首次 load 时安全迁移 → TOML，JSON 保留原文件
+ *    - 两者都不存在：首次 load 写默认 `config.toml`（不再写 JSON）
+ *    - TOML / JSON 损坏：**不**备份、**不**重置、**不**覆盖，仅 warning
+ * 3. 确保 `.mcp.json` 模板存在（不影响主配置）
+ * 4. 确保项目级 `.xnovacode/settings.local.json` 与 `hooks.json` 存在
+ * 5. 启动诊断：基于已解析 config 检查当前 provider 的 apiKey（不再裸读 JSON）
  */
 
-import { existsSync, readFileSync, writeFileSync, mkdirSync } from 'node:fs'
-import { join } from 'node:path'
+import { existsSync, mkdirSync, writeFileSync } from 'node:fs'
 import { homedir } from 'node:os'
+import { join } from 'node:path'
+import { ConfigManager } from '../config/config-manager.js'
 
-/** 初始化基础目录路径 */
-const CCODE_HOME = join(homedir(), '.xnovacode')
-const CONFIG_PATH = join(CCODE_HOME, 'config.json')
-const MCP_CONFIG_PATH = join(CCODE_HOME, '.mcp.json')
-
-/** config.json 默认模板 */
-const DEFAULT_CONFIG = {
-  defaultProvider: 'anthropic',
-  defaultModel: 'claude-sonnet-4-6',
-  providers: {
-    anthropic: {
-      apiKey: '',
-      models: ['claude-opus-4-6', 'claude-sonnet-4-6', 'claude-haiku-4-5-20251001'],
-    },
-    glm: {
-      apiKey: '',
-      baseURL: 'https://open.bigmodel.cn/api/coding/paas/v4',
-      models: ['glm-4-flash', 'glm-4-air', 'glm-4'],
-    },
-    openai: {
-      apiKey: '',
-      models: ['gpt-4o', 'gpt-4o-mini'],
-    },
-  },
-  memory: {
-    enabled: false,
-    embedding: {
-      apiKey: 'your-embedding-api-key',
-      baseURL: 'https://your-embedding-api-base-url/v4',
-      model: 'your-embedding-model',
-      dimension: 1024,
-    },
-  },
-}
-
-/** .mcp.json 默认模板 */
+/** `.mcp.json` 默认模板 — 空 mcpServers，独立于主配置 */
 const DEFAULT_MCP_CONFIG = {
   mcpServers: {},
 }
 
-/** settings.local.json 默认模板 — 空权限，遵循默认询问机制 */
+/** 项目级 `settings.local.json` 默认模板 — 空权限，遵循默认询问机制 */
 const DEFAULT_LOCAL_SETTINGS = {
   permissions: {
     allow: [],
@@ -63,7 +39,7 @@ const DEFAULT_LOCAL_SETTINGS = {
 }
 
 /**
- * hooks.json 默认模板 — 内置 PostToolUse 验证 hook。
+ * `hooks.json` 默认模板 — 内置 PostToolUse 验证 hook。
  *
  * 对 TypeScript 项目：write_file / edit_file 后自动跑 tsc --noEmit，
  * 诊断结果通过 additionalContext 注入 LLM 上下文，引导自动修正。
@@ -82,7 +58,8 @@ const DEFAULT_HOOKS_CONFIG = {
           {
             type: 'command',
             // TypeScript 项目：检测 tsconfig.json 存在才跑 tsc --noEmit
-            command: 'if [ -f tsconfig.json ]; then result=$(npx tsc --noEmit 2>&1 | head -30); if [ -n "$result" ]; then echo "{\\"additionalContext\\":\\"TypeScript check:\\n$result\\"}"; fi; fi',
+            command:
+              'if [ -f tsconfig.json ]; then result=$(npx tsc --noEmit 2>&1 | head -30); if [ -n "$result" ]; then echo "{\\"additionalContext\\":\\"TypeScript check:\\n$result\\"}"; fi; fi',
             timeout: 20000,
           },
           {
@@ -90,13 +67,22 @@ const DEFAULT_HOOKS_CONFIG = {
             // Java 项目：检测 pom.xml（Maven）或 build.gradle（Gradle）存在才编译检查
             // Maven: mvn compile -q 静默编译，只输出错误
             // Gradle: gradle compileJava -q 静默编译
-            command: 'if [ -f pom.xml ]; then result=$(mvn compile -q 2>&1 | tail -30); if echo "$result" | grep -qi "error"; then echo "{\\"additionalContext\\":\\"Java Maven check:\\n$result\\"}"; fi; elif [ -f build.gradle ] || [ -f build.gradle.kts ]; then result=$(gradle compileJava -q 2>&1 | tail -30); if echo "$result" | grep -qi "error"; then echo "{\\"additionalContext\\":\\"Java Gradle check:\\n$result\\"}"; fi; fi',
+            command:
+              'if [ -f pom.xml ]; then result=$(mvn compile -q 2>&1 | tail -30); if echo "$result" | grep -qi "error"; then echo "{\\"additionalContext\\":\\"Java Maven check:\\n$result\\"}"; fi; elif [ -f build.gradle ] || [ -f build.gradle.kts ]; then result=$(gradle compileJava -q 2>&1 | tail -30); if echo "$result" | grep -qi "error"; then echo "{\\"additionalContext\\":\\"Java Gradle check:\\n$result\\"}"; fi; fi',
             timeout: 60000,
           },
         ],
       },
     ],
   },
+}
+
+/** initializer 注入参数（测试隔离用） */
+export interface InitializeOptions {
+  /** 用户级配置目录，默认 `~/.xnovacode` */
+  userDir?: string
+  /** 项目级工作目录，默认 `process.cwd()` */
+  projectDir?: string
 }
 
 export interface InitDiagnostic {
@@ -108,112 +94,109 @@ export interface InitDiagnostic {
 
 /**
  * 执行启动初始化，返回诊断信息。
- * 幂等：已存在的文件不会被覆盖。
+ *
+ * 幂等：已存在的文件不会被覆盖；损坏的主配置也绝不被 silent reset。
  */
-export function initialize(): InitDiagnostic {
+export function initialize(options: InitializeOptions = {}): InitDiagnostic {
+  const userDir = options.userDir ?? join(homedir(), '.xnovacode')
+  const projectDir = options.projectDir ?? process.cwd()
+
   const warnings: string[] = []
   const created: string[] = []
 
-  // 1. 确保 ~/.xnovacode/ 目录存在
-  if (!existsSync(CCODE_HOME)) {
-    mkdirSync(CCODE_HOME, { recursive: true })
+  // 1. 确保用户级目录存在
+  if (!existsSync(userDir)) {
+    mkdirSync(userDir, { recursive: true })
   }
 
-  // 2. 确保 config.json 存在且结构完整
-  if (!existsSync(CONFIG_PATH)) {
-    writeFileSync(CONFIG_PATH, JSON.stringify(DEFAULT_CONFIG, null, 2), 'utf-8')
-    created.push(CONFIG_PATH)
-  } else {
-    // 已存在：校验关键字段，缺失则补全
-    try {
-      const raw = readFileSync(CONFIG_PATH, 'utf-8')
-      const config = JSON.parse(raw) as Record<string, unknown>
-      let patched = false
+  // 2. 主配置落地 — 完全交给 ConfigManager
+  //    - TOML 存在：读取（不改写）
+  //    - 仅 JSON 存在：首次 load 触发安全迁移 → 生成 TOML，保留原 JSON
+  //    - 两者都不存在：写默认 TOML
+  //    - TOML / JSON 损坏：返回默认值 + warning；**不**改写原文件
+  const tomlPath = join(userDir, 'config.toml')
+  const jsonPath = join(userDir, 'config.json')
+  const tomlExistedBefore = existsSync(tomlPath)
+  const jsonExistedBefore = existsSync(jsonPath)
 
-      if (!config['defaultProvider'] || typeof config['defaultProvider'] !== 'string') {
-        config['defaultProvider'] = DEFAULT_CONFIG.defaultProvider
-        patched = true
-      }
-      if (!config['defaultModel'] || typeof config['defaultModel'] !== 'string') {
-        config['defaultModel'] = DEFAULT_CONFIG.defaultModel
-        patched = true
-      }
-      if (!config['providers'] || typeof config['providers'] !== 'object') {
-        config['providers'] = DEFAULT_CONFIG.providers
-        patched = true
-      }
-
-      if (patched) {
-        writeFileSync(CONFIG_PATH, JSON.stringify(config, null, 2), 'utf-8')
-        warnings.push('config.json 缺少关键字段，已自动补全')
-      }
-    } catch {
-      // config.json 读取或 JSON 解析失败：备份后重写
-      const backupPath = CONFIG_PATH + '.bak'
-      try {
-        const broken = readFileSync(CONFIG_PATH, 'utf-8')
-        writeFileSync(backupPath, broken, 'utf-8')
-      } catch { /* 备份失败也不阻塞启动，重写默认配置更重要 */ }
-      writeFileSync(CONFIG_PATH, JSON.stringify(DEFAULT_CONFIG, null, 2), 'utf-8')
-      warnings.push(`config.json 格式损坏，已备份到 ${backupPath} 并重置`)
-    }
+  const configManager = new ConfigManager(userDir)
+  const loadedConfig = configManager.load()
+  for (const warn of configManager.getLastWarnings()) {
+    warnings.push(warn)
   }
 
-  // 3. 确保 .mcp.json 存在
-  if (!existsSync(MCP_CONFIG_PATH)) {
-    writeFileSync(MCP_CONFIG_PATH, JSON.stringify(DEFAULT_MCP_CONFIG, null, 2), 'utf-8')
-    created.push(MCP_CONFIG_PATH)
+  // 哪些 TOML 是本次 initialize 新生成的？
+  // - 原本不存在，现在存在：由 ConfigManager 的首次写默认 / 首次迁移产生
+  if (!tomlExistedBefore && existsSync(tomlPath)) {
+    created.push(tomlPath)
+  }
+  // 主配置不再写 JSON；legacy JSON 若原本存在，也必须原样保留（ConfigManager 遵守）
+  // 这里不把 jsonPath 加入 created，即使 initializer 不再生成它
+  void jsonExistedBefore // 保留变量以表达意图；eslint no-unused-vars 友好
+
+  // 3. 确保 .mcp.json 存在（独立于主配置）
+  const mcpPath = join(userDir, '.mcp.json')
+  if (!existsSync(mcpPath)) {
+    writeFileSync(mcpPath, JSON.stringify(DEFAULT_MCP_CONFIG, null, 2), 'utf-8')
+    created.push(mcpPath)
   }
 
   // 4. 确保项目级 .xnovacode/settings.local.json 存在
-  const projectCcodeDir = join(process.cwd(), '.xnovacode')
+  const projectCcodeDir = join(projectDir, '.xnovacode')
   const localSettingsPath = join(projectCcodeDir, 'settings.local.json')
   if (!existsSync(localSettingsPath)) {
     if (!existsSync(projectCcodeDir)) {
       mkdirSync(projectCcodeDir, { recursive: true })
     }
-    writeFileSync(localSettingsPath, JSON.stringify(DEFAULT_LOCAL_SETTINGS, null, 2), 'utf-8')
+    writeFileSync(
+      localSettingsPath,
+      JSON.stringify(DEFAULT_LOCAL_SETTINGS, null, 2),
+      'utf-8',
+    )
     created.push(localSettingsPath)
   }
 
   // 5. 确保 hooks.json 存在（项目级 + 用户级）
   //    bootstrap 加载顺序：plugin → project → user，规则叠加执行。
   //    项目级放完整默认规则（tsc 检查等），用户级放空模板（避免重复执行）。
-  //    用户可按需修改任意一级的 hooks.json 自定义检查命令。
   const projectHooksPath = join(projectCcodeDir, 'hooks.json')
   if (!existsSync(projectHooksPath)) {
     if (!existsSync(projectCcodeDir)) {
       mkdirSync(projectCcodeDir, { recursive: true })
     }
-    writeFileSync(projectHooksPath, JSON.stringify(DEFAULT_HOOKS_CONFIG, null, 2), 'utf-8')
+    writeFileSync(
+      projectHooksPath,
+      JSON.stringify(DEFAULT_HOOKS_CONFIG, null, 2),
+      'utf-8',
+    )
     created.push(projectHooksPath)
   }
-  const userHooksPath = join(CCODE_HOME, 'hooks.json')
+  const userHooksPath = join(userDir, 'hooks.json')
   if (!existsSync(userHooksPath)) {
     // 用户级为空模板，避免和项目级重复执行。
-    // 用户可在此配全局规则（所有项目生效）。
     writeFileSync(userHooksPath, JSON.stringify({ hooks: {} }, null, 2), 'utf-8')
     created.push(userHooksPath)
   }
 
-  // 6. 启动诊断：检查当前 provider 的 apiKey
-  try {
-    const raw = readFileSync(CONFIG_PATH, 'utf-8')
-    const config = JSON.parse(raw) as {
-      defaultProvider?: string
-      providers?: Record<string, { apiKey?: string } | undefined>
+  // 6. 启动诊断：基于 loaded config 检查当前 provider 的 apiKey
+  //    不再裸读 JSON —— 否则就跨过了 ConfigManager 的 TOML 主路径。
+  const providerName = loadedConfig.defaultProvider
+  if (providerName) {
+    const providerCfg = loadedConfig.providers[providerName]
+    if (!providerCfg) {
+      warnings.push(`当前 provider "${providerName}" 未在 providers 中配置`)
+    } else if (!providerCfg.apiKey) {
+      // 提示用户操作真实写入目标：TOML 优先；若仅存在 legacy JSON 也指出
+      const paths = configManager.getPaths()
+      const hint = existsSync(paths.tomlPath)
+        ? paths.tomlPath
+        : existsSync(paths.jsonPath)
+          ? paths.jsonPath
+          : paths.tomlPath
+      warnings.push(
+        `当前 provider "${providerName}" 的 apiKey 为空，请在 ${hint} 中配置`,
+      )
     }
-    const providerName = config.defaultProvider
-    if (providerName) {
-      const providerCfg = config.providers?.[providerName]
-      if (!providerCfg) {
-        warnings.push(`当前 provider "${providerName}" 未在 providers 中配置`)
-      } else if (!providerCfg.apiKey) {
-        warnings.push(`当前 provider "${providerName}" 的 apiKey 为空，请在 ~/.xnovacode/config.json 中配置`)
-      }
-    }
-  } catch {
-    // apiKey 诊断失败不阻塞启动，用户后续使用时会收到 API 错误
   }
 
   return { warnings, created }

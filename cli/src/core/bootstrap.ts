@@ -44,6 +44,7 @@ import { NoopEmbedding } from '@memory/rag/embedding/noop-embedding.js'
 import { ProviderEmbedding } from '@memory/rag/embedding/provider-embedding.js'
 import { LibsqlVectorStore } from '@memory/storage/libsql-vector-store.js'
 import { configManager } from '@config/config-manager.js'
+import { loadEffectiveRuntimeConfig } from '@config/resolver.js'
 import { startSnapshotCreation, cleanupSnapshot } from '@platform/shell-snapshot.js'
 import { execa } from 'execa'
 import { join } from 'node:path'
@@ -648,21 +649,23 @@ const bootstrapWarnings: string[] = []
 
 /**
  * 初始化 MemoryManager（幂等）。
- * 读取 config.json 中的 memory 配置，构建 MemoryManager 实例。
+ * 读取主配置文件（config.toml，兼容 legacy config.json）中的 memory 配置，构建 MemoryManager 实例。
  */
 async function ensureMemoryInitialized(): Promise<void> {
   if (memoryInitialized) return
   memoryInitialized = true
 
   try {
-    const config = configManager.load()
+    // Phase 2 fix-A：记忆系统启动期读 resolved config，
+    // 让 project.toml 能影响运行时（例如未来项目级 features.memory 开关）。
+    const config = loadEffectiveRuntimeConfig(process.cwd())
     const memoryConfig = config.memory
 
     // memory.enabled 默认 false
     if (!memoryConfig?.enabled) return
 
     // 构建 EmbeddingProvider：独立配置，不依赖 providers
-    // config.json: memory.embedding = { apiKey, baseURL, model, dimension }
+    // 主配置（config.toml）: [memory.embedding] api_key / base_url / model / dimension
     // 模板默认值（未修改 = 未配置 = 降级纯 BM25）
     const embConfig = memoryConfig.embedding
     let embedding: import('@memory/types.js').EmbeddingProvider
@@ -701,7 +704,7 @@ async function ensureMemoryInitialized(): Promise<void> {
           vectorStore = null
         }
       } else {
-        bootstrapWarnings.push('Embedding API 不可达，记忆系统降级为纯 BM25 关键词检索（检查 config.json memory.embedding 配置）')
+        bootstrapWarnings.push('Embedding API 不可达，记忆系统降级为纯 BM25 关键词检索（检查 ~/.xnovacode/config.toml 中的 [memory.embedding] 配置）')
         embedding = new NoopEmbedding()
       }
     } else {

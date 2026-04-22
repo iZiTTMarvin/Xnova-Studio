@@ -1,0 +1,6 @@
+{"file": ".trellis/workflow.md", "reason": "Project workflow and conventions"}
+{"file": ".trellis/spec/backend/index.md", "reason": "Backend development guide"}
+{"file": ".trellis/spec/backend/config-toml-migration.md", "reason": "Schema 任务的主专项规范"}
+{"file": ".trellis/spec/backend/directory-structure.md", "reason": "明确 config 相关代码落位"}
+{"file": ".trellis/spec/backend/quality-guidelines.md", "reason": "先写失败测试再实现 schema 契约"}
+{"file": "docs/implement/phase2-config-migration.md", "reason": "Phase 2 任务 A 的上游来源"}

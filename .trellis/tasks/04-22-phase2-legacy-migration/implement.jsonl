@@ -1,0 +1,6 @@
+{"file": ".trellis/workflow.md", "reason": "Project workflow and conventions"}
+{"file": ".trellis/spec/backend/index.md", "reason": "Backend development guide"}
+{"file": ".trellis/spec/backend/config-toml-migration.md", "reason": "迁移逻辑必须遵守双读与回退规则"}
+{"file": ".trellis/spec/backend/error-handling.md", "reason": "损坏配置与迁移失败不得 silent reset"}
+{"file": ".trellis/spec/guides/code-reuse-thinking-guide.md", "reason": "修改旧 config 读取路径前先全仓搜索"}
+{"file": "docs/implement/phase2-config-migration.md", "reason": "Phase 2 任务 B 的上游来源"}

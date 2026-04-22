@@ -10,7 +10,7 @@
  */
 
 import { buildArgsSummary, formatDuration } from '../ui/format-utils.js'
-import { configManager } from '../config/config-manager.js'
+import { loadEffectiveRuntimeConfig } from '../config/resolver.js'
 import { closeDb } from '../persistence/index.js'
 import { createRuntime } from '../runtime/index.js'
 import type { RuntimeEvent, RuntimeHostBridge } from '../runtime/types.js'
@@ -33,7 +33,9 @@ export interface PipeOptions {
 }
 
 export async function runPipe(options: PipeOptions): Promise<void> {
-  const config = configManager.load()
+  // Phase 2 fix-A：主链路必须消费 resolved config（project > user > builtin），
+  // 不再裸调 `configManager.load()`，否则 project.toml 无法影响运行时。
+  const config = loadEffectiveRuntimeConfig(process.cwd())
   const providerName = options.provider ?? config.defaultProvider ?? ''
   const modelName = options.model ?? config.defaultModel ?? ''
 

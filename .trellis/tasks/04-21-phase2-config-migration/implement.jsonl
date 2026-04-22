@@ -1,0 +1,17 @@
+{"file": ".trellis/workflow.md", "reason": "Project workflow and conventions"}
+{"file": ".trellis/spec/backend/index.md", "reason": "Backend development guide"}
+{"file": ".trellis/spec/frontend/index.md", "reason": "Frontend development guide"}
+{"file": ".trellis/spec/backend/directory-structure.md", "reason": "配置迁移相关代码必须落在正确的后端层次"}
+{"file": ".trellis/spec/backend/error-handling.md", "reason": "迁移失败与损坏配置必须显式报错并保留回退路径"}
+{"file": ".trellis/spec/backend/config-toml-migration.md", "reason": "本任务的主专项规范，约束 TOML schema、迁移与 merge 规则"}
+{"file": ".trellis/spec/backend/quality-guidelines.md", "reason": "Phase 2 需要先写失败测试再实现"}
+{"file": ".trellis/spec/frontend/directory-structure.md", "reason": "SettingsPage 改造需要遵守前端页面边界"}
+{"file": ".trellis/spec/frontend/quality-guidelines.md", "reason": "设置页改造必须覆盖错误态与保存失败提示"}
+{"file": ".trellis/spec/frontend/state-management.md", "reason": "项目配置、用户配置与页面临时状态必须分层"}
+{"file": ".trellis/spec/frontend/type-safety.md", "reason": "TOML/JSON 解析与前端消费都需要显式类型边界"}
+{"file": ".trellis/spec/guides/code-reuse-thinking-guide.md", "reason": "修改配置键与常量前必须先搜索并避免重复实现"}
+{"file": ".trellis/spec/guides/cross-layer-thinking-guide.md", "reason": "本任务跨 config、initializer、settings 与用户提示多个层次"}
+{"file": "docs/implement/phase2-config-migration.md", "reason": "Phase 2 官方实现范围与交付标准"}
+{"file": "docs/xnova-studio-V1核心设计文档.md", "reason": "配置优先级、project-aware 与 settings 定位来自核心设计文档"}
+{"file": "docs/xnova-studio-v1开发文档.md", "reason": "里程碑与实现顺序的上游基线"}
+{"file": "docs/xnova-stuido-V1工程测试计划.md", "reason": "迁移、设置页与错误路径的测试基线"}

@@ -66,15 +66,19 @@ function loadResolvedConfig(cwd: string): ResolvedConfig
 function migrateLegacyJsonToToml(): MigrationResult
 ```
 
-> **类型引用约定（spec 层契约骨架）**：
+> **类型引用约定（Phase 2 已落定）**：
 >
-> 上述签名中出现但本 spec 未展开定义的类型（`ProviderConfigToml`、`MemoryConfigToml`、`UserAgentDefaults`、`UserModeConfig`、`UserFeatureConfig`、`CCodeConfigLike`、`MigrationResult`）只作为 **契约骨架占位**。
+> 下列类型已由 Phase 2 实现代码锁定，后续不再作为"契约骨架占位"：
 >
-> - `ProviderConfigToml` / `MemoryConfigToml`：字段应与 `cli/src/config/config-manager.ts` 中现行 `ProviderConfig` / `MemoryConfig` 一一对应；本次迁移只变格式（JSON → TOML），**不借迁移夹带字段重命名或语义变更**。
-> - `CCodeConfigLike`：等价于当前 CLI 运行时实际消费的 `CCodeConfig` 合并结果，由 Phase 2 `2-*` 对应 `prd.md` 落到具体字段列表。
-> - `UserAgentDefaults` / `UserModeConfig` / `UserFeatureConfig`：字段集由 Phase 2 对应 `prd.md` 结合 `agent-schema-v1.md` 的字段契约共同锁定。
-> - `MigrationResult`：至少包含 `success / error / fallback / writtenPath / kept` 五类语义，用于支撑 `Validation & Error Matrix`。
-> - **实现约束**：子代理实现阶段不得私自扩字段；新增字段须同步更新本 spec 与对应 prd，并在 `ResolvedConfig.effective` 上做向后兼容。
+> - `ProviderConfigToml` / `MemoryConfigToml` / `EmbeddingConfigToml` / `UserAgentDefaults` / `UserModeConfig` / `UserFeatureConfig` / `UserConfigToml` / `ProjectConfigToml`：
+>   见 `cli/src/config/toml/types.ts`；snake_case（TOML 文件）与运行时 `CCodeConfig`（camelCase）一一对应，映射逻辑落在 `cli/src/config/toml/field-mapping.ts`。
+> - `CCodeConfigLike`：等价 `cli/src/config/config-manager.ts` 的 `CCodeConfig`；Phase 2 不借迁移做字段重命名或语义变更。
+> - `MigrationResult`：见 `cli/src/config/legacy-migration.ts`，字段集为 `{ success, writtenPath?, keptLegacyPath?, error?, fallback? }`。
+> - `ResolvedConfigResult`：见 `cli/src/config/resolver.ts`，字段集为 `{ effective, projectExtras?, source, warnings }`。
+>   - `effective` 形状保持 `CCodeConfig`（camelCase）。**2026-04-23 fix-A 后**：`CCodeConfig` 扩展 `agent?` / `modes?` / `features?` camelCase 字段，`resolver.ts` 按本节 §3 merge 规则把 project 覆盖后的值写入 `effective`，主链路通过 `loadEffectiveRuntimeConfig(cwd)` 统一消费。
+>   - `projectExtras` 仍保留 `project.toml` 原始 snake_case 结构，用于 UI / observability；**不要**再把 `projectExtras` 当作 "project-only 字段的唯一通路"——运行时值已经进入 `effective`。
+> - **主链路入口**：`loadEffectiveRuntimeConfig(cwd, { configManager? })` 返回 `CCodeConfig`，等价于 `loadResolvedConfig(cwd).effective`。禁止主链路（`pipe-runner` / `useChat` / `App.tsx` / `bootstrap.ts` / `dispatch-agent.ts` 等）直接裸调 `configManager.load()` 作为运行时配置来源，否则 `project.toml` 无法影响默认值。
+> - **实现约束**：新增字段须同步更新本 spec 与对应 prd，并在 `ResolvedConfigResult.effective` 上做向后兼容；任何扩展不得回潮成 silent fallback。
 
 ### 3. Contracts
 

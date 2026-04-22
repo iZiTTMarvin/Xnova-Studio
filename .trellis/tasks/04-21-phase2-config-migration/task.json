@@ -1,0 +1,38 @@
+{
+  "id": "phase2-config-migration",
+  "name": "phase2-config-migration",
+  "title": "[Phase 2 · 01] Config Migration — TOML and Project Config Resolver",
+  "description": "Phase 2 主任务：安全迁移 config.json 到 config.toml，引入 project.toml 与 project > user > builtin 配置解析。",
+  "status": "completed",
+  "dev_type": "fullstack",
+  "scope": "phase2-config-migration",
+  "package": null,
+  "priority": "P0",
+  "creator": "xuhaochen",
+  "assignee": "xuhaochen",
+  "createdAt": "2026-04-21",
+  "completedAt": "2026-04-23",
+  "branch": "main",
+  "base_branch": "main",
+  "worktree_path": null,
+  "commit": null,
+  "pr_url": null,
+  "subtasks": [],
+  "children": [
+    "04-22-phase2-toml-schema",
+    "04-22-phase2-legacy-migration",
+    "04-22-phase2-project-resolver",
+    "04-22-phase2-settings-writeback",
+    "04-22-phase2-config-verification"
+  ],
+  "parent": null,
+  "relatedFiles": [
+    "cli/src/config/config-manager.ts",
+    "cli/src/core/initializer.ts",
+    "cli/web/src/pages/SettingsPage.tsx",
+    "docs/implement/phase2-config-migration.md",
+    ".trellis/spec/backend/config-toml-migration.md"
+  ],
+  "notes": "2026-04-23：fix-A / fix-B / fix-C 全部完成后重新达成阶段级 DoD。resolver.effective 按 spec §3 合并 project>user>builtin；新增 loadEffectiveRuntimeConfig 统一入口并接入 pipe-runner/useChat/App/bootstrap/dispatch-agent；initializer.ts 重写为 TOML-first（不再写 config.json，损坏不重置不备份）；field-mapping.ts 补齐 user 层 [agent]/[modes]/[features] 双向映射。详细对照见 docs/implement/phase2-config-migration.md 交付确认表（2026-04-23 版）。vitest 121 passed / 5 skipped；typecheck 0 error。",
+  "meta": {}
+}

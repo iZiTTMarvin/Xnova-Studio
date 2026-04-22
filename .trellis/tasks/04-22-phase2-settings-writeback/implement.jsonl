@@ -1,0 +1,7 @@
+{"file": ".trellis/workflow.md", "reason": "Project workflow and conventions"}
+{"file": ".trellis/spec/backend/index.md", "reason": "Backend development guide"}
+{"file": ".trellis/spec/frontend/index.md", "reason": "Frontend development guide"}
+{"file": ".trellis/spec/backend/config-toml-migration.md", "reason": "Settings 写回必须与 resolved config 语义一致"}
+{"file": ".trellis/spec/frontend/quality-guidelines.md", "reason": "设置页必须覆盖失败态与保存反馈"}
+{"file": ".trellis/spec/frontend/state-management.md", "reason": "页面临时状态不能和项目/用户配置事实源混写"}
+{"file": "docs/implement/phase2-config-migration.md", "reason": "Phase 2 任务 D 的上游来源"}

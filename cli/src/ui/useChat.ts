@@ -14,6 +14,7 @@
 import { useState, useCallback, useRef, useEffect } from 'react'
 import { randomUUID } from 'node:crypto'
 import { configManager } from '@config/config-manager.js'
+import { loadEffectiveRuntimeConfig } from '@config/resolver.js'
 import { getOrCreateProvider } from '@providers/registry.js'
 import {
   sessionLogger, tokenMeter, getCurrentSessionId,
@@ -92,7 +93,7 @@ export interface UseChatReturn {
   clearMessages: () => void
   /** 追加 system 角色消息，仅用于 UI 展示，不发送给 LLM */
   appendSystemMessage: (text: string) => void
-  /** 切换 provider 和 model（session 级，不写回 config.json） */
+  /** 切换 provider 和 model（session 级，不写回主配置 config.toml） */
   switchModel: (provider: string, model: string) => void
   /** 初始化 MCP 并返回状态信息（用于 /mcp 指令，会主动触发连接） */
   getMcpInfo: () => Promise<ServerInfo[]>
@@ -123,8 +124,10 @@ export function useChat(): UseChatReturn {
   const [pendingPermission, setPendingPermission] = useState<PendingPermission | null>(null)
   const [pendingQuestion, setPendingQuestion] = useState<PendingQuestion | null>(null)
   const [allowedTools, setAllowedTools] = useState<Set<string>>(new Set())
-  const [currentProvider, setCurrentProvider] = useState<string>(() => configManager.load().defaultProvider ?? '')
-  const [currentModel, setCurrentModel] = useState<string>(() => configManager.load().defaultModel ?? '')
+  // Phase 2 fix-A：初始 provider/model 来自 resolved config（project > user > builtin），
+  // 让 project.toml 能真正影响运行时默认值。isVisionEnabled 仍走 ConfigManager（user 级白名单）。
+  const [currentProvider, setCurrentProvider] = useState<string>(() => loadEffectiveRuntimeConfig(process.cwd()).defaultProvider ?? '')
+  const [currentModel, setCurrentModel] = useState<string>(() => loadEffectiveRuntimeConfig(process.cwd()).defaultModel ?? '')
   const [todos, setTodosState] = useState<Array<{ id: string; content: string; status: 'pending' | 'in_progress' | 'completed'; activeForm: string }>>([])
   const [contextState, setContextState] = useState<ContextWindowState | null>(null)
   const [accumulatedMs, setAccumulatedMs] = useState(0)
@@ -231,7 +234,8 @@ export function useChat(): UseChatReturn {
     isStreamingRef.current = true
     const generation = ++submitGenerationRef.current
 
-    const config = configManager.load()
+    // Phase 2 fix-A：submit 流程消费 resolved config，保证 providers/memory/defaults 带上 project 合并。
+    const config = loadEffectiveRuntimeConfig(process.cwd())
     // 首次 submit 时加载项目级权限白名单
     if (!permissionManagerRef.current) {
       permissionManagerRef.current = PermissionManager.fromProjectDir(process.cwd())
@@ -698,7 +702,8 @@ export function useChat(): UseChatReturn {
   const compactMessages = useCallback(async (options?: { strategy?: string; focus?: string }) => {
     if (isStreamingRef.current) return
 
-    const config = configManager.load()
+    // Phase 2 fix-A：compact 链路也必须用 resolved config，避免与 submit 链路不一致。
+    const config = loadEffectiveRuntimeConfig(process.cwd())
     const provider = getOrCreateProvider(currentProvider, config)
 
     // 从 ContextManager 取完整 history（不从 UI ChatMessage 重建）

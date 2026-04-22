@@ -31,8 +31,8 @@ describe('ConfigManager.load() — 基线行为', () => {
     }
   })
 
-  // ── 主路径：config.json 不存在 ──────────────────────────────────────────
-  it('config.json 不存在时返回默认配置并写入文件', () => {
+  // ── 主路径：config 不存在 ──────────────────────────────────────────
+  it('config 不存在时返回默认配置并写入 TOML 文件', () => {
     const mgr = new ConfigManager(tempDir)
     const cfg = mgr.load()
 
@@ -43,8 +43,8 @@ describe('ConfigManager.load() — 基线行为', () => {
     expect(cfg.providers).toBeDefined()
     expect(typeof cfg.providers).toBe('object')
 
-    // 文件应被写入
-    expect(existsSync(join(tempDir, 'config.json'))).toBe(true)
+    // Phase 2 起首次初始化改为写 TOML；JSON 不再作为新建目标
+    expect(existsSync(join(tempDir, 'config.toml'))).toBe(true)
   })
 
   // ── 主路径：合法 config.json ────────────────────────────────────────────

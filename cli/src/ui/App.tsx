@@ -12,6 +12,7 @@ import { CommandSuggestion } from './CommandSuggestion.js'
 import type { SuggestionItem } from './CommandSuggestion.js'
 import { useChat } from './useChat.js'
 import { configManager } from '@config/config-manager.js'
+import { loadEffectiveRuntimeConfig } from '@config/resolver.js'
 import { CommandRegistry } from '@commands/registry.js'
 import { ClearCommand } from '@commands/clear.js'
 import { HelpCommand } from '@commands/help.js'
@@ -111,7 +112,8 @@ export function App({
     compactMessages,
   } = useChat()
 
-  const config = configManager.load()
+  // Phase 2 fix-A：App 渲染时读的也必须是 resolved config，保证 status bar / model picker 与 submit 链路一致。
+  const config = loadEffectiveRuntimeConfig(process.cwd())
   const statusBarEnabled = config.statusBar !== false
 
   const statusBarData = useStatusBar({
@@ -260,7 +262,8 @@ export function App({
 
   // ModelPicker items — 从 config 中枚举所有 provider 的所有 model
   const modelItems: ModelItem[] = useMemo(() => {
-    const config = configManager.load()
+    // Phase 2 fix-A：枚举也走 resolved config，跟 providers / defaults 来源一致
+    const config = loadEffectiveRuntimeConfig(process.cwd())
     const items: ModelItem[] = []
     for (const [providerKey, providerConfig] of Object.entries(config.providers)) {
       if (!providerConfig) continue

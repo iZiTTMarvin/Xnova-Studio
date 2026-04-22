@@ -1,3 +1,61 @@
+## 2026-04-23
+- **Phase 2 阶段级收口**：fix-A / fix-B / fix-C 全部落地，父任务 `04-21-phase2-config-migration` 与收口任务 `04-22-phase2-config-verification` 状态回到 `completed`
+  - **fix-A（P0）**：TOML-first 初始化 + resolved config 贯穿主链路
+    - `CCodeConfig` 扩展 `agent` / `modes` / `features` camelCase 字段；`field-mapping.ts` 补 user 层 `[agent]` / `[modes]` / `[features]` 双向映射
+    - `resolver.ts` 按 spec §3 合并 `project > user > builtin`（标量/对象按 key merge、数组整组覆盖），新增 `loadEffectiveRuntimeConfig(cwd)` 主链路统一入口
+    - 主链路接入：`pipe-runner` / `useChat` / `App.tsx` / `bootstrap.ts` / `dispatch-agent.ts`
+    - `initializer.ts` 重写为 TOML-first：接受 `{ userDir, projectDir }` 注入；通过 `ConfigManager` 承担主配置落地；不再写 `config.json`；损坏 TOML / JSON 绝不备份不重置不覆盖
+    - `ConfigManager.#loadFromLegacyJson` 去除"缺字段回写 JSON"分支（legacy JSON 变为只读迁移源）；`#writeJson` 死代码清理
+  - **fix-B（P0）**：`field-mapping.test.ts` 从 7 扩展到 17 用例，新增 user 层 `[agent]` / `[modes]` / `[features]` 单向 + round-trip 锁死防回潮
+  - **fix-C（P3）**：`SettingsPage.tsx:426` / `providers/registry.ts` 2 处错误文案 / `bootstrap.ts` memory warning / `useChat.ts` 注释统一指向 `~/.xnovacode/config.toml`
+  - 新增测试：`initializer.toml-first.test.ts`（5）/ `resolver.effective-merge.test.ts`（6）/ `main-chain.resolved-config.test.ts`（3）
+  - `pnpm -C cli typecheck` 0 error；`pnpm -C cli exec vitest run` → 121 passed / 5 skipped（较原 97 passed 新增 24 条阶段级测试）
+  - 红线守住：initializer 不存在任何 "备份+重写" silent reset；损坏 TOML / JSON 保留原文件；project.toml 损坏走 `warnings` 通道
+  - 任务详情已归档至 `.trellis/tasks/04-21-phase2-config-migration/`、`.trellis/tasks/04-22-phase2-config-verification/`；交付确认见 `docs/implement/phase2-config-migration.md`（2026-04-23 版）
+
+## 2026-04-22
+- **Phase 2 状态回退**：复盘发现子任务级 DoD 并未等同于阶段级完成标准，父任务 `04-21-phase2-config-migration` 与收口任务 `04-22-phase2-config-verification` 状态从 `completed` 退回 `in_progress`
+  - 问题 1（P1）：`cli/src/config/resolver.ts:141-144` 把 `effective` 固定为 user 层，`project.toml` 的 `agent`/`features`/`modes` 只透传到 `projectExtras`；`createRuntime` / `pipe-runner` / `useChat` 均未消费 `projectExtras`；与 `docs/implement/phase2-config-migration.md:99` "project.toml 可以影响运行时默认值" 不一致
+  - 问题 2（P1）：CLI 真实启动入口仍走 `cli/src/core/initializer.ts`——缺失时创建 `config.json`，损坏时**备份后重写默认 JSON**（line 150-159），违背 spec "TOML 主路径 / 迁移失败保留原 JSON" 契约
+  - 问题 3（P1）：`UserConfigToml` 声明了 `[agent]` / `[modes]` / `[features]` section（`cli/src/config/toml/types.ts:62`），但 `cli/src/config/toml/field-mapping.ts:111-172` 完全未映射；手写到 `config.toml` 的这些字段在任意 `save()` 后会被静默抹除
+  - 问题 4（P3）：`cli/web/src/pages/SettingsPage.tsx:426` 仍告知用户"写入 ~/.xnovacode/config.json"，与 TOML-only writeback 事实矛盾
+  - 同步回退：`docs/implement/phase2-config-migration.md` 交付确认表改写为 ❌ / ⚠ 对照表，列出 fix-A / fix-B / fix-C 待办
+  - 五个子任务（A~E）保持 `completed`，模块粒度 DoD 满足，但不自动等同于阶段 DoD
+- **Phase 2 收口**：Config Migration 阶段五个子任务全部完成，父任务 `04-21-phase2-config-migration` 状态置为 completed
+  - 关键模块：`cli/src/config/toml/*`、`legacy-migration.ts`、`resolver.ts`、`settings-contract.ts`
+  - API：`ConfigManager.getPaths` / `getLastWarnings`；`/api/settings`、`/api/settings/save` 返回 `{ config, source, warnings }`
+  - 测试：`pnpm vitest run` 97 passed / 5 skipped（Phase 3 占位）；`pnpm typecheck` 0 error
+  - 红线守住：损坏 TOML 不被覆盖；JSON 解析失败不生成默认 TOML；所有降级走显式 warning 通道
+- **Phase 2 · E**：Config Migration 阶段最终收口（task `04-22-phase2-config-verification`）
+  - 新增 `cli/src/config/__tests__/config-migration.integration.test.ts`（4 用例，覆盖旧用户 apiKey 不丢 / 设置页写回 round-trip / resolver 端到端）
+  - 替换 `config-toml-migration.todo.test.ts`：占位 skip → 指引性真实断言（防止回潮）
+  - 回写 `.trellis/spec/backend/config-toml-migration.md` 类型引用约定为"Phase 2 已落定"并补代码路径
+  - 在 `docs/implement/phase2-config-migration.md` 勾选全部子任务 checklist，补充交付确认表
+  - `pnpm typecheck` 绿跑；`pnpm vitest run` 97 passed / 5 skipped（Phase 3 占位仍保留）
+- **Phase 2 · D**：设置页读写链路收口到 TOML（task `04-22-phase2-settings-writeback`）
+  - 新增 `cli/src/config/settings-contract.ts`：`buildSettingsReadResponse` / `buildSettingsSaveResponse` 两个纯函数承载 API 响应契约
+  - 改造 `cli/src/server/dashboard/api.ts`：`/api/settings` / `/api/settings/save` 返回 `{ config, source, warnings }`；保存失败显式抛 `{ success:false, error }`，绝不吞错
+  - SettingsPage `ProvidersTab` 顶部新增「配置来源」条 + 「加载警告」条；legacy JSON 提示保存只写 TOML；保存失败错误可见（Toast + banner）
+  - 新增 `settings-contract.test.ts`（5 用例）；`pnpm typecheck` 绿跑；`pnpm vitest run` 92 passed / 11 skipped
+- **Phase 2 · C**：引入 `.xnovacode/project.toml` 与统一 resolver（task `04-22-phase2-project-resolver`）
+  - 新增 `cli/src/config/resolver.ts`：`loadResolvedConfig(cwd, { configManager? }) → ResolvedConfigResult`
+  - 契约：`source`（userToml / projectToml / legacyJson）、`projectExtras`（agent/features/modes 原样透传）、`warnings`（ConfigManager + project.toml 损坏/字段错误）
+  - 合并规则遵循 spec §3：project.toml Phase 2 字段集只涉及 agent/features/modes，不落入 effective；由后续 runtime Task 消费 projectExtras
+  - `ConfigManager` 新增 `getPaths()`，暴露 `baseDir / tomlPath / jsonPath`
+  - 新增 `resolver.test.ts`（9 用例，覆盖优先级、merge、损坏/类型错误 warning、source 路径）
+  - `pnpm typecheck` 绿跑；`pnpm vitest run` 87 passed / 11 skipped
+- **Phase 2 · B**：实现 legacy JSON → TOML 安全迁移与双读（task `04-22-phase2-legacy-migration`）
+  - 新增 `cli/src/config/toml/field-mapping.ts`：snake_case ↔ camelCase 双向映射（round-trip 无损），迁移不借机做字段重命名
+  - 新增 `cli/src/config/legacy-migration.ts`：`migrateLegacyJsonToToml(baseDir) → MigrationResult`，TOML 已存在 / JSON 无法解析 / 写入失败三类路径全部显式 fallback，绝不覆盖原文件
+  - 改造 `ConfigManager`：优先读 TOML（parse+validate+映射），回退 JSON，两者都无则写默认 TOML；新增 `getLastWarnings()` 暴露降级痕迹，损坏 TOML 绝不静默重置
+  - 新增测试 `field-mapping.test.ts`（7 用例）/ `legacy-migration.test.ts`（4 用例）/ `config-manager.toml.test.ts`（4 用例）；更新基线测试首次初始化目标为 TOML
+  - `pnpm typecheck` 绿跑；`pnpm vitest run` 78 passed / 11 skipped
+- **Phase 2 · A**：落定 TOML schema / parser / serializer / validator 契约（task `04-22-phase2-toml-schema`）
+  - 新增 `cli/src/config/toml/` 子模块：`errors.ts` / `types.ts` / `parser.ts` / `serializer.ts` / `schema.ts` / `index.ts`
+  - 显式错误：`TomlParseError`（带 line/column）与 `TomlValidationError`（带 path），禁止 silent fallback
+  - 覆盖 `UserConfigToml` / `ProjectConfigToml` schema 及 round-trip；新增 `toml-schema.test.ts`（21 用例全绿）
+  - `pnpm typecheck` 绿跑；`pnpm vitest run` 63 passed / 11 skipped
+
 ## 2026-04-21
 - **修复**：收口 shared runtime 主链路，修复 Gate A review finding
   - `useChat` 与 `core/pipe-runner` 改为通过 `createRuntime()` 驱动执行，不再直接 new `AgentLoop`

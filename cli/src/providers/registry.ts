@@ -18,7 +18,7 @@ function resolveProtocol(providerName: string, protocol?: 'anthropic' | 'openai'
 export function createProvider(providerName: string, config: CCodeConfig): LLMProvider {
   const providerCfg = config.providers[providerName]
   if (!providerCfg) {
-    throw new Error(`Provider "${providerName}" 未在 ~/.xnovacode/config.json 中配置`)
+    throw new Error(`Provider "${providerName}" 未在 ~/.xnovacode/config.toml 中配置`)
   }
 
   const protocol = resolveProtocol(providerName, providerCfg.protocol)
@@ -41,7 +41,7 @@ const _providerCache = new Map<string, LLMProvider>()
 export function getOrCreateProvider(providerName: string, config: CCodeConfig): LLMProvider {
   const cfg = config.providers[providerName]
   if (!cfg) {
-    throw new Error(`Provider "${providerName}" 未在 ~/.xnovacode/config.json 中配置`)
+    throw new Error(`Provider "${providerName}" 未在 ~/.xnovacode/config.toml 中配置`)
   }
   const cacheKey = `${providerName}|${cfg.baseURL ?? ''}|${cfg.apiKey}`
 

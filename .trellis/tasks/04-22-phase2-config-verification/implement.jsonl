@@ -1,0 +1,6 @@
+{"file": ".trellis/workflow.md", "reason": "Project workflow and conventions"}
+{"file": ".trellis/spec/backend/index.md", "reason": "Backend development guide"}
+{"file": ".trellis/spec/frontend/index.md", "reason": "Frontend development guide"}
+{"file": ".trellis/spec/backend/config-toml-migration.md", "reason": "最终验收以配置迁移专项契约为准"}
+{"file": ".trellis/spec/frontend/quality-guidelines.md", "reason": "最终验收需检查设置页反馈与构建验证"}
+{"file": "docs/xnova-stuido-V1工程测试计划.md", "reason": "Phase 2 测试基线来源"}

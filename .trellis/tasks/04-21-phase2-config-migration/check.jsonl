@@ -1,0 +1,7 @@
+{"file": ".claude/commands/trellis/finish-work.md", "reason": "Finish work checklist"}
+{"file": ".agents/skills/trellis-check/SKILL.md", "reason": "Code quality check spec"}
+{"file": ".trellis/spec/backend/config-toml-migration.md", "reason": "检查迁移与 merge 是否符合专项契约"}
+{"file": ".trellis/spec/backend/error-handling.md", "reason": "检查是否存在 silent reset 或静默吞错"}
+{"file": ".trellis/spec/frontend/quality-guidelines.md", "reason": "检查设置页是否真实呈现失败态与保存反馈"}
+{"file": ".trellis/spec/guides/cross-layer-thinking-guide.md", "reason": "检查前后端是否消费同一套 resolved config 语义"}
+{"file": "docs/implement/phase2-config-migration.md", "reason": "按阶段文档核对交付物与完成标准"}
