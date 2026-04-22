@@ -1,0 +1,5 @@
+{"file": ".trellis/workflow.md", "reason": "Project workflow and conventions"}
+{"file": ".trellis/spec/backend/index.md", "reason": "Backend development guide"}
+{"file": ".trellis/spec/backend/agent-schema-v1.md", "reason": "Verification target for schema and compatibility"}
+{"file": ".trellis/spec/guides/cross-layer-thinking-guide.md", "reason": "Verification spans runtime config UI"}
+{"file": "docs/implement/phase3-agent-system.md", "reason": "Stage acceptance source"}

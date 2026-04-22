@@ -92,7 +92,7 @@ max_parallel_subagents = 2
     writeFileSync(
       join(ws.projectDir, '.xnovacode', 'project.toml'),
       `[agent]
-default = "reviewer"
+default = "plan"
 `,
       'utf-8',
     )
@@ -102,7 +102,7 @@ default = "reviewer"
     })
 
     // project 覆盖 default
-    expect(result.effective.agent?.default).toBe('reviewer')
+    expect(result.effective.agent?.default).toBe('plan')
     // user 的 max_parallel_subagents 仍保留（按 key merge）
     expect(result.effective.agent?.maxParallelSubagents).toBe(2)
   })
@@ -170,7 +170,7 @@ enabled = ["rag"]
 default_model = "claude-sonnet-4-6"
 
 [agent]
-default = "coder"
+default = "general"
 max_parallel_subagents = 3
 
 [modes]
@@ -187,7 +187,7 @@ enabled = ["rag"]
       configManager: new ConfigManager(ws.userDir),
     })
 
-    expect(result.effective.agent?.default).toBe('coder')
+    expect(result.effective.agent?.default).toBe('general')
     expect(result.effective.agent?.maxParallelSubagents).toBe(3)
     expect(result.effective.modes?.allowed).toEqual(['standard', 'xforge'])
     expect(result.effective.modes?.recommended).toBe('standard')
@@ -207,7 +207,7 @@ default_model = "claude-sonnet-4-6"
     writeFileSync(
       join(ws.projectDir, '.xnovacode', 'project.toml'),
       `[agent]
-default = "planner"
+default = "plan"
 max_parallel_subagents = 5
 
 [features]
@@ -225,14 +225,14 @@ recommended = "xforge"
     })
 
     // effective 必须反映 project 覆盖（防止回潮到 "只透传 projectExtras"）
-    expect(result.effective.agent?.default).toBe('planner')
+    expect(result.effective.agent?.default).toBe('plan')
     expect(result.effective.agent?.maxParallelSubagents).toBe(5)
     expect(result.effective.features?.enabled).toEqual(['web', 'memory'])
     expect(result.effective.modes?.allowed).toEqual(['xforge'])
     expect(result.effective.modes?.recommended).toBe('xforge')
 
     // projectExtras 继续承载原始 snake_case 结构（保持向后兼容）
-    expect(result.projectExtras?.agent?.default).toBe('planner')
+    expect(result.projectExtras?.agent?.default).toBe('plan')
     expect(result.projectExtras?.agent?.max_parallel_subagents).toBe(5)
   })
 })

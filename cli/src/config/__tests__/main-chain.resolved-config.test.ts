@@ -64,7 +64,7 @@ models = ["glm-4"]
     writeFileSync(
       join(ws.projectDir, '.xnovacode', 'project.toml'),
       `[agent]
-default = "planner"
+default = "plan"
 max_parallel_subagents = 4
 `,
       'utf-8',
@@ -103,7 +103,7 @@ default_model = "claude-sonnet-4-6"
     writeFileSync(
       join(ws.projectDir, '.xnovacode', 'project.toml'),
       `[agent]
-default = "reviewer"
+default = "plan"
 max_parallel_subagents = 6
 
 [features]
@@ -122,7 +122,7 @@ recommended = "xforge"
 
     // 主链路消费方（pipe-runner / useChat / dispatch-agent）无需额外调用 resolver
     // 就能直接看到 project 覆盖的 agent / modes / features
-    expect(runtime.agent?.default).toBe('reviewer')
+    expect(runtime.agent?.default).toBe('plan')
     expect(runtime.agent?.maxParallelSubagents).toBe(6)
     expect(runtime.features?.enabled).toEqual(['rag', 'web'])
     expect(runtime.modes?.allowed).toEqual(['standard', 'xforge'])

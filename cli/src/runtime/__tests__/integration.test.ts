@@ -17,6 +17,11 @@ const mocks = vi.hoisted(() => {
   const getRegistry = vi.fn(() => ({ name: 'registry' }))
   const getSystemPrompt = vi.fn(() => 'system prompt')
   const ensureMcpInitialized = vi.fn(async () => {})
+  const ensureAgentCatalogInitialized = vi.fn()
+  const resolvePrimaryAgent = vi.fn(() => ({
+    agent: { getSystemPrompt: () => 'primary agent prompt' },
+    warnings: [],
+  }))
 
   const ensureSession = vi.fn(() => 'session-1')
   const logUserMessage = vi.fn()
@@ -51,6 +56,8 @@ const mocks = vi.hoisted(() => {
     getRegistry,
     getSystemPrompt,
     ensureMcpInitialized,
+    ensureAgentCatalogInitialized,
+    resolvePrimaryAgent,
     ensureSession,
     logUserMessage,
     logAssistantMessage,
@@ -83,6 +90,13 @@ vi.mock('../../core/bootstrap.js', () => ({
   tokenMeter: {
     bind: mocks.bindTokenMeter,
     consume: mocks.consumeTokenEvent,
+  },
+}))
+
+vi.mock('../../tools/agent/catalog.js', () => ({
+  agentCatalog: {
+    ensureInitialized: mocks.ensureAgentCatalogInitialized,
+    resolvePrimaryAgent: mocks.resolvePrimaryAgent,
   },
 }))
 
@@ -185,7 +199,10 @@ describe('createRuntime() — 集成门面', () => {
     expect(mocks.prepareHistory).toHaveBeenCalledWith(
       [{ role: 'user', content: '你好' }],
       expect.any(Object),
-      expect.objectContaining({ model: 'gpt-4o', systemPrompt: 'system prompt' }),
+      expect.objectContaining({
+        model: 'gpt-4o',
+        systemPrompt: 'system prompt\n\nprimary agent prompt',
+      }),
     )
     expect(mocks.registerMcpTools).toHaveBeenCalledWith(mocks.getRegistry.mock.results[0]!.value)
     expect(mocks.AgentLoopMock).toHaveBeenCalledTimes(1)

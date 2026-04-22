@@ -1,3 +1,24 @@
+## 2026-04-22
+- **Phase 3 · Agent System 返工收口**：补齐继承链与校验细节，消除最后一批 Phase 3 契约风险
+  - `catalog.ts` 改为按依赖顺序解析 user agent 继承，避免受文件排序影响，并确保 `user > builtin` 覆盖场景下 `inherits` 不会错误退回内置版本
+  - `parser.ts` 补上 `inherits` 的 agent id 格式校验；新增 `catalog.test.ts` 与 `agent-schema-v1.test.ts` 回归用例锁住继承顺序与非法引用格式
+  - 在 `cli/` 下重新验证：`pnpm vitest run`（199 passed / 3 todo）、`pnpm typecheck`、`cli/web pnpm build:check` 全部通过
+  - 任务详情已归档至 `.trellis/tasks/04-22-phase3-agent-verification/`
+
+- **Phase 3 · Agent System 完整交付**：Agent 体系升级到 v1 设计要求，保持旧内置 agent 兼容可用
+  - **schema-v1 + parser**：新增 `schema-v1.ts`（v1 TypeScript 类型）和 `parser.ts`（TOML frontmatter 解析器/校验器），支持 `id / name / summary / mode / inherits / when_to_use / tool_policy / model_preference / extra` 全字段校验，错误定位到字段名与文件路径
+  - **compat-loader**：新增 `compat-loader.ts`，双向转换 `AgentDefinition` ↔ `LoadedAgentDefinitionV1`；旧内置 `general / explore / plan` 通过兼容层保持可用，不破坏 dispatch_agent 主链路
+  - **mode-filter**：新增 `mode-filter.ts`（唯一事实源），统一 `canBePrimary / canBeSubagent / filterForPrimarySelector / filterForSubagentPool / validateDefaultAgent`，UI 与 runtime 复用同一套规则
+  - **类型收敛**：`AgentSource` 从 `'built-in' | 'custom' | 'plugin'` 升级为 `'builtin' | 'user'`；内置 agent 增加 `mode: 'all'` 和 `summary` 字段；`UserAgentDefinition` 替换 `CustomAgentDefinition`
+  - **registry 扩展**：`AgentDefinitionRegistry` 新增 `getForPrimarySelector / getForSubagentPool / getAllAsV1` 方法，`buildTypeDescriptions` 改为只输出 SubAgent 候选池
+  - **user-agent-store**：新增 `user-agent-store.ts`（CRUD 服务）和 `agent-templates.ts`（6 种内置模板），支持从模板/空白创建、保存前 schema 校验、重复 id 检测
+  - **服务端 API**：新增 `agents-api.ts`（7 个路由：list/get/create/update/delete/templates/validate），挂载到 `/api/agents`
+  - **独立 Agents 管理页面**：新增 `AgentsPage.tsx`（完整 CRUD 管理界面，主 Agent / SubAgent 候选池过滤视图，从模板/空白创建弹窗，内联编辑器）；Sidebar 新增 Agents 导航项；App.tsx 新增 `/agents` 路由；icons 新增 `IconAgent / IconPlus / IconEdit / IconTrash / IconX / IconBuiltin`
+  - **测试**：新增 `agent-schema-v1.test.ts`（24）、`mode-filter.test.ts`（18）、`user-agent-store.test.ts`（16）；`dispatch-agent.baseline.test.ts` 对齐 v1 source 枚举；`agent-schema-v1.todo.test.ts` 转正（3 todo）
+  - `pnpm vitest run` 179 passed / 3 todo；`pnpm typecheck` 0 error
+  - 红线守住：UI 不展示 project-level agent；`default_agent` 只允许引用 `primary | all`；mode 过滤逻辑单一事实源
+  - 任务详情已归档至 `.trellis/tasks/04-22-phase3-agent-system/`
+
 ## 2026-04-23
 - **Phase 2 阶段级收口**：fix-A / fix-B / fix-C 全部落地，父任务 `04-21-phase2-config-migration` 与收口任务 `04-22-phase2-config-verification` 状态回到 `completed`
   - **fix-A（P0）**：TOML-first 初始化 + resolved config 贯穿主链路

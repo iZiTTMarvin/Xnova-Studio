@@ -33,6 +33,7 @@ import {
 import { TokenMeter } from '@observability/token-meter.js'
 import { createPluginsRoutes } from './plugins-api.js'
 import { createMcpRoutes } from './mcp-api.js'
+import { createAgentsRoutes } from './agents-api.js'
 import { broadcastToClients } from '../bridge/server.js'
 import { getSystemPromptSections } from '@core/bootstrap.js'
 import { FileStore } from '@memory/storage/file-store.js'
@@ -46,6 +47,9 @@ import { ProviderWrapper } from '@providers/wrapper.js'
 
 export function createApiRoutes(): Hono {
   const api = new Hono()
+
+  // ═══ Agent 管理 ═══
+  api.route('/agents', createAgentsRoutes())
 
   // ═══ 总览大盘 ═══
 

@@ -16,6 +16,7 @@
 
 import { existsSync } from 'node:fs'
 import { ConfigManager, type CCodeConfig } from './config-manager.js'
+import { agentCatalog } from '../tools/agent/catalog.js'
 
 export interface SettingsSource {
   userToml?: string
@@ -45,6 +46,14 @@ function describeSource(manager: ConfigManager): SettingsSource {
   return out
 }
 
+function validateAgentDefault(config: CCodeConfig): string | null {
+  const agentId = config.agent?.default
+  if (!agentId) return null
+  const validation = agentCatalog.validateDefaultAgent(agentId)
+  if (validation.valid) return null
+  return validation.error ?? `agent.default "${agentId}" 非法`
+}
+
 /**
  * 构造 `GET /api/settings` 响应
  *
@@ -55,10 +64,13 @@ export function buildSettingsReadResponse(
   manager: ConfigManager,
 ): SettingsReadResponse {
   const config = manager.load()
+  const warnings = manager.getLastWarnings()
+  const defaultAgentError = validateAgentDefault(config)
+  if (defaultAgentError) warnings.push(defaultAgentError)
   return {
     config,
     source: describeSource(manager),
-    warnings: manager.getLastWarnings(),
+    warnings,
   }
 }
 
@@ -76,6 +88,17 @@ export function buildSettingsSaveResponse(
 ): SettingsSaveResponse {
   const provider = String(nextConfig.defaultProvider ?? '')
   const model = String(nextConfig.defaultModel ?? '')
+  const defaultAgentError = validateAgentDefault(nextConfig)
+  if (defaultAgentError) {
+    return {
+      success: false,
+      provider,
+      model,
+      source: describeSource(manager),
+      warnings: manager.getLastWarnings(),
+      error: defaultAgentError,
+    }
+  }
   try {
     manager.save(nextConfig)
     return {

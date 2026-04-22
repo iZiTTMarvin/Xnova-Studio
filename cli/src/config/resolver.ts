@@ -35,6 +35,7 @@ import {
   validateProjectConfigToml,
   type ProjectConfigToml,
 } from './toml/index.js'
+import { agentCatalog } from '../tools/agent/catalog.js'
 
 /** 已解析配置的来源路径 — 对应 spec §2 `ResolvedConfig.source` */
 export interface ResolvedConfigSource {
@@ -61,6 +62,10 @@ export interface ResolvedConfigResult {
 export interface LoadResolvedConfigOptions {
   /** 允许注入 ConfigManager（便于测试隔离 HOME 目录） */
   configManager?: ConfigManager
+  /** 可选注入 default agent 校验器（便于测试隔离 runtime catalog） */
+  defaultAgentValidator?: {
+    validateDefaultAgent(agentId: string): { valid: boolean; error?: string }
+  }
 }
 
 function resolveProjectTomlPath(cwd: string): string {
@@ -213,6 +218,25 @@ export function loadResolvedConfig(
   else delete effective.modes
   if (mergedFeatures !== undefined) effective.features = mergedFeatures
   else delete effective.features
+
+  // 3.5) default agent 运行时校验：非法值记录 warning 并回退到 runtime fallback
+  const defaultAgentId = effective.agent?.default
+  if (defaultAgentId) {
+    const validator = options.defaultAgentValidator ?? agentCatalog
+    const validation = validator.validateDefaultAgent(defaultAgentId)
+    if (!validation.valid) {
+      warnings.push(validation.error ?? `agent.default "${defaultAgentId}" 非法`)
+      if (effective.agent) {
+        const nextAgent = { ...effective.agent }
+        delete nextAgent.default
+        if (Object.keys(nextAgent).length > 0) {
+          effective.agent = nextAgent
+        } else {
+          delete effective.agent
+        }
+      }
+    }
+  }
 
   // 4) 组装 source
   const sourcePaths = detectUserSource(configManager)

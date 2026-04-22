@@ -1,0 +1,4 @@
+{"file": ".claude/commands/trellis/finish-work.md", "reason": "Finish work checklist"}
+{"file": ".agents/skills/trellis-check/SKILL.md", "reason": "Code quality check spec"}
+{"file": ".trellis/spec/backend/agent-schema-v1.md", "reason": "Check stage output against schema contract"}
+{"file": "docs/implement/phase3-agent-system.md", "reason": "Check final acceptance against phase doc"}

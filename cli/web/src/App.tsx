@@ -11,6 +11,8 @@ const OverviewPage = lazy(() => import('./pages/OverviewPage').then(m => ({ defa
 const ConversationsPage = lazy(() => import('./pages/ConversationsPage').then(m => ({ default: m.ConversationsPage })))
 const SettingsPage = lazy(() => import('./pages/SettingsPage').then(m => ({ default: m.SettingsPage })))
 const LogsPage = lazy(() => import('./pages/LogsPage').then(m => ({ default: m.LogsPage })))
+// Phase 3：Agent 管理页面
+const AgentsPage = lazy(() => import('./pages/AgentsPage').then(m => ({ default: m.AgentsPage })))
 
 /** ChatPage 包装器：从 URL 提取 sessionId */
 function ChatPageWrapper() {
@@ -42,6 +44,7 @@ export function App() {
               <Route path="/conversations/:id" element={<ConversationsPage />} />
               <Route path="/conversations" element={<ConversationsPage />} />
               <Route path="/settings" element={<SettingsPage />} />
+              <Route path="/agents" element={<AgentsPage />} />
               <Route path="/logs" element={<LogsPage />} />
               <Route path="/" element={<Navigate to="/overview" replace />} />
             </Routes>

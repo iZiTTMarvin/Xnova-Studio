@@ -196,7 +196,7 @@ models = ["claude-sonnet-4-6"]
     writeFileSync(
       join(ws.projectDir, '.xnovacode', 'project.toml'),
       `[agent]
-default = "reviewer"
+default = "plan"
 max_parallel_subagents = 4
 
 [features]
@@ -218,7 +218,7 @@ recommended = "xforge"
     expect(result.effective.providers['anthropic']?.apiKey).toBe('sk-user')
 
     // project-only 字段必须透传
-    expect(result.projectExtras?.agent?.default).toBe('reviewer')
+    expect(result.projectExtras?.agent?.default).toBe('plan')
     expect(result.projectExtras?.agent?.max_parallel_subagents).toBe(4)
     expect(result.projectExtras?.features?.enabled).toEqual(['rag'])
     expect(result.projectExtras?.modes?.recommended).toBe('xforge')

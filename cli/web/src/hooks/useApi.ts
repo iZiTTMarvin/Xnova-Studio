@@ -7,12 +7,37 @@
 
 const BASE = ''
 
+export class ApiError extends Error {
+  readonly status: number
+  readonly code?: string
+
+  constructor(message: string, status: number, code?: string) {
+    super(message)
+    this.name = 'ApiError'
+    this.status = status
+    this.code = code
+  }
+}
+
+async function parseError(resp: Response, method: string, path: string): Promise<never> {
+  console.error(`[API] ${method} ${path} → ${resp.status}`)
+  let message = `API ${path}: ${resp.status}`
+  let code: string | undefined
+  try {
+    const data = await resp.json() as { error?: string; code?: string; message?: string }
+    message = data.error ?? data.message ?? message
+    code = data.code
+  } catch {
+    // ignore non-JSON error body
+  }
+  throw new ApiError(message, resp.status, code)
+}
+
 export async function apiGet<T>(path: string): Promise<T> {
   console.log(`[API] GET ${path}`)
   const resp = await fetch(`${BASE}${path}`)
   if (!resp.ok) {
-    console.error(`[API] GET ${path} → ${resp.status}`)
-    throw new Error(`API ${path}: ${resp.status}`)
+    return parseError(resp, 'GET', path)
   }
   const data = await resp.json() as T
   console.log(`[API] GET ${path} → OK`, data)
@@ -27,8 +52,7 @@ export async function apiPost<T>(path: string, body: unknown): Promise<T> {
     body: JSON.stringify(body),
   })
   if (!resp.ok) {
-    console.error(`[API] POST ${path} → ${resp.status}`)
-    throw new Error(`API ${path}: ${resp.status}`)
+    return parseError(resp, 'POST', path)
   }
   const data = await resp.json() as T
   console.log(`[API] POST ${path} → OK`, data)
@@ -43,8 +67,7 @@ export async function apiPut<T>(path: string, body: unknown): Promise<T> {
     body: JSON.stringify(body),
   })
   if (!resp.ok) {
-    console.error(`[API] PUT ${path} → ${resp.status}`)
-    throw new Error(`API ${path}: ${resp.status}`)
+    return parseError(resp, 'PUT', path)
   }
   const data = await resp.json() as T
   console.log(`[API] PUT ${path} → OK`, data)
@@ -55,8 +78,7 @@ export async function apiDelete<T>(path: string): Promise<T> {
   console.log(`[API] DELETE ${path}`)
   const resp = await fetch(`${BASE}${path}`, { method: 'DELETE' })
   if (!resp.ok) {
-    console.error(`[API] DELETE ${path} → ${resp.status}`)
-    throw new Error(`API ${path}: ${resp.status}`)
+    return parseError(resp, 'DELETE', path)
   }
   const data = await resp.json() as T
   console.log(`[API] DELETE ${path} → OK`, data)

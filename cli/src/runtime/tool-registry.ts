@@ -22,7 +22,7 @@ import { TaskOutputTool } from '../tools/core/task-output.js'
 import { TodoWriteTool } from '../tools/ext/todo-write.js'
 import { DispatchAgentTool } from '../tools/agent/dispatch-agent.js'
 import { ControlAgentTool } from '../tools/agent/control-agent.js'
-import { registerBuiltInAgents } from '../tools/agent/built-in.js'
+import { agentCatalog } from '../tools/agent/catalog.js'
 import { AskUserQuestionTool } from '../tools/ext/ask-user-question.js'
 import { VerifyCodeTool } from '../tools/ext/verify-code.js'
 import { SkillTool } from '../skills/engine/skill-tool.js'
@@ -42,8 +42,8 @@ export interface BuildRegistryOptions {
  * 幂等：每次调用返回新实例（调用方负责缓存）。
  */
 export function buildToolRegistry(options: BuildRegistryOptions): ToolRegistry {
-  // 确保内置 Agent 定义已注册（幂等）
-  registerBuiltInAgents()
+  // 确保 builtin + user agent 都已加载进运行时 catalog（幂等）
+  agentCatalog.ensureInitialized()
 
   const reg = new ToolRegistry()
   reg.register(new ReadFileTool())

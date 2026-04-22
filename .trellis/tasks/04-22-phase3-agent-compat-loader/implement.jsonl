@@ -1,0 +1,5 @@
+{"file": ".trellis/workflow.md", "reason": "Project workflow and conventions"}
+{"file": ".trellis/spec/backend/index.md", "reason": "Backend development guide"}
+{"file": ".trellis/spec/backend/agent-schema-v1.md", "reason": "Compatibility target must match v1 schema"}
+{"file": ".trellis/spec/backend/runtime-boundary.md", "reason": "Keep compatibility layer within runtime boundary"}
+{"file": "docs/implement/phase3-agent-system.md", "reason": "Phase 3 compatibility requirements"}

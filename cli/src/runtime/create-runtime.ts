@@ -28,6 +28,7 @@ import {
   sessionLogger,
   tokenMeter,
 } from '../core/bootstrap.js'
+import { agentCatalog } from '../tools/agent/catalog.js'
 import { getOrCreateProvider } from '../providers/registry.js'
 import { makeErrorEvent, makeEvent } from './events.js'
 import type {
@@ -84,6 +85,7 @@ export async function createRuntime(
       try {
         const bootstrapResult = await bootstrapAll()
         warnings = [...bootstrapResult.warnings]
+        agentCatalog.ensureInitialized()
 
         if (submitInput.waitForMcp) {
           await ensureMcpInitialized()
@@ -105,7 +107,12 @@ export async function createRuntime(
         const loggedUserContent = submitInput.loggedUserContent ?? submitInput.text
         sessionLogger.logUserMessage(loggedUserContent)
 
-        const systemPrompt = getSystemPrompt()
+        const primaryAgent = agentCatalog.resolvePrimaryAgent(config.agent?.default)
+        warnings = [...warnings, ...primaryAgent.warnings]
+        const systemPrompt = [
+          getSystemPrompt(),
+          primaryAgent.agent.getSystemPrompt(),
+        ].filter(Boolean).join('\n\n') || undefined
         const rawHistory = submitInput.history ?? contextManager.getHistoryRef()
         const { history, compacted } = await contextManager.prepare(rawHistory, activeProvider as never, {
           model: modelName,

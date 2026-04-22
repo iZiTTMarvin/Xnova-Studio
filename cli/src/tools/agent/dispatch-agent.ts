@@ -20,13 +20,13 @@
 
 import type { ToolContext, ToolResult, StreamableTool } from '../core/types.js'
 import type { ToolRegistry } from '../core/registry.js'
-import { AgentLoop } from '@core/agent-loop.js'
-import type { AgentEvent } from '@core/agent-loop.js'
-import { isAbortError } from '@core/agent-loop.js'
-import { sessionStore } from '@persistence/index.js'
-import { SessionLogger } from '@observability/session-logger.js'
-import { loadEffectiveRuntimeConfig } from '@config/resolver.js'
-import { getOrCreateProvider } from '@providers/registry.js'
+import { AgentLoop } from '../../core/agent-loop.js'
+import type { AgentEvent } from '../../core/agent-loop.js'
+import { isAbortError } from '../../core/agent-loop.js'
+import { sessionStore } from '../../persistence/index.js'
+import { SessionLogger } from '../../observability/session-logger.js'
+import { loadEffectiveRuntimeConfig } from '../../config/resolver.js'
+import { getOrCreateProvider } from '../../providers/registry.js'
 import {
   registerSubAgent, consumeAgentEvent, markSubAgentDone,
   setSubAgentSessionId, resolveAgentName,
@@ -34,9 +34,10 @@ import {
 } from './store.js'
 import { getTodos } from '../ext/todo-store.js'
 import { agentDefinitionRegistry } from './definition-registry.js'
+import { agentCatalog } from './catalog.js'
 import type { ToolPolicy, AgentCompletedOutput, AgentAsyncLaunchedOutput, AgentErrorOutput, AgentStoppedOutput } from './types.js'
 import { trimHistoryForSubAgent } from './context-utils.js'
-import { eventBus } from '@core/event-bus.js'
+import { eventBus } from '../../core/event-bus.js'
 
 // ═══════════════════════════════════════════════
 // 常量
@@ -65,6 +66,7 @@ export class DispatchAgentTool implements StreamableTool {
   readonly name = 'dispatch_agent'
 
   get description(): string {
+    agentCatalog.ensureInitialized()
     const typeList = agentDefinitionRegistry.buildTypeDescriptions()
     return [
       '派发子 Agent 独立执行任务。子 Agent 拥有完整的多轮对话和工具调用能力。',
@@ -110,6 +112,7 @@ export class DispatchAgentTool implements StreamableTool {
   }
 
   get parameters() {
+    agentCatalog.ensureInitialized()
     return {
       type: 'object' as const,
       properties: {
@@ -123,7 +126,7 @@ export class DispatchAgentTool implements StreamableTool {
         },
         subagent_type: {
           type: 'string' as const,
-          enum: agentDefinitionRegistry.getTypeNames(),
+          enum: agentCatalog.getSubagentTypeNames(),
           description:
             'Agent 类型，决定可用工具和行为模式：\n' +
             agentDefinitionRegistry.buildTypeDescriptions(),
@@ -183,11 +186,25 @@ export class DispatchAgentTool implements StreamableTool {
       return { success: false, output: '', error: 'dispatch_agent 需要 ToolContext 中的 provider 和 registry' }
     }
 
-    // 查找 Agent 定义（找不到回退 general）
-    let definition = agentDefinitionRegistry.get(subagentType)
+    agentCatalog.ensureInitialized()
+
+    // 运行时二次校验：即使 LLM/调用方绕过 enum，也不得使用非 subagent 候选池类型
+    const allowedTypes = new Set(agentCatalog.getSubagentTypeNames())
+    if (!allowedTypes.has(subagentType)) {
+      return {
+        success: false,
+        output: '',
+        error: `subagent_type "${subagentType}" 不在 SubAgent 候选池中；只允许 ${[...allowedTypes].join(', ')}`,
+      }
+    }
+
+    const definition = agentDefinitionRegistry.get(subagentType)
     if (!definition) {
-      console.warn(`[dispatch_agent] 未知 subagent_type "${subagentType}"，回退到 general`)
-      definition = agentDefinitionRegistry.get('general')!
+      return {
+        success: false,
+        output: '',
+        error: `subagent_type "${subagentType}" 未注册到运行时 registry，请检查 agent catalog 初始化链路`,
+      }
     }
 
     const agentId = generateAgentId()

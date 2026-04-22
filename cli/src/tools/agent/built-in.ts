@@ -41,7 +41,9 @@ const TIMEOUT_READONLY_MS = 5 * 60 * 1000
  */
 const generalAgent: BuiltInAgentDefinition = {
   agentType: 'general',
-  source: 'built-in',
+  source: 'builtin',
+  mode: 'all',
+  summary: '通用型子 Agent，支持代码实现、文件修改、构建验证等多步任务',
   whenToUse: 'Full toolset, complex multi-step tasks: code implementation, file modification, build & verify',
   toolPolicy: { mode: 'exclude', tools: [] },
   maxTurns: 50,
@@ -92,7 +94,9 @@ const generalAgent: BuiltInAgentDefinition = {
  */
 const exploreAgent: BuiltInAgentDefinition = {
   agentType: 'explore',
-  source: 'built-in',
+  source: 'builtin',
+  mode: 'all',
+  summary: '只读探索型子 Agent，用于代码搜索、定义查找、调用链分析',
   whenToUse: 'Read-only exploration: code search, definition lookup, call chain analysis, directory structure',
   toolPolicy: {
     mode: 'include',
@@ -139,7 +143,9 @@ const exploreAgent: BuiltInAgentDefinition = {
  */
 const planAgent: BuiltInAgentDefinition = {
   agentType: 'plan',
-  source: 'built-in',
+  source: 'builtin',
+  mode: 'all',
+  summary: '设计型子 Agent，架构分析与实施规划，只读不执行',
   whenToUse: 'Architecture analysis and implementation planning: design proposals, impact assessment, refactoring plans. Read-only, no execution',
   toolPolicy: {
     mode: 'include',
@@ -172,13 +178,24 @@ const planAgent: BuiltInAgentDefinition = {
   },
 }
 
+const BUILTIN_AGENT_DEFINITIONS: BuiltInAgentDefinition[] = [
+  generalAgent,
+  exploreAgent,
+  planAgent,
+]
+
+/** 获取全部内置 Agent 定义（返回副本，供 catalog 初始化使用） */
+export function getBuiltInAgentDefinitions(): BuiltInAgentDefinition[] {
+  return [...BUILTIN_AGENT_DEFINITIONS]
+}
+
 // ═══════════════════════════════════════════════
 // 注册
 // ═══════════════════════════════════════════════
 
 /** 注册所有内置 Agent 定义到全局注册表 */
 export function registerBuiltInAgents(): void {
-  agentDefinitionRegistry.register(generalAgent)
-  agentDefinitionRegistry.register(exploreAgent)
-  agentDefinitionRegistry.register(planAgent)
+  for (const agent of BUILTIN_AGENT_DEFINITIONS) {
+    agentDefinitionRegistry.register(agent)
+  }
 }

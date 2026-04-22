@@ -95,7 +95,7 @@ default_model = "claude-sonnet-4-6"
     writeFileSync(
       join(ws.projectDir, '.xnovacode', 'project.toml'),
       `[agent]
-default = "coder"
+default = "general"
 max_parallel_subagents = 3
 `,
       'utf-8',
@@ -106,7 +106,7 @@ max_parallel_subagents = 3
     // effective 仍然是 user 的默认（project.toml Phase 2 只含 agent/features/modes）
     expect(result.effective.defaultProvider).toBe('anthropic')
     // 但 projectExtras 要暴露 project.toml 内容供 runtime / UI 消费
-    expect(result.projectExtras?.agent?.default).toBe('coder')
+    expect(result.projectExtras?.agent?.default).toBe('general')
     expect(result.projectExtras?.agent?.max_parallel_subagents).toBe(3)
     expect(result.source.projectToml).toBe(
       join(ws.projectDir, '.xnovacode', 'project.toml'),
@@ -198,7 +198,7 @@ describe('loadResolvedConfig — source 路径契约', () => {
     )
     writeFileSync(
       join(ws.projectDir, '.xnovacode', 'project.toml'),
-      `[agent]\ndefault = "coder"\n`,
+      `[agent]\ndefault = "general"\n`,
       'utf-8',
     )
     const result = loadResolvedConfig(ws.projectDir, {

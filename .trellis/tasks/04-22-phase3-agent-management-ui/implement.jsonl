@@ -1,0 +1,6 @@
+{"file": ".trellis/workflow.md", "reason": "Project workflow and conventions"}
+{"file": ".trellis/spec/backend/index.md", "reason": "Backend development guide"}
+{"file": ".trellis/spec/frontend/index.md", "reason": "Frontend development guide"}
+{"file": ".trellis/spec/backend/agent-schema-v1.md", "reason": "UI must consume the same agent contract"}
+{"file": ".trellis/spec/frontend/state-management.md", "reason": "Manage agent list and editor state consistently"}
+{"file": "docs/implement/phase3-agent-system.md", "reason": "Phase 3 UI requirements"}

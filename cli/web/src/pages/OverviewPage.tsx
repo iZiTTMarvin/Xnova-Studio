@@ -260,7 +260,11 @@ function PerformanceLayer({ rangeData, tab }: { rangeData: RangeData; tab: Range
               <XAxis dataKey="date" tick={{ fontSize: 11, fill: '#9ca3af' }}
                 tickFormatter={d => tab === 'today' ? d.slice(11, 16) : d.slice(5)} />
               <YAxis tick={{ fontSize: 11, fill: '#9ca3af' }} tickFormatter={v => fmtMs(Number(v))} />
-              <Tooltip contentStyle={TOOLTIP_STYLE} labelStyle={{ color: '#9ca3af' }} formatter={(v: number) => fmtMs(v)} />
+              <Tooltip
+                contentStyle={TOOLTIP_STYLE}
+                labelStyle={{ color: '#9ca3af' }}
+                formatter={(v) => fmtMs(Number(v ?? 0))}
+              />
               <Legend wrapperStyle={{ fontSize: 12 }} />
               <Line type="monotone" dataKey="avgTtft" stroke="#f97316" name="平均 TTFT" strokeWidth={2} dot={false} />
               <Line type="monotone" dataKey="maxTtft" stroke="#ef4444" name="最大 TTFT" strokeWidth={1.5} dot={false} strokeDasharray="5 5" />
@@ -299,7 +303,11 @@ function PerformanceLayer({ rangeData, tab }: { rangeData: RangeData; tab: Range
                 <XAxis dataKey="date" tick={{ fontSize: 11, fill: '#9ca3af' }}
                   tickFormatter={d => tab === 'today' ? d.slice(11, 16) : d.slice(5)} />
                 <YAxis tick={{ fontSize: 11, fill: '#9ca3af' }} tickFormatter={v => `${v} t/s`} />
-                <Tooltip contentStyle={TOOLTIP_STYLE} labelStyle={{ color: '#9ca3af' }} formatter={(v: number) => `${v} t/s`} />
+                <Tooltip
+                  contentStyle={TOOLTIP_STYLE}
+                  labelStyle={{ color: '#9ca3af' }}
+                  formatter={(v) => `${Number(v ?? 0)} t/s`}
+                />
                 <Line type="monotone" dataKey="avgTps" stroke="#10b981" name="平均 TPS" strokeWidth={2} dot={false} />
               </LineChart>
             </ResponsiveContainer>
@@ -412,10 +420,6 @@ function BiCard({ label, sub, value, color }: { label: string; sub: string; valu
       <div className={`text-lg font-bold mt-1 ${color ?? ''}`}>{value}</div>
     </div>
   )
-}
-
-function Card({ label, value, color }: { label: string; value: string; color?: string }) {
-  return <div className="bg-elevated rounded-lg p-3"><div className="text-xs text-txt-secondary mb-1">{label}</div><div className={`text-lg font-bold ${color ?? ''}`}>{value}</div></div>
 }
 
 function PieCard({ title, data, dataKey }: { title: string; data: ProviderStat[]; dataKey: string }) {

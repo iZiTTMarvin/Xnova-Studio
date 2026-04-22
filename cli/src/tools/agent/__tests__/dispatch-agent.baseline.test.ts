@@ -11,11 +11,11 @@ import { describe, it, expect, beforeEach } from 'vitest'
 import { AgentDefinitionRegistry } from '../definition-registry.js'
 import type { AgentDefinition, ToolPolicy } from '../types.js'
 
-// ── 测试用内置 Agent 定义工厂 ──────────────────────────────────────────────
+// ── 测试用内置 Agent 定义工厂（Phase 3：source 已更新为 v1 枚举） ────────────
 function makeBuiltIn(agentType: string, toolPolicy: ToolPolicy = { mode: 'exclude', tools: [] }): AgentDefinition {
   return {
     agentType,
-    source: 'built-in',
+    source: 'builtin',
     whenToUse: `${agentType} agent`,
     toolPolicy,
     maxTurns: 50,
@@ -52,7 +52,7 @@ describe('AgentDefinitionRegistry — 分派主路径基线', () => {
     const found = registry.get('general')!
 
     expect(found.agentType).toBe('general')
-    expect(found.source).toBe('built-in')
+    expect(found.source).toBe('builtin')
     expect(typeof found.whenToUse).toBe('string')
     expect(found.whenToUse.length).toBeGreaterThan(0)
     expect(typeof found.maxTurns).toBe('number')
@@ -63,19 +63,19 @@ describe('AgentDefinitionRegistry — 分派主路径基线', () => {
     expect(['include', 'exclude']).toContain(found.toolPolicy.mode)
   })
 
-  // ── 主路径：custom 覆盖 built-in（优先级） ────────────────────────────
-  it('同名 custom 定义覆盖 built-in 定义', () => {
+  // ── 主路径：user 覆盖 builtin（优先级） ──────────────────────────────
+  it('同名 user 定义覆盖 builtin 定义（Phase 3 v1 source 升级）', () => {
     registry.register(makeBuiltIn('general'))
-    const custom: AgentDefinition = {
+    const userAgent: AgentDefinition = {
       ...makeBuiltIn('general'),
-      source: 'custom',
-      whenToUse: 'custom general override',
+      source: 'user',
+      whenToUse: 'user override for general',
     }
-    registry.register(custom)
+    registry.register(userAgent)
 
     const found = registry.get('general')!
-    expect(found.source).toBe('custom')
-    expect(found.whenToUse).toBe('custom general override')
+    expect(found.source).toBe('user')
+    expect(found.whenToUse).toBe('user override for general')
   })
 
   // ── 主路径：getTypeNames 返回所有注册类型 ─────────────────────────────

@@ -91,6 +91,76 @@ export function IconMoon({ size = 16, className }: IconProps) {
   )
 }
 
+/** 导航：Agent 管理 */
+export function IconAgent({ size = 16, className }: IconProps) {
+  return (
+    <svg width={size} height={size} viewBox="0 0 16 16" fill="none"
+         stroke="currentColor" strokeWidth="1.5" strokeLinecap="round"
+         strokeLinejoin="round" className={className}>
+      <rect x="2" y="5" width="12" height="8" rx="2" />
+      <path d="M5.5 9h.01M10.5 9h.01" strokeWidth="2" />
+      <path d="M6.5 11.5c.4.3.9.5 1.5.5s1.1-.2 1.5-.5" />
+      <path d="M8 5V2.5M5.5 2.5h5" />
+    </svg>
+  )
+}
+
+/** 导航：加号（新建） */
+export function IconPlus({ size = 16, className }: IconProps) {
+  return (
+    <svg width={size} height={size} viewBox="0 0 16 16" fill="none"
+         stroke="currentColor" strokeWidth="1.5" strokeLinecap="round"
+         className={className}>
+      <path d="M8 2v12M2 8h12" />
+    </svg>
+  )
+}
+
+/** 操作：编辑 */
+export function IconEdit({ size = 16, className }: IconProps) {
+  return (
+    <svg width={size} height={size} viewBox="0 0 16 16" fill="none"
+         stroke="currentColor" strokeWidth="1.5" strokeLinecap="round"
+         strokeLinejoin="round" className={className}>
+      <path d="M11 2l3 3-8 8H3v-3l8-8z" />
+    </svg>
+  )
+}
+
+/** 操作：删除 */
+export function IconTrash({ size = 16, className }: IconProps) {
+  return (
+    <svg width={size} height={size} viewBox="0 0 16 16" fill="none"
+         stroke="currentColor" strokeWidth="1.5" strokeLinecap="round"
+         strokeLinejoin="round" className={className}>
+      <path d="M2 4h12M5 4V2.5h6V4M6 7v5M10 7v5M3 4l1 9h8l1-9" />
+    </svg>
+  )
+}
+
+/** 操作：关闭/叉 */
+export function IconX({ size = 16, className }: IconProps) {
+  return (
+    <svg width={size} height={size} viewBox="0 0 16 16" fill="none"
+         stroke="currentColor" strokeWidth="1.5" strokeLinecap="round"
+         className={className}>
+      <path d="M3 3l10 10M13 3L3 13" />
+    </svg>
+  )
+}
+
+/** 状态：内置标签 */
+export function IconBuiltin({ size = 16, className }: IconProps) {
+  return (
+    <svg width={size} height={size} viewBox="0 0 16 16" fill="none"
+         stroke="currentColor" strokeWidth="1.5" strokeLinecap="round"
+         strokeLinejoin="round" className={className}>
+      <circle cx="8" cy="8" r="6" />
+      <path d="M5 8l2 2 4-4" />
+    </svg>
+  )
+}
+
 /** 主题切换：显示器（跟随系统） */
 export function IconMonitor({ size = 16, className }: IconProps) {
   return (

@@ -3,18 +3,24 @@
 /**
  * Agent 类型系统 — 统一接口定义。
  *
- * 三种来源共享 AgentDefinition 接口：
- * - built-in：内置（general / explore / plan）
- * - custom：自定义（.xnovacode/agents/*.md）
- * - plugin：插件（预留）
+ * v1 产品层来源收敛为两种：
+ * - builtin：内置（general / explore / plan）
+ * - user：用户自定义（~/.xnovacode/agents/*.md）
+ *
+ * Phase 3 变更：source 枚举从 'built-in' | 'custom' | 'plugin' 升级为 'builtin' | 'user'。
+ * 规范来源：.trellis/spec/backend/agent-schema-v1.md §3 来源契约
  */
 
 // ═══════════════════════════════════════════════
 // Agent 定义接口
 // ═══════════════════════════════════════════════
 
-/** Agent 定义来源 */
-export type AgentSource = 'built-in' | 'custom' | 'plugin'
+/**
+ * Agent 定义来源 — v1 产品层只暴露 builtin + user
+ *
+ * 不再支持 project-level agent 产品能力（Phase 3 明确排除）。
+ */
+export type AgentSource = 'builtin' | 'user'
 
 /** 工具策略：白名单或黑名单 */
 export type ToolPolicy =
@@ -33,6 +39,9 @@ export interface AgentDefinition {
 
   /** 来源 */
   readonly source: AgentSource
+
+  /** 显示名称（与 agentType/id 分离，供 UI 展示） */
+  readonly displayName?: string
 
   /** 一行说明 — LLM 看到的类型描述，决策选哪个类型时参考 */
   readonly whenToUse: string
@@ -53,6 +62,25 @@ export interface AgentDefinition {
 
   /** 默认最大轮次 */
   readonly maxTurns: number
+
+  /**
+   * Agent 使用模式（v1 新增）— 决定可出现在哪类候选池
+   * - primary：只在主 Agent 候选池
+   * - subagent：只在 SubAgent 候选池
+   * - all：两个候选池均可（缺省值）
+   */
+  readonly mode?: import('./schema-v1.js').AgentMode
+
+  /** 可选继承来源；仅表示 loader 已解析过的父级引用 id */
+  readonly inherits?: string
+
+  /**
+   * UI 副标题说明（v1 新增）— 展示在 Agent 选择器中
+   */
+  readonly summary?: string
+
+  /** 扩展元数据（v1 frontmatter.extra），runtime 不解释但必须保留 */
+  readonly extra?: Record<string, unknown>
 
   /** 模型建议（hint，不强制覆盖 LLM 传入的 model） */
   readonly modelHint?: 'fast' | 'balanced' | 'strong'
@@ -76,20 +104,18 @@ export interface AgentDefinition {
 
 /** 内置 Agent 定义 */
 export interface BuiltInAgentDefinition extends AgentDefinition {
-  readonly source: 'built-in'
+  readonly source: 'builtin'
 }
 
-/** 自定义 Agent 定义 — .xnovacode/agents/*.md */
-export interface CustomAgentDefinition extends AgentDefinition {
-  readonly source: 'custom'
+/**
+ * 用户自定义 Agent 定义 — ~/.xnovacode/agents/*.md
+ *
+ * Phase 3 变更：原 CustomAgentDefinition（source: 'custom'）重命名并收敛为 'user' 来源。
+ */
+export interface UserAgentDefinition extends AgentDefinition {
+  readonly source: 'user'
   /** 定义文件路径（调试/报错用） */
   readonly filePath: string
-}
-
-/** 插件 Agent 定义 — 预留 */
-export interface PluginAgentDefinition extends AgentDefinition {
-  readonly source: 'plugin'
-  readonly pluginName: string
 }
 
 // ═══════════════════════════════════════════════

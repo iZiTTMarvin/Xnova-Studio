@@ -1,0 +1,7 @@
+{"file": ".trellis/workflow.md", "reason": "Project workflow and conventions"}
+{"file": ".trellis/spec/backend/index.md", "reason": "Backend development guide"}
+{"file": ".trellis/spec/frontend/index.md", "reason": "Frontend development guide"}
+{"file": ".trellis/spec/backend/agent-schema-v1.md", "reason": "Phase 3 agent schema contract"}
+{"file": ".trellis/spec/guides/code-reuse-thinking-guide.md", "reason": "Avoid duplicated agent logic across layers"}
+{"file": ".trellis/spec/guides/cross-layer-thinking-guide.md", "reason": "Coordinate runtime, config and UI changes"}
+{"file": "docs/implement/phase3-agent-system.md", "reason": "Phase 3 source requirements"}
