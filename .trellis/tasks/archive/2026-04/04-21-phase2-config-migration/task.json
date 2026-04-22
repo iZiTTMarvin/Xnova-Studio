@@ -11,20 +11,14 @@
   "creator": "xuhaochen",
   "assignee": "xuhaochen",
   "createdAt": "2026-04-21",
-  "completedAt": "2026-04-23",
+  "completedAt": "2026-04-22",
   "branch": "main",
   "base_branch": "main",
   "worktree_path": null,
   "commit": null,
   "pr_url": null,
   "subtasks": [],
-  "children": [
-    "04-22-phase2-toml-schema",
-    "04-22-phase2-legacy-migration",
-    "04-22-phase2-project-resolver",
-    "04-22-phase2-settings-writeback",
-    "04-22-phase2-config-verification"
-  ],
+  "children": [],
   "parent": null,
   "relatedFiles": [
     "cli/src/config/config-manager.ts",
