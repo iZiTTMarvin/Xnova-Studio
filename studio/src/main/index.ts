@@ -4,11 +4,19 @@ import { registerStudioMainIpcHandlers } from './studio-ipc'
 import { startMainProcess } from './lifecycle'
 import { createMainLogger } from './logger'
 import { readSmokeConfig, runSmokeScenario } from './smoke'
+import { createStudioRuntimeInspector } from './studio-runtime-inspector'
 import { createMainWindowManager } from './window'
 import { selectWorkspaceDirectory } from './workspace'
 
+function waitForLogFlush(): Promise<void> {
+  return new Promise((resolve) => {
+    setTimeout(resolve, 20)
+  })
+}
+
 const logger = createMainLogger()
 const smokeConfig = readSmokeConfig(process.env)
+const runtimeInspector = createStudioRuntimeInspector()
 const mainWindowManager = createMainWindowManager({
   BrowserWindow,
   logger,
@@ -37,6 +45,7 @@ registerStudioMainIpcHandlers({
           logger,
         }),
   mainWindowManager,
+  inspectRuntime: (request, state) => runtimeInspector.inspect(request, state),
   logger,
 })
 
@@ -53,27 +62,31 @@ void startMainProcess({
     }
 
     const mainWindow = mainWindowManager.getMainWindow()
-    const executeJavaScript = mainWindow?.webContents?.executeJavaScript
-    const once = mainWindow?.webContents?.once
-    if (!executeJavaScript) {
+    const webContents = mainWindow?.webContents
+    if (!webContents?.executeJavaScript) {
       throw new Error('Smoke 模式下无法访问 renderer webContents。')
     }
+    const executeJavaScript = webContents.executeJavaScript.bind(webContents)
 
     try {
       await runSmokeScenario(
         {
           executeJavaScript,
-          ...(once ? { once } : {}),
+          waitUntilReady: () => mainWindowManager.waitForMainWindowLoad(),
         },
         logger,
       )
+      logger.info('Smoke 验证通过')
+      await waitForLogFlush()
     } finally {
       app.quit()
     }
   })
-  .catch(() => {
+  .catch((error) => {
+    logger.error('Electron Host 启动或 smoke 失败', error)
     if (smokeConfig.enabled) {
-      app.quit()
+      app.exit(1)
+      return
     }
     process.exitCode = 1
   })

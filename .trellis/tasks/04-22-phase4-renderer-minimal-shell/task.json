@@ -3,7 +3,7 @@
   "name": "04-22-phase4-renderer-minimal-shell",
   "title": "Phase 4 Renderer Minimal Shell",
   "description": "实现 renderer 最小页面接入、workspace 展示与最小 runtime 请求",
-  "status": "planning",
+  "status": "completed",
   "dev_type": "frontend",
   "scope": null,
   "package": null,
@@ -11,7 +11,7 @@
   "creator": "xuhaochen",
   "assignee": "xuhaochen",
   "createdAt": "2026-04-22",
-  "completedAt": null,
+  "completedAt": "2026-04-22",
   "branch": null,
   "base_branch": "main",
   "worktree_path": null,
@@ -20,7 +20,13 @@
   "subtasks": [],
   "children": [],
   "parent": "04-22-phase4-electron-host",
-  "relatedFiles": [],
+  "relatedFiles": [
+    "studio/src/renderer/main.tsx",
+    "studio/src/renderer/App.tsx",
+    "studio/src/renderer/hooks/useStudioBridge.ts",
+    "studio/src/renderer/pages/StudioHomePage.tsx",
+    "studio/src/renderer/styles.css"
+  ],
   "notes": "",
   "meta": {}
 }

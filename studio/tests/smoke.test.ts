@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { buildSmokeScript, readSmokeConfig } from '../src/main/smoke'
+import { buildSmokeScript, readSmokeConfig, runSmokeScenario } from '../src/main/smoke'
 
 describe('smoke helpers', () => {
   it('从环境变量读取 smoke 开关与预置 workspace', () => {
@@ -26,5 +26,23 @@ describe('smoke helpers', () => {
     expect(script).toContain('bridge.host.getState()')
     expect(script).toContain('bridge.host.openWorkspace()')
     expect(script).toContain('bridge.runtime.inspect({ refresh: true })')
+  })
+
+  it('renderer 加载失败时会让 smoke 直接失败，而不是误判通过', async () => {
+    const readyDeferred = Promise.reject(new Error('Renderer 加载失败: ERR_FAILED (-2)'))
+
+    await expect(
+      runSmokeScenario(
+        {
+          executeJavaScript: async () => ({ ok: true }),
+          waitUntilReady() {
+            return readyDeferred
+          },
+        },
+        {
+          info() {},
+        },
+      ),
+    ).rejects.toThrow('Renderer 加载失败')
   })
 })

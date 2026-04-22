@@ -7,7 +7,7 @@ export interface SmokeConfig {
 
 export interface SmokeWebContentsLike {
   executeJavaScript(script: string): Promise<unknown>
-  once?(event: 'did-finish-load', listener: () => void): void
+  waitUntilReady?(): Promise<void>
 }
 
 export function readSmokeConfig(env: NodeJS.ProcessEnv): SmokeConfig {
@@ -42,13 +42,7 @@ export async function runSmokeScenario(
   webContents: SmokeWebContentsLike,
   logger: Pick<MainLogger, 'info'>,
 ): Promise<void> {
-  if (webContents.once) {
-    await new Promise<void>((resolve) => {
-      webContents.once?.('did-finish-load', () => {
-        resolve()
-      })
-    })
-  }
+  await webContents.waitUntilReady?.()
 
   const result = await webContents.executeJavaScript(buildSmokeScript())
   logger.info('Smoke 结果', result)

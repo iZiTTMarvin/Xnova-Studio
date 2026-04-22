@@ -4,7 +4,9 @@ import {
   assertStudioNoPayload,
   parseStudioHostState,
   parseStudioOpenWorkspaceResponse,
+  parseStudioRuntimeEvent,
   parseStudioRuntimeInspectRequest,
+  parseStudioRuntimeInspectResult,
 } from '../src/preload/studio-validators'
 
 describe('studio preload validators', () => {
@@ -58,6 +60,50 @@ describe('studio preload validators', () => {
       state: {
         workspacePath: null,
         lastSelection: null,
+      },
+    })
+  })
+
+  it('校验 runtime inspect 响应与 runtime 事件结构', () => {
+    expect(
+      parseStudioRuntimeInspectResult({
+        ok: true,
+        snapshot: {
+          sessionId: null,
+          isRunning: false,
+          provider: 'anthropic',
+          model: 'claude-sonnet-4-6',
+          warnings: [],
+        },
+        workspacePath: 'D:/workspace/demo',
+        configWarnings: ['legacy migration failed'],
+      }),
+    ).toEqual({
+      ok: true,
+      snapshot: {
+        sessionId: null,
+        isRunning: false,
+        provider: 'anthropic',
+        model: 'claude-sonnet-4-6',
+        warnings: [],
+      },
+      workspacePath: 'D:/workspace/demo',
+      configWarnings: ['legacy migration failed'],
+    })
+
+    expect(
+      parseStudioRuntimeEvent({
+        type: 'runtime.snapshot',
+        timestamp: '2026-04-22T00:00:00.000Z',
+        payload: {
+          refresh: true,
+        },
+      }),
+    ).toEqual({
+      type: 'runtime.snapshot',
+      timestamp: '2026-04-22T00:00:00.000Z',
+      payload: {
+        refresh: true,
       },
     })
   })

@@ -3,7 +3,7 @@
   "name": "04-22-phase4-electron-verification",
   "title": "Phase 4 Electron Verification",
   "description": "收口 Phase 4 的 IPC 校验、生命周期验证与手工 smoke",
-  "status": "planning",
+  "status": "completed",
   "dev_type": "fullstack",
   "scope": null,
   "package": null,
@@ -11,7 +11,7 @@
   "creator": "xuhaochen",
   "assignee": "xuhaochen",
   "createdAt": "2026-04-22",
-  "completedAt": null,
+  "completedAt": "2026-04-22",
   "branch": null,
   "base_branch": "main",
   "worktree_path": null,
@@ -20,7 +20,19 @@
   "subtasks": [],
   "children": [],
   "parent": "04-22-phase4-electron-host",
-  "relatedFiles": [],
+  "relatedFiles": [
+    "studio/tests/app-shell.test.ts",
+    "studio/tests/window.test.ts",
+    "studio/tests/workspace.test.ts",
+    "studio/tests/lifecycle.test.ts",
+    "studio/tests/studio-ipc.test.ts",
+    "studio/tests/studio-preload-bridge.test.ts",
+    "studio/tests/studio-preload-validators.test.ts",
+    "studio/tests/studio-runtime-inspector.test.ts",
+    "studio/tests/renderer-shell.test.tsx",
+    "studio/tests/smoke.test.ts",
+    "studio/src/main/smoke.ts"
+  ],
   "notes": "",
   "meta": {}
 }

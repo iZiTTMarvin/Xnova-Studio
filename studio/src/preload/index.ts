@@ -1,9 +1,9 @@
 import { contextBridge, ipcRenderer } from 'electron'
+import { createStudioBridgeApi } from './studio-bridge-api'
 import { STUDIO_BRIDGE_GLOBAL_KEY } from '../shared/studio-bridge-contract'
 
-export async function exposeStudioBridge(): Promise<void> {
+export function exposeStudioBridge(): void {
   try {
-    const { createStudioBridgeApi } = await import('./studio-bridge-api')
     const api = createStudioBridgeApi({
       ipcRenderer,
     })
@@ -13,4 +13,4 @@ export async function exposeStudioBridge(): Promise<void> {
   }
 }
 
-void exposeStudioBridge()
+exposeStudioBridge()

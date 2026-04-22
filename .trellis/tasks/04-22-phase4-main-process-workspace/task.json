@@ -3,7 +3,7 @@
   "name": "04-22-phase4-main-process-workspace",
   "title": "Phase 4 Main Process Workspace",
   "description": "实现 Electron main process、窗口生命周期、workspace 打开与基础日志",
-  "status": "planning",
+  "status": "completed",
   "dev_type": "backend",
   "scope": null,
   "package": null,
@@ -11,7 +11,7 @@
   "creator": "xuhaochen",
   "assignee": "xuhaochen",
   "createdAt": "2026-04-22",
-  "completedAt": null,
+  "completedAt": "2026-04-22",
   "branch": null,
   "base_branch": "main",
   "worktree_path": null,
@@ -20,7 +20,16 @@
   "subtasks": [],
   "children": [],
   "parent": "04-22-phase4-electron-host",
-  "relatedFiles": [],
+  "relatedFiles": [
+    "studio/src/main/index.ts",
+    "studio/src/main/window.ts",
+    "studio/src/main/workspace.ts",
+    "studio/src/main/logger.ts",
+    "studio/src/main/lifecycle.ts",
+    "studio/src/main/smoke.ts",
+    "studio/src/main/studio-ipc.ts",
+    "studio/src/main/studio-runtime-inspector.ts"
+  ],
   "notes": "",
   "meta": {}
 }

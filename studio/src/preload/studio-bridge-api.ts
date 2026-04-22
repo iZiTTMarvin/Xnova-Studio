@@ -32,7 +32,9 @@ export function createStudioBridgeApi(
 
   const hostListeners = new Set<(state: StudioHostState) => void>()
   const runtimeGateway =
-    options.runtimeGateway ?? createStudioRuntimeGateway()
+    options.runtimeGateway ?? createStudioRuntimeGateway({
+      ipcRenderer: options.ipcRenderer,
+    })
 
   options.ipcRenderer.on(
     STUDIO_BRIDGE_CHANNELS.hostStateChanged,
@@ -86,7 +88,7 @@ export function createStudioBridgeApi(
     runtime: {
       async inspect(input?: RuntimeInspectRequest) {
         const request = parseStudioRuntimeInspectRequest(input)
-        return runtimeGateway.inspect(request, hostState)
+        return runtimeGateway.inspect(request)
       },
       onEvent(listener: (event: StudioRuntimeEvent) => void) {
         return runtimeGateway.onEvent(listener)

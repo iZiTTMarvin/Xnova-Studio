@@ -11,7 +11,7 @@ describe('studio app shell helpers', () => {
     expect(options.webPreferences?.preload).toBe('C:/studio/preload/index.js')
     expect(options.webPreferences?.contextIsolation).toBe(true)
     expect(options.webPreferences?.nodeIntegration).toBe(false)
-    expect(options.webPreferences?.sandbox).toBe(false)
+    expect(options.webPreferences?.sandbox).toBe(true)
   })
 
   it('开发模式优先返回 dev server 地址', () => {

@@ -1,4 +1,11 @@
 ## 2026-04-22
+- **Phase 4 · Electron Host 修复收口**：收回 preload 越界逻辑并修复真实 Electron 加载阻塞
+  - `runtime.inspect` 改为 `renderer -> preload -> main IPC -> cli/src/runtime/inspect` 链路，preload 不再直接打包 `ConfigManager` 与文件系统逻辑
+  - 主窗口本地产物改用 `loadFile`，开发态 URL 增加重试，smoke 改为等待窗口加载 Promise，真实 `build/dev smoke` 均不再报 `ERR_FAILED (-2)`
+  - renderer 增加桥接延迟探测与配置告警展示，清理 `studio` 的旧 `exclude` 残留并同步 Phase 4 任务状态
+  - 任务详情已归档至 `.trellis/tasks/04-22-phase4-electron-host/`
+
+## 2026-04-22
 - **Phase 4 · Electron Verification**：补齐 Phase 4 的自动化验收与 smoke harness
   - 新增 `studio/src/main/smoke.ts` 与对应测试，用环境变量驱动 `getState -> openWorkspace -> runtime.inspect` 的最小 smoke 链路
   - 完成验证回归：`pnpm -C studio test / typecheck / build`、`pnpm -C cli test -- tests/studio-bootstrap.test.ts`、`pnpm -C cli test -- src/runtime/__tests__/inspect-runtime.test.ts`、`pnpm -C cli typecheck`

@@ -70,7 +70,9 @@ export function StudioHomePage() {
           </p>
           <p className="status-note">
             {runtimeResult?.ok
-              ? '最小 runtime inspect 已返回 provider / model / snapshot。'
+              ? runtimeResult.configWarnings.length > 0
+                ? `最小 runtime inspect 已返回 provider / model / snapshot，当前有 ${runtimeResult.configWarnings.length} 条配置告警。`
+                : '最小 runtime inspect 已返回 provider / model / snapshot。'
               : runtimeResult?.ok === false
                 ? runtimeResult.error
                 : '通过 preload 发起一条最小 runtime 请求，不触发完整业务流。'}
@@ -100,6 +102,14 @@ export function StudioHomePage() {
         <div className="detail-row">
           <span>桥接状态</span>
           <strong>{bridgeAvailable ? '已连接' : '宿主桥接不可用'}</strong>
+        </div>
+        <div className="detail-row">
+          <span>配置告警</span>
+          <strong>
+            {runtimeResult?.configWarnings.length
+              ? runtimeResult.configWarnings.join('；')
+              : '无'}
+          </strong>
         </div>
       </section>
     </main>

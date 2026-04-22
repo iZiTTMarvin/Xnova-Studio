@@ -3,7 +3,7 @@
   "name": "04-22-phase4-preload-ipc-bridge",
   "title": "Phase 4 Preload IPC Bridge",
   "description": "定义 preload 安全边界、IPC contract 与 runtime 事件桥接",
-  "status": "planning",
+  "status": "completed",
   "dev_type": "fullstack",
   "scope": null,
   "package": null,
@@ -11,7 +11,7 @@
   "creator": "xuhaochen",
   "assignee": "xuhaochen",
   "createdAt": "2026-04-22",
-  "completedAt": null,
+  "completedAt": "2026-04-22",
   "branch": null,
   "base_branch": "main",
   "worktree_path": null,
@@ -20,7 +20,15 @@
   "subtasks": [],
   "children": [],
   "parent": "04-22-phase4-electron-host",
-  "relatedFiles": [],
+  "relatedFiles": [
+    "studio/src/preload/index.ts",
+    "studio/src/preload/studio-bridge-api.ts",
+    "studio/src/preload/studio-runtime-gateway.ts",
+    "studio/src/preload/studio-validators.ts",
+    "studio/src/shared/studio-bridge-contract.ts",
+    "studio/src/main/studio-ipc.ts",
+    "studio/src/main/studio-runtime-inspector.ts"
+  ],
   "notes": "",
   "meta": {}
 }

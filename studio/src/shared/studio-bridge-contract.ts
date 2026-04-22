@@ -76,4 +76,6 @@ export const STUDIO_BRIDGE_CHANNELS = {
   hostGetState: 'studio:host:get-state',
   hostOpenWorkspace: 'studio:host:open-workspace',
   hostStateChanged: 'studio:host:state-changed',
+  runtimeInspect: 'studio:runtime:inspect',
+  runtimeEvent: 'studio:runtime:event',
 } as const

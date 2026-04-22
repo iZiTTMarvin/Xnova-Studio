@@ -3,7 +3,7 @@
   "name": "04-22-phase4-studio-bootstrap",
   "title": "Phase 4 Studio Bootstrap",
   "description": "建立 studio/ 工程骨架与构建启动脚本",
-  "status": "planning",
+  "status": "completed",
   "dev_type": "fullstack",
   "scope": null,
   "package": null,
@@ -11,7 +11,7 @@
   "creator": "xuhaochen",
   "assignee": "xuhaochen",
   "createdAt": "2026-04-22",
-  "completedAt": null,
+  "completedAt": "2026-04-22",
   "branch": null,
   "base_branch": "main",
   "worktree_path": null,
@@ -20,7 +20,13 @@
   "subtasks": [],
   "children": [],
   "parent": "04-22-phase4-electron-host",
-  "relatedFiles": [],
+  "relatedFiles": [
+    "studio/package.json",
+    "studio/tsconfig.json",
+    "studio/vitest.config.ts",
+    "studio/electron.vite.config.ts",
+    "studio/src/main/app-shell.ts"
+  ],
   "notes": "",
   "meta": {}
 }

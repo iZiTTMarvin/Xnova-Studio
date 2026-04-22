@@ -1,9 +1,9 @@
 import { describe, expect, it, vi } from 'vitest'
 import { createStudioBridgeApi } from '../src/preload/studio-bridge-api'
-import { STUDIO_BRIDGE_CHANNELS, type RuntimeInspectResult, type StudioHostState, type StudioRuntimeEvent } from '../src/shared/studio-bridge-contract'
+import { STUDIO_BRIDGE_CHANNELS } from '../src/shared/studio-bridge-contract'
 
 class FakeIpcRenderer {
-  readonly invoke = vi.fn(async (channel: string) => {
+  readonly invoke = vi.fn(async (channel: string, payload?: unknown) => {
     if (channel === STUDIO_BRIDGE_CHANNELS.hostGetState) {
       return {
         workspacePath: null,
@@ -26,6 +26,22 @@ class FakeIpcRenderer {
             path: 'D:/workspace/demo',
           },
         },
+      }
+    }
+
+    if (channel === STUDIO_BRIDGE_CHANNELS.runtimeInspect) {
+      return {
+        ok: true,
+        snapshot: {
+          sessionId: null,
+          isRunning: false,
+          provider: 'anthropic',
+          model: 'claude-sonnet-4-6',
+          warnings: [],
+        },
+        workspacePath: 'D:/workspace/demo',
+        configWarnings: [],
+        echoRefresh: payload,
       }
     }
 
@@ -54,44 +70,11 @@ class FakeIpcRenderer {
   }
 }
 
-function createRuntimeGateway(result: RuntimeInspectResult) {
-  const listeners = new Set<(event: StudioRuntimeEvent) => void>()
-
-  return {
-    inspect: vi.fn(async (_request, _state: StudioHostState) => result),
-    onEvent(listener: (event: StudioRuntimeEvent) => void) {
-      listeners.add(listener)
-      return () => {
-        listeners.delete(listener)
-      }
-    },
-    emit(event: StudioRuntimeEvent) {
-      for (const listener of listeners) {
-        listener(event)
-      }
-    },
-    dispose: vi.fn(async () => {}),
-  }
-}
-
 describe('studio preload bridge', () => {
   it('通过 IPC 读取和更新 host state，并支持状态订阅清理', async () => {
     const ipcRenderer = new FakeIpcRenderer()
-    const runtimeGateway = createRuntimeGateway({
-      ok: true,
-      snapshot: {
-        sessionId: null,
-        isRunning: false,
-        provider: 'anthropic',
-        model: 'claude-sonnet-4-6',
-        warnings: [],
-      },
-      workspacePath: null,
-      configWarnings: [],
-    })
     const api = createStudioBridgeApi({
       ipcRenderer,
-      runtimeGateway,
     })
 
     await expect(api.host.getState()).resolves.toEqual({
@@ -135,21 +118,8 @@ describe('studio preload bridge', () => {
 
   it('校验 runtime inspect 参数，并支持 runtime 事件订阅清理', async () => {
     const ipcRenderer = new FakeIpcRenderer()
-    const runtimeGateway = createRuntimeGateway({
-      ok: true,
-      snapshot: {
-        sessionId: null,
-        isRunning: false,
-        provider: 'anthropic',
-        model: 'claude-sonnet-4-6',
-        warnings: [],
-      },
-      workspacePath: null,
-      configWarnings: [],
-    })
     const api = createStudioBridgeApi({
       ipcRenderer,
-      runtimeGateway,
     })
 
     await expect(api.runtime.inspect({ refresh: true })).resolves.toEqual({
@@ -161,9 +131,13 @@ describe('studio preload bridge', () => {
         model: 'claude-sonnet-4-6',
         warnings: [],
       },
-      workspacePath: null,
+      workspacePath: 'D:/workspace/demo',
       configWarnings: [],
     })
+    expect(ipcRenderer.invoke).toHaveBeenCalledWith(
+      STUDIO_BRIDGE_CHANNELS.runtimeInspect,
+      { refresh: true },
+    )
 
     await expect(
       (api.runtime.inspect as (payload: unknown) => Promise<unknown>)({
@@ -173,7 +147,7 @@ describe('studio preload bridge', () => {
 
     const listener = vi.fn()
     const unsubscribe = api.runtime.onEvent(listener)
-    runtimeGateway.emit({
+    ipcRenderer.emit(STUDIO_BRIDGE_CHANNELS.runtimeEvent, {
       type: 'warning',
       timestamp: new Date().toISOString(),
       payload: {
@@ -183,7 +157,7 @@ describe('studio preload bridge', () => {
     expect(listener).toHaveBeenCalledTimes(1)
 
     unsubscribe()
-    runtimeGateway.emit({
+    ipcRenderer.emit(STUDIO_BRIDGE_CHANNELS.runtimeEvent, {
       type: 'warning',
       timestamp: new Date().toISOString(),
       payload: {

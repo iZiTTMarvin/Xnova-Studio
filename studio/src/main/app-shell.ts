@@ -22,7 +22,7 @@ export function createMainWindowOptions(preloadPath: string): BrowserWindowConst
       preload: preloadPath,
       contextIsolation: true,
       nodeIntegration: false,
-      sandbox: false,
+      sandbox: true,
     },
   }
 }

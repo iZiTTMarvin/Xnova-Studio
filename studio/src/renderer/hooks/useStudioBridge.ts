@@ -10,7 +10,7 @@ function getErrorMessage(error: unknown): string {
 }
 
 export function useStudioBridge() {
-  const bridge = window.xnovaStudio ?? null
+  const [bridge, setBridge] = useState(() => window.xnovaStudio ?? null)
   const [hostStatus, setHostStatus] = useState<'loading' | 'ready' | 'disabled' | 'error'>(
     bridge ? 'loading' : 'disabled',
   )
@@ -23,6 +23,23 @@ export function useStudioBridge() {
   const [runtimeStatus, setRuntimeStatus] = useState<'idle' | 'loading' | 'success' | 'error'>('idle')
   const [runtimeResult, setRuntimeResult] = useState<RuntimeInspectResult | null>(null)
   const [lastRuntimeEvent, setLastRuntimeEvent] = useState<StudioRuntimeEvent | null>(null)
+
+  useEffect(() => {
+    if (bridge) {
+      return
+    }
+
+    const timer = window.setInterval(() => {
+      const nextBridge = window.xnovaStudio ?? null
+      if (nextBridge) {
+        setBridge(nextBridge)
+      }
+    }, 100)
+
+    return () => {
+      window.clearInterval(timer)
+    }
+  }, [bridge])
 
   useEffect(() => {
     if (!bridge) {

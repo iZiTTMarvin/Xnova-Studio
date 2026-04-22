@@ -43,17 +43,5 @@
     "resolveJsonModule": true
   },
   "include": ["electron.vite.config.ts", "src/**/*.ts", "src/**/*.tsx", "tests/**/*.ts"],
-  "exclude": [
-    "dist",
-    "node_modules",
-    "src/main/ipc.ts",
-    "src/preload/ipc-contract.ts",
-    "src/preload/runtime-gateway.ts",
-    "src/preload/studio-api.ts",
-    "src/preload/validators.ts",
-    "src/shared/host-contract.ts",
-    "tests/ipc.test.ts",
-    "tests/preload-bridge.test.ts",
-    "tests/preload-validators.test.ts"
-  ]
+  "exclude": ["dist", "node_modules"]
 }

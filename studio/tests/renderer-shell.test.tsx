@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 
-import { fireEvent, render, screen, waitFor } from '@testing-library/react'
+import { act, fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { cleanup } from '@testing-library/react'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { App } from '../src/renderer/App'
@@ -10,6 +10,7 @@ function clearBridge() {
 }
 
 afterEach(() => {
+  vi.useRealTimers()
   clearBridge()
   cleanup()
 })
@@ -99,5 +100,66 @@ describe('renderer minimal shell', () => {
       })
     })
     expect(screen.getByText('anthropic / claude-sonnet-4-6')).toBeTruthy()
+  })
+
+  it('bridge 初始缺失时会重试探测并在后续注入后恢复为 ready', async () => {
+    vi.useFakeTimers()
+
+    const getState = vi.fn(async () => ({
+      workspacePath: 'D:/workspace/recovered',
+      lastSelection: null,
+    }))
+
+    render(<App />)
+
+    expect(screen.getAllByText('宿主桥接不可用').length).toBeGreaterThan(0)
+
+    ;(window as Window & {
+      xnovaStudio?: {
+        host: {
+          getState: typeof getState
+          openWorkspace: () => Promise<unknown>
+          onStateChanged: (listener: (state: unknown) => void) => () => void
+        }
+        runtime: {
+          inspect: () => Promise<unknown>
+          onEvent: (listener: (event: unknown) => void) => () => void
+        }
+      }
+    }).xnovaStudio = {
+      host: {
+        getState,
+        openWorkspace: async () => ({
+          selection: {
+            ok: false as const,
+            code: 'cancelled' as const,
+            message: '用户取消了 workspace 目录选择',
+          },
+          state: {
+            workspacePath: 'D:/workspace/recovered',
+            lastSelection: null,
+          },
+        }),
+        onStateChanged: () => () => {},
+      },
+      runtime: {
+        inspect: async () => ({
+          ok: false as const,
+          error: 'not called',
+          workspacePath: 'D:/workspace/recovered',
+          configWarnings: [],
+        }),
+        onEvent: () => () => {},
+      },
+    }
+
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(150)
+    })
+    await act(async () => {
+      await Promise.resolve()
+    })
+
+    expect(screen.getByText('D:/workspace/recovered')).toBeTruthy()
   })
 })

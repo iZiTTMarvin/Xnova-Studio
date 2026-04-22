@@ -3,7 +3,7 @@
   "name": "04-22-phase4-electron-host",
   "title": "Phase 4 Electron Host",
   "description": "根据 docs/implement/phase4-electron-host.md 拆解 Electron 宿主最小可运行骨架任务",
-  "status": "planning",
+  "status": "completed",
   "dev_type": "fullstack",
   "scope": null,
   "package": null,
@@ -11,7 +11,7 @@
   "creator": "xuhaochen",
   "assignee": "xuhaochen",
   "createdAt": "2026-04-22",
-  "completedAt": null,
+  "completedAt": "2026-04-22",
   "branch": null,
   "base_branch": "main",
   "worktree_path": null,
@@ -26,7 +26,24 @@
     "04-22-phase4-electron-verification"
   ],
   "parent": null,
-  "relatedFiles": [],
+  "relatedFiles": [
+    "docs/implement/phase4-electron-host.md",
+    "studio/src/main/index.ts",
+    "studio/src/main/window.ts",
+    "studio/src/main/studio-ipc.ts",
+    "studio/src/main/studio-runtime-inspector.ts",
+    "studio/src/preload/studio-bridge-api.ts",
+    "studio/src/preload/studio-runtime-gateway.ts",
+    "studio/src/preload/studio-validators.ts",
+    "studio/src/renderer/hooks/useStudioBridge.ts",
+    "studio/src/renderer/pages/StudioHomePage.tsx",
+    "studio/src/shared/studio-bridge-contract.ts",
+    "studio/tests/studio-ipc.test.ts",
+    "studio/tests/studio-runtime-inspector.test.ts",
+    "studio/tests/renderer-shell.test.tsx",
+    "studio/tests/smoke.test.ts",
+    "CHANGELOG.md"
+  ],
   "notes": "",
   "meta": {}
 }
