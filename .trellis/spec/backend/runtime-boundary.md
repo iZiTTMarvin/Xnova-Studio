@@ -202,3 +202,90 @@ await runtime.submit({ text: 'analyze current project' })
 - [`directory-structure.md`](./directory-structure.md) 已在 `v1 演进落点` 与 `Design Decision: 渐进式拆分优先于 monorepo 搬家` 段落中**显式禁止** Phase 1 直接把仓库改成 `apps/cli + apps/studio + packages/runtime` 布局。Runtime 切分的落点（`cli/src/runtime/`、`cli/src/host/cli/`）以那份 spec 为准，本 spec 不重复定义。
 - [`config-toml-migration.md`](./config-toml-migration.md) 定义 `ResolvedConfig` / `CCodeConfigLike` 的字段结构，runtime 输入的 `config` 必须是该结构的消费者。
 - [`agent-schema-v1.md`](./agent-schema-v1.md) 定义 agent 加载后的结构；runtime 的 agent registry 与 dispatch 逻辑必须复用该 schema，不得自造一套。
+
+## 场景：Studio Main 读取 CLI 持久化事实源时避免引入 Native DB Barrel
+
+### 1. Scope / Trigger
+
+- 触发条件：
+  - `studio/src/main/**` 或 `studio/src/preload/**` 需要读取 CLI 持久化事实源
+  - 读取会话树、最近项目、project-aware inspector、smoke 相关宿主适配
+- 这是典型 infra + cross-layer 场景：一旦 Electron main bundle 间接引入 `libsql`/原生动态依赖，`build` 可能通过，但真实 Electron 启动会在 main process 直接崩溃。
+
+### 2. Signatures
+
+推荐签名：
+
+```ts
+import { SessionStore } from '../../../cli/src/persistence/session-store.js'
+
+const store = new SessionStore(join(homedir(), '.xnovacode', 'sessions'))
+```
+
+禁止在 `studio` main/preload 中用作会话树来源的签名：
+
+```ts
+import { sessionStore } from '../../../cli/src/persistence/index.js'
+```
+
+### 3. Contracts
+
+- `studio` main/preload 若只需要会话 JSONL：
+  - 只允许 import `session-store.ts` / `session-types.ts` / `session-utils.ts` 这类 leaf module
+- `studio` main/preload 若需要 SQLite / 向量库：
+  - 必须显式评审 native 依赖打包策略，不能通过 CLI barrel 间接带入
+- `cli/src/persistence/index.ts` 当前会 re-export：
+  - `db.ts`
+  - `ensureMemoryVectors`
+  - `getDb`
+  - 这些会把 `libsql`/native dynamic require 一起带进 Electron main bundle
+
+### 4. Validation & Error Matrix
+
+| 条件 | 处理方式 |
+|---|---|
+| `studio` main import `cli/src/persistence/index.ts` | 视为高风险边界违规，必须改为 leaf import |
+| Electron build 通过但真实启动报 `Could not dynamically require "@libsql/..."` | 优先回溯最近的 CLI barrel import，而不是先改 Electron 配置 |
+| 只需要 session JSONL，却顺带 import `db.ts` | 视为重复耦合，必须拆掉 |
+
+### 5. Good / Base / Bad Cases
+
+- Good：
+  - `studio-shell-inspector` 直接 new `SessionStore(...)`，只读取 JSONL 会话事实源
+- Base：
+  - 通过依赖注入把 `SessionStore` 传给 inspector，测试和宿主都不碰 SQLite
+- Bad：
+  - `studio` main 通过 `@persistence/index` 取 `sessionStore`，让 `libsql` 在 Electron main runtime 动态加载
+
+### 6. Tests Required
+
+- 单元测试：
+  - `studio-shell-inspector.test.ts` 断言源码不再 import `cli/src/persistence/index`
+  - inspector 在损坏会话下仍能返回最近项目，而不是把整个 shell 弄崩
+- 集成 / smoke：
+  - 真实 Electron smoke 通过 `host.getState -> openWorkspace -> runtime.inspect`
+  - 不再出现 main process `@libsql/...` 动态 require 崩溃
+
+### 7. Wrong vs Correct
+
+#### Wrong
+
+```ts
+import { sessionStore } from '../../../cli/src/persistence/index.js'
+```
+
+问题：
+
+- 通过 barrel 间接带入 `db.ts`
+- Electron main bundle 会包含原生动态依赖
+- build 可能通过，真实启动才崩
+
+#### Correct
+
+```ts
+import { SessionStore } from '../../../cli/src/persistence/session-store.js'
+
+const store = new SessionStore(join(homedir(), '.xnovacode', 'sessions'))
+```
+
+并把 `store` 作为 inspector 依赖注入，保持 `studio` main 只消费 JSONL 事实源，而不是无意碰到 SQLite/native 层。

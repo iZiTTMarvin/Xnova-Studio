@@ -214,6 +214,7 @@ export type SubagentSnapshotEvent =
 export interface SessionSummary {
   sessionId: string
   projectSlug: string
+  cwd: string
   firstMessage: string
   updatedAt: string
   gitBranch: string

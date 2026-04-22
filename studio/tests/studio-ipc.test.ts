@@ -1,6 +1,10 @@
 import { describe, expect, it, vi } from 'vitest'
 import { registerStudioMainIpcHandlers } from '../src/main/studio-ipc'
-import { STUDIO_BRIDGE_CHANNELS, type WorkspaceSelectionResult } from '../src/shared/studio-bridge-contract'
+import {
+  STUDIO_BRIDGE_CHANNELS,
+  type StudioShellSnapshot,
+  type WorkspaceSelectionResult,
+} from '../src/shared/studio-bridge-contract'
 
 function createDeferred<T>() {
   let resolve!: (value: T | PromiseLike<T>) => void
@@ -25,6 +29,28 @@ function createLogger() {
   }
 }
 
+function createShellSnapshot(): StudioShellSnapshot {
+  return {
+    startup: {
+      recentProject: null,
+      recentSession: null,
+    },
+    recentProjects: [],
+    projectSessions: [],
+    scratchpadEntries: [],
+    defaults: {
+      projectPath: null,
+      branch: null,
+      agentId: 'general',
+      modelId: 'claude-sonnet-4-6',
+      providerId: 'anthropic',
+      recommendedMode: null,
+      allowedModes: ['standard', 'xforge'],
+    },
+    warnings: [],
+  }
+}
+
 describe('studio main ipc handlers', () => {
   it('host.getState 返回初始 host state，且不接受参数', async () => {
     const handlers = new Map<string, (_event: unknown, payload: unknown) => unknown>()
@@ -44,6 +70,7 @@ describe('studio main ipc handlers', () => {
         getMainWindow: () => null,
       },
       inspectRuntime: vi.fn(),
+      inspectShell: vi.fn(async () => createShellSnapshot()),
       logger: createLogger(),
     })
 
@@ -81,6 +108,7 @@ describe('studio main ipc handlers', () => {
         }),
       },
       inspectRuntime: vi.fn(),
+      inspectShell: vi.fn(async () => createShellSnapshot()),
       logger,
     })
 
@@ -138,6 +166,7 @@ describe('studio main ipc handlers', () => {
         }),
       },
       inspectRuntime,
+      inspectShell: vi.fn(async () => createShellSnapshot()),
       logger: createLogger(),
     })
 
@@ -198,6 +227,7 @@ describe('studio main ipc handlers', () => {
         getMainWindow: () => null,
       },
       inspectRuntime: vi.fn(),
+      inspectShell: vi.fn(async () => createShellSnapshot()),
       logger: createLogger(),
     })
 
@@ -255,5 +285,92 @@ describe('studio main ipc handlers', () => {
         },
       },
     })
+  })
+
+  it('shell.getSnapshot 通过 main process 委托 project-aware inspector', async () => {
+    const handlers = new Map<string, (_event: unknown, payload: unknown) => unknown>()
+    const inspectShell = vi.fn(async (_request, state) => ({
+      ...createShellSnapshot(),
+      defaults: {
+        ...createShellSnapshot().defaults,
+        projectPath: state.workspacePath,
+      },
+    }))
+
+    registerStudioMainIpcHandlers({
+      ipcMainLike: {
+        handle(channel, handler) {
+          handlers.set(channel, handler)
+        },
+      },
+      selectWorkspaceDirectory: vi.fn(async () => ({
+        ok: true as const,
+        code: 'selected' as const,
+        path: 'D:/workspace/demo',
+      })),
+      mainWindowManager: {
+        getMainWindow: () => null,
+      },
+      inspectRuntime: vi.fn(),
+      inspectShell,
+      logger: createLogger(),
+    })
+
+    const openWorkspaceHandler = handlers.get(STUDIO_BRIDGE_CHANNELS.hostOpenWorkspace)
+    await Promise.resolve(openWorkspaceHandler?.({}, undefined))
+
+    const shellGetSnapshotHandler = handlers.get(STUDIO_BRIDGE_CHANNELS.shellGetSnapshot)
+    await expect(
+      Promise.resolve(
+        shellGetSnapshotHandler?.({}, {
+          projectPath: 'D:/workspace/demo',
+        }),
+      ),
+    ).resolves.toEqual({
+      ...createShellSnapshot(),
+      defaults: {
+        ...createShellSnapshot().defaults,
+        projectPath: 'D:/workspace/demo',
+      },
+    })
+    expect(inspectShell).toHaveBeenCalledWith(
+      { projectPath: 'D:/workspace/demo' },
+      {
+        workspacePath: 'D:/workspace/demo',
+        lastSelection: {
+          ok: true,
+          code: 'selected',
+          path: 'D:/workspace/demo',
+        },
+      },
+    )
+  })
+
+  it('shell.getSnapshot 拒绝非法参数', async () => {
+    const handlers = new Map<string, (_event: unknown, payload: unknown) => unknown>()
+
+    registerStudioMainIpcHandlers({
+      ipcMainLike: {
+        handle(channel, handler) {
+          handlers.set(channel, handler)
+        },
+      },
+      selectWorkspaceDirectory: vi.fn(async () => ({
+        ok: false as const,
+        code: 'cancelled' as const,
+        message: '用户取消了 workspace 目录选择',
+      })),
+      mainWindowManager: {
+        getMainWindow: () => null,
+      },
+      inspectRuntime: vi.fn(),
+      inspectShell: vi.fn(async () => createShellSnapshot()),
+      logger: createLogger(),
+    })
+
+    const shellGetSnapshotHandler = handlers.get(STUDIO_BRIDGE_CHANNELS.shellGetSnapshot)
+    await expect(
+      Promise.resolve(shellGetSnapshotHandler?.({}, { projectPath: 123 })),
+    ).rejects.toThrow('studio.shell.getSnapshot.projectPath 必须是字符串或 null')
   })
 })

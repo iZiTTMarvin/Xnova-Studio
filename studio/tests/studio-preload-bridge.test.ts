@@ -45,6 +45,28 @@ class FakeIpcRenderer {
       }
     }
 
+    if (channel === STUDIO_BRIDGE_CHANNELS.shellGetSnapshot) {
+      return {
+        startup: {
+          recentProject: null,
+          recentSession: null,
+        },
+        recentProjects: [],
+        projectSessions: [],
+        scratchpadEntries: [],
+        defaults: {
+          projectPath: null,
+          branch: null,
+          agentId: 'general',
+          modelId: 'claude-sonnet-4-6',
+          providerId: 'anthropic',
+          recommendedMode: null,
+          allowedModes: ['standard', 'xforge'],
+        },
+        warnings: [],
+      }
+    }
+
     throw new Error(`unexpected channel: ${channel}`)
   })
 
@@ -165,5 +187,47 @@ describe('studio preload bridge', () => {
       },
     })
     expect(listener).toHaveBeenCalledTimes(1)
+  })
+
+  it('通过 IPC 读取 shell snapshot，并校验请求参数', async () => {
+    const ipcRenderer = new FakeIpcRenderer()
+    const api = createStudioBridgeApi({
+      ipcRenderer,
+    })
+
+    await expect(
+      api.shell.getSnapshot({
+        projectPath: 'D:/workspace/demo',
+      }),
+    ).resolves.toEqual({
+      startup: {
+        recentProject: null,
+        recentSession: null,
+      },
+      recentProjects: [],
+      projectSessions: [],
+      scratchpadEntries: [],
+      defaults: {
+        projectPath: null,
+        branch: null,
+        agentId: 'general',
+        modelId: 'claude-sonnet-4-6',
+        providerId: 'anthropic',
+        recommendedMode: null,
+        allowedModes: ['standard', 'xforge'],
+      },
+      warnings: [],
+    })
+
+    expect(ipcRenderer.invoke).toHaveBeenCalledWith(
+      STUDIO_BRIDGE_CHANNELS.shellGetSnapshot,
+      { projectPath: 'D:/workspace/demo' },
+    )
+
+    await expect(
+      (api.shell.getSnapshot as (payload: unknown) => Promise<unknown>)({
+        projectPath: 123,
+      }),
+    ).rejects.toThrow('shell.getSnapshot.projectPath 必须是字符串或 null')
   })
 })

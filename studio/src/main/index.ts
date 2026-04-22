@@ -4,6 +4,7 @@ import { registerStudioMainIpcHandlers } from './studio-ipc'
 import { startMainProcess } from './lifecycle'
 import { createMainLogger } from './logger'
 import { readSmokeConfig, runSmokeScenario } from './smoke'
+import { createStudioShellInspector } from './studio-shell-inspector'
 import { createStudioRuntimeInspector } from './studio-runtime-inspector'
 import { createMainWindowManager } from './window'
 import { selectWorkspaceDirectory } from './workspace'
@@ -17,6 +18,7 @@ function waitForLogFlush(): Promise<void> {
 const logger = createMainLogger()
 const smokeConfig = readSmokeConfig(process.env)
 const runtimeInspector = createStudioRuntimeInspector()
+const shellInspector = createStudioShellInspector()
 const mainWindowManager = createMainWindowManager({
   BrowserWindow,
   logger,
@@ -46,6 +48,7 @@ registerStudioMainIpcHandlers({
         }),
   mainWindowManager,
   inspectRuntime: (request, state) => runtimeInspector.inspect(request, state),
+  inspectShell: (request, state) => shellInspector.inspect(request, state),
   logger,
 })
 

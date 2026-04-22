@@ -1,4 +1,10 @@
 ## 2026-04-22
+- **Phase 5 · Project-aware Shell**：桌面主壳从 Phase 4 最小状态页升级为 project-aware 入口
+  - 冷启动默认进入空白聊天页或恢复最近工作会话，`Overview` 退出默认首页职责，并补齐路径失效/会话损坏降级反馈
+  - `studio/src/renderer/**` 落定一级导航、项目/聊天双 block、最近项目与会话树、子代理折叠树、scratchpad 分离、上下文条与顶部唯一 `Standard / XForge` 切换
+  - 新增 `shell.getSnapshot` 桥接与 `studio-shell-inspector`，并修复真实 Electron smoke 下 `persistence/index -> libsql` 动态依赖导致的 main process 崩溃
+
+## 2026-04-22
 - **Phase 4 · Electron Host 修复收口**：收回 preload 越界逻辑并修复真实 Electron 加载阻塞
   - `runtime.inspect` 改为 `renderer -> preload -> main IPC -> cli/src/runtime/inspect` 链路，preload 不再直接打包 `ConfigManager` 与文件系统逻辑
   - 主窗口本地产物改用 `loadFile`，开发态 URL 增加重试，smoke 改为等待窗口加载 Promise，真实 `build/dev smoke` 均不再报 `ERR_FAILED (-2)`

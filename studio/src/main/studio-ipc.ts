@@ -6,6 +6,8 @@ import {
   type RuntimeInspectRequest,
   type RuntimeInspectResult,
   type StudioHostState,
+  type StudioShellSnapshot,
+  type StudioShellSnapshotRequest,
   type StudioRuntimeEvent,
 } from '../shared/studio-bridge-contract'
 
@@ -52,6 +54,34 @@ function parseRuntimeInspectPayload(payload: unknown): RuntimeInspectRequest {
   return payload.refresh === undefined ? {} : { refresh: payload.refresh }
 }
 
+function parseShellSnapshotPayload(
+  payload: unknown,
+): StudioShellSnapshotRequest {
+  if (payload === undefined) {
+    return {}
+  }
+
+  if (!isPlainObject(payload)) {
+    throw new Error('studio.shell.getSnapshot 参数必须是对象。')
+  }
+
+  if (Object.keys(payload).some((key) => key !== 'projectPath')) {
+    throw new Error('studio.shell.getSnapshot 只允许 projectPath 字段。')
+  }
+
+  if (
+    payload.projectPath !== undefined &&
+    payload.projectPath !== null &&
+    typeof payload.projectPath !== 'string'
+  ) {
+    throw new Error('studio.shell.getSnapshot.projectPath 必须是字符串或 null。')
+  }
+
+  return payload.projectPath === undefined
+    ? {}
+    : { projectPath: payload.projectPath as string | null }
+}
+
 function createRuntimeEvent(
   result: RuntimeInspectResult,
   request: RuntimeInspectRequest,
@@ -87,6 +117,10 @@ export interface RegisterStudioMainIpcHandlersOptions {
     request: RuntimeInspectRequest,
     state: StudioHostState,
   ) => Promise<RuntimeInspectResult>
+  inspectShell: (
+    request: StudioShellSnapshotRequest,
+    state: StudioHostState,
+  ) => Promise<StudioShellSnapshot>
   selectWorkspaceDirectory: () => Promise<WorkspaceSelectionResult>
   mainWindowManager: {
     getMainWindow(): HostStateWindowLike | null
@@ -182,6 +216,14 @@ export function registerStudioMainIpcHandlers(
         options.logger.error('runtime inspect 失败', error)
         return result
       }
+    },
+  )
+
+  options.ipcMainLike.handle(
+    STUDIO_BRIDGE_CHANNELS.shellGetSnapshot,
+    async (_event, payload): Promise<StudioShellSnapshot> => {
+      const request = parseShellSnapshotPayload(payload)
+      return options.inspectShell(request, hostState)
     },
   )
 }

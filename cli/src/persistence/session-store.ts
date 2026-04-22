@@ -9,7 +9,7 @@ import {
   rmSync,
   existsSync,
 } from 'node:fs'
-import { join, basename } from 'node:path'
+import { join } from 'node:path'
 import { dbg } from '../debug.js'
 import type { SessionEvent, SessionSnapshot, SessionSummary, BranchInfo, SubagentSnapshot, SubagentSnapshotEvent } from './session-types.js'
 import {
@@ -277,6 +277,7 @@ export class SessionStore {
         summaries.push({
           sessionId,
           projectSlug: slug,
+          cwd: extracted.cwd,
           firstMessage: extracted.firstMessage,
           updatedAt: extracted.updatedAt || stat.mtime.toISOString(),
           gitBranch: extracted.gitBranch,
@@ -546,12 +547,14 @@ export class SessionStore {
     )
   }
 
-  /** Extract firstMessage, updatedAt, gitBranch from JSONL content */
+  /** Extract cwd / firstMessage / updatedAt / gitBranch from JSONL content */
   #extractSummary(filePath: string): {
+    cwd: string
     firstMessage: string
     updatedAt: string
     gitBranch: string
   } {
+    let cwd = ''
     let firstMessage = ''
     let updatedAt = ''
     let gitBranch = 'unknown'
@@ -566,6 +569,10 @@ export class SessionStore {
         // Track latest timestamp
         if (event.timestamp) {
           updatedAt = event.timestamp
+        }
+
+        if (!cwd && typeof event.cwd === 'string') {
+          cwd = event.cwd
         }
 
         // Extract gitBranch from first event that has it
@@ -590,7 +597,7 @@ export class SessionStore {
       dbg(`[SessionStore] JSONL 摘要提取失败 file=${filePath}: ${err instanceof Error ? err.message : String(err)}\n`)
     }
 
-    return { firstMessage, updatedAt, gitBranch }
+    return { cwd, firstMessage, updatedAt, gitBranch }
   }
 
   /** Find JSONL file by sessionId — cache first, then scan directories */

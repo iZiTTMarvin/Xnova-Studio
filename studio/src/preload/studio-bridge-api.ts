@@ -3,6 +3,8 @@ import type {
   RuntimeInspectRequest,
   StudioBridgeApi,
   StudioHostState,
+  StudioShellSnapshot,
+  StudioShellSnapshotRequest,
   StudioRuntimeEvent,
 } from '../shared/studio-bridge-contract'
 import { STUDIO_BRIDGE_CHANNELS, type StudioIpcRendererLike } from './studio-ipc-contract'
@@ -10,6 +12,8 @@ import {
   assertStudioNoPayload,
   parseStudioHostState,
   parseStudioOpenWorkspaceResponse,
+  parseStudioShellSnapshot,
+  parseStudioShellSnapshotRequest,
   parseStudioRuntimeInspectRequest,
 } from './studio-validators'
 import {
@@ -68,6 +72,17 @@ export function createStudioBridgeApi(
     return response
   }
 
+  async function getShellSnapshot(
+    input?: StudioShellSnapshotRequest,
+  ): Promise<StudioShellSnapshot> {
+    const request = parseStudioShellSnapshotRequest(input)
+    const payload = await options.ipcRenderer.invoke(
+      STUDIO_BRIDGE_CHANNELS.shellGetSnapshot,
+      request,
+    )
+    return parseStudioShellSnapshot(payload)
+  }
+
   return {
     host: {
       async getState(...args: unknown[]) {
@@ -92,6 +107,11 @@ export function createStudioBridgeApi(
       },
       onEvent(listener: (event: StudioRuntimeEvent) => void) {
         return runtimeGateway.onEvent(listener)
+      },
+    },
+    shell: {
+      async getSnapshot(input?: StudioShellSnapshotRequest) {
+        return getShellSnapshot(input)
       },
     },
   }

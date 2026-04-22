@@ -4,6 +4,8 @@ import {
   assertStudioNoPayload,
   parseStudioHostState,
   parseStudioOpenWorkspaceResponse,
+  parseStudioShellSnapshot,
+  parseStudioShellSnapshotRequest,
   parseStudioRuntimeEvent,
   parseStudioRuntimeInspectRequest,
   parseStudioRuntimeInspectResult,
@@ -16,6 +18,10 @@ describe('studio preload validators', () => {
     )
 
     expect(() => parseStudioRuntimeInspectRequest({ refresh: 'yes' })).toThrow(
+      StudioBridgeValidationError,
+    )
+
+    expect(() => parseStudioShellSnapshotRequest({ projectPath: 123 })).toThrow(
       StudioBridgeValidationError,
     )
   })
@@ -105,6 +111,108 @@ describe('studio preload validators', () => {
       payload: {
         refresh: true,
       },
+    })
+  })
+
+  it('校验 shell snapshot 请求与响应结构', () => {
+    expect(
+      parseStudioShellSnapshotRequest({
+        projectPath: 'D:/workspace/demo',
+      }),
+    ).toEqual({
+      projectPath: 'D:/workspace/demo',
+    })
+
+    expect(
+      parseStudioShellSnapshot({
+        startup: {
+          recentProject: {
+            path: 'D:/workspace/demo',
+            lastActiveAt: 10,
+            exists: true,
+          },
+          recentSession: {
+            projectPath: 'D:/workspace/demo',
+            sessionId: 'session-1',
+            valid: true,
+          },
+        },
+        recentProjects: [
+          {
+            path: 'D:/workspace/demo',
+            name: 'demo',
+            lastActiveAt: 10,
+            exists: true,
+            gitBranch: 'main',
+          },
+        ],
+        projectSessions: [
+          {
+            sessionId: 'session-1',
+            projectPath: 'D:/workspace/demo',
+            title: '继续实现 shell',
+            updatedAt: '2026-04-22T00:00:00.000Z',
+            gitBranch: 'main',
+            messageCount: 12,
+            subagents: [],
+          },
+        ],
+        scratchpadEntries: [],
+        defaults: {
+          projectPath: 'D:/workspace/demo',
+          branch: 'main',
+          agentId: 'general',
+          modelId: 'claude-sonnet-4-6',
+          providerId: 'anthropic',
+          recommendedMode: 'xforge',
+          allowedModes: ['standard', 'xforge'],
+        },
+        warnings: [],
+      }),
+    ).toEqual({
+      startup: {
+        recentProject: {
+          path: 'D:/workspace/demo',
+          lastActiveAt: 10,
+          exists: true,
+        },
+        recentSession: {
+          projectPath: 'D:/workspace/demo',
+          sessionId: 'session-1',
+          valid: true,
+        },
+      },
+      recentProjects: [
+        {
+          path: 'D:/workspace/demo',
+          name: 'demo',
+          lastActiveAt: 10,
+          exists: true,
+          gitBranch: 'main',
+        },
+      ],
+      projectSessions: [
+        {
+          sessionId: 'session-1',
+          projectPath: 'D:/workspace/demo',
+          title: '继续实现 shell',
+          updatedAt: '2026-04-22T00:00:00.000Z',
+          gitBranch: 'main',
+          messageCount: 12,
+          subagents: [],
+        },
+      ],
+      scratchpadEntries: [],
+      defaults: {
+        projectPath: 'D:/workspace/demo',
+        branch: 'main',
+        agentId: 'general',
+        modelId: 'claude-sonnet-4-6',
+        providerId: 'anthropic',
+        recommendedMode: 'xforge',
+        allowedModes: ['standard', 'xforge'],
+      },
+      warnings: [],
     })
   })
 })

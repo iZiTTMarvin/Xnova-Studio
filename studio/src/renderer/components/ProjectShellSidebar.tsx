@@ -1,0 +1,126 @@
+import { useState, type ReactNode } from 'react'
+
+export type PrimaryNavId =
+  | 'quick-chat'
+  | 'search'
+  | 'agents'
+  | 'projects'
+  | 'chat'
+  | 'tools'
+  | 'settings'
+
+export type SidebarBlockStatus = 'loading' | 'empty' | 'disabled' | 'ready'
+
+interface SidebarBlockConfig {
+  title: '项目' | '聊天'
+  status: SidebarBlockStatus
+  message: string
+  content: ReactNode
+}
+
+interface PrimaryNavItem {
+  id: PrimaryNavId
+  label: string
+}
+
+export const PRIMARY_NAV_ITEMS: PrimaryNavItem[] = [
+  { id: 'quick-chat', label: '快速聊天' },
+  { id: 'search', label: '搜索' },
+  { id: 'agents', label: 'Agents' },
+  { id: 'projects', label: '项目' },
+  { id: 'chat', label: '聊天' },
+  { id: 'tools', label: '工具' },
+  { id: 'settings', label: '设置' },
+]
+
+export interface ProjectShellSidebarProps {
+  activeNavId: PrimaryNavId
+  onNavigate: (id: PrimaryNavId) => void
+  projectBlock: SidebarBlockConfig
+  chatBlock: SidebarBlockConfig
+}
+
+function renderBlockState(config: SidebarBlockConfig): ReactNode {
+  if (config.status === 'ready') {
+    return config.content
+  }
+
+  return (
+    <div className={`sidebar-block-state sidebar-block-state-${config.status}`}>
+      <p>{config.message}</p>
+    </div>
+  )
+}
+
+export function ProjectShellSidebar(props: ProjectShellSidebarProps) {
+  const [projectCollapsed, setProjectCollapsed] = useState(false)
+  const [chatCollapsed, setChatCollapsed] = useState(false)
+
+  return (
+    <aside className="studio-sidebar">
+      <div className="sidebar-brand">
+        <div className="sidebar-brand-title">Xnova Studio</div>
+        <div className="sidebar-brand-subtitle">Project-aware Shell</div>
+      </div>
+
+      <nav className="sidebar-nav" aria-label="Studio 一级导航">
+        {PRIMARY_NAV_ITEMS.map((item) => (
+          <button
+            key={item.id}
+            type="button"
+            className={`sidebar-nav-button ${
+              props.activeNavId === item.id ? 'sidebar-nav-button-active' : ''
+            }`}
+            onClick={() => {
+              props.onNavigate(item.id)
+            }}
+          >
+            {item.label}
+          </button>
+        ))}
+      </nav>
+
+      <section className="sidebar-block">
+        <header className="sidebar-block-header">
+          <h2>项目</h2>
+          <button
+            type="button"
+            className="sidebar-toggle"
+            aria-label={projectCollapsed ? '展开项目' : '折叠项目'}
+            onClick={() => {
+              setProjectCollapsed((value) => !value)
+            }}
+          >
+            {projectCollapsed ? '展开' : '折叠'}
+          </button>
+        </header>
+        {!projectCollapsed ? (
+          <div className="sidebar-block-body sidebar-block-scroll">
+            {renderBlockState(props.projectBlock)}
+          </div>
+        ) : null}
+      </section>
+
+      <section className="sidebar-block">
+        <header className="sidebar-block-header">
+          <h2>聊天</h2>
+          <button
+            type="button"
+            className="sidebar-toggle"
+            aria-label={chatCollapsed ? '展开聊天' : '折叠聊天'}
+            onClick={() => {
+              setChatCollapsed((value) => !value)
+            }}
+          >
+            {chatCollapsed ? '展开' : '折叠'}
+          </button>
+        </header>
+        {!chatCollapsed ? (
+          <div className="sidebar-block-body sidebar-block-scroll">
+            {renderBlockState(props.chatBlock)}
+          </div>
+        ) : null}
+      </section>
+    </aside>
+  )
+}
