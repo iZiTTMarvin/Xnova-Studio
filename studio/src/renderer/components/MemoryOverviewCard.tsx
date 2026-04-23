@@ -1,4 +1,5 @@
 import type { StudioMemoryOverviewSnapshot } from '../../shared/studio-bridge-contract'
+import { resolveMemoryFeedbackPresentation } from '../utils/memory-feedback'
 
 export interface MemoryOverviewCardProps {
   status: 'loading' | 'ready' | 'disabled' | 'error'
@@ -13,17 +14,21 @@ export function MemoryOverviewCard(props: MemoryOverviewCardProps) {
   const canRebuild =
     props.status === 'ready' &&
     Boolean(props.snapshot?.overview.projectPath)
+  const feedback = resolveMemoryFeedbackPresentation({
+    snapshot: props.snapshot,
+    status: props.status,
+    error: props.error,
+    actionMessage: props.actionMessage,
+  })
 
   return (
     <section className="feature-section-card">
       <div className="feature-section-header">
         <h3>Memory</h3>
         <span
-          className={`feature-section-status feature-section-status-${
-            props.snapshot?.status ?? (props.status === 'ready' ? 'empty' : props.status)
-          }`}
+          className={`feature-section-status feature-section-status-${feedback.statusClassName}`}
         >
-          {props.snapshot?.status ?? props.status}
+          {feedback.statusLabel}
         </span>
       </div>
 
@@ -39,13 +44,14 @@ export function MemoryOverviewCard(props: MemoryOverviewCardProps) {
         </div>
       ) : null}
 
+      {!props.error && !props.actionMessage && feedback.actionHint ? (
+        <div className="provider-feedback provider-feedback-warning">
+          <strong>{feedback.actionHint}</strong>
+        </div>
+      ) : null}
+
       <p className="feature-section-summary">
-        {props.snapshot?.statusMessage ??
-          (props.status === 'loading'
-            ? '正在读取 Memory 状态…'
-            : props.status === 'disabled'
-              ? '当前宿主桥接不可用，Memory 状态暂时不可读取。'
-              : 'Memory 状态暂不可用。')}
+        {feedback.statusMessage}
       </p>
 
       {props.snapshot ? (

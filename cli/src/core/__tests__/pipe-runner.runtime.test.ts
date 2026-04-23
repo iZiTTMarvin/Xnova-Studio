@@ -27,7 +27,7 @@ vi.mock('../../config/resolver.js', () => ({
   }),
 }))
 
-vi.mock('../../persistence/index.js', () => ({
+vi.mock('../../persistence/db.js', () => ({
   closeDb: mocks.closeDb,
 }))
 

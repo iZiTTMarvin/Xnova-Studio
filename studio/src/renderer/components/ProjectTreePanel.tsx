@@ -85,13 +85,13 @@ export function ProjectTreePanel(props: ProjectTreePanelProps) {
                     {isExpanded ? (
                       <div className="subagent-list">
                         {session.subagents.map((subagent) => (
-                          <div key={subagent.agentId} className="subagent-item">
-                            <strong>{subagent.agentId}</strong>
-                            <span>{subagent.description}</span>
-                            <span>{subagent.status}</span>
-                          </div>
-                        ))}
-                      </div>
+                    <div key={subagent.agentId} className="subagent-item">
+                      <strong>{subagent.agentId}</strong>
+                      <span>{subagent.description}</span>
+                      <span>{subagent.stateMessage ?? subagent.status}</span>
+                    </div>
+                  ))}
+                </div>
                     ) : null}
                   </div>
                 ) : null}

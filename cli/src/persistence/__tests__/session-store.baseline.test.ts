@@ -91,6 +91,43 @@ describe('SessionStore — 基线行为', () => {
     expect(assistantMsgs[0]!.content).toBe('你好！有什么可以帮你的？')
   })
 
+  it('inspectSession() 以轻量摘要返回 messageCount / provider / model', () => {
+    const cwd = process.cwd()
+    const sessionId = store.create(cwd, 'anthropic', 'claude-sonnet-4-6')
+    const initial = store.loadMessages(sessionId)
+    const startUuid = initial.leafEventUuid!
+
+    store.append(sessionId, {
+      sessionId,
+      type: 'user',
+      timestamp: new Date().toISOString(),
+      uuid: 'user-1',
+      parentUuid: startUuid,
+      cwd,
+      message: { role: 'user', content: '分析 renderer' },
+    })
+    store.append(sessionId, {
+      sessionId,
+      type: 'assistant',
+      timestamp: new Date().toISOString(),
+      uuid: 'assistant-1',
+      parentUuid: 'user-1',
+      cwd,
+      message: {
+        role: 'assistant',
+        content: '已完成',
+        provider: 'openai',
+        model: 'gpt-4o',
+      },
+    })
+
+    expect(store.inspectSession(sessionId)).toEqual({
+      messageCount: 2,
+      provider: 'openai',
+      model: 'gpt-4o',
+    })
+  })
+
   // ── 主路径：list() 能列出已创建的会话 ────────────────────────────────
   it('list() 返回已创建的会话摘要', () => {
     const cwd = process.cwd()
@@ -128,5 +165,57 @@ describe('SessionStore — 基线行为', () => {
 
     expect(() => emptyStore.list()).not.toThrow()
     expect(emptyStore.list()).toEqual([])
+  })
+
+  it('loadSubagents() 能把 stopped 会话恢复成 stopped 状态并保留部分结果文本', () => {
+    const cwd = process.cwd()
+    const parentSessionId = store.create(cwd, 'anthropic', 'claude-sonnet-4-6')
+    const subagentSessionId = store.createSubagent(
+      'agent-1',
+      parentSessionId,
+      cwd,
+      'anthropic',
+      'claude-sonnet-4-6',
+    )
+
+    const initial = store.loadMessages(subagentSessionId)
+    const startUuid = initial.leafEventUuid!
+
+    store.append(subagentSessionId, {
+      sessionId: subagentSessionId,
+      type: 'assistant',
+      timestamp: new Date().toISOString(),
+      uuid: 'assistant-subagent-1',
+      parentUuid: startUuid,
+      cwd,
+      message: {
+        role: 'assistant',
+        content: '已经扫完 renderer 的一半文件。',
+      },
+    })
+
+    store.append(subagentSessionId, {
+      sessionId: subagentSessionId,
+      type: 'session_end',
+      timestamp: new Date().toISOString(),
+      uuid: 'session-end-subagent-1',
+      parentUuid: 'assistant-subagent-1',
+      cwd,
+      status: 'stopped',
+      totalErrors: 0,
+    })
+
+    expect(store.loadSubagents(parentSessionId, cwd)).toEqual([
+      expect.objectContaining({
+        agentId: 'agent-1',
+        status: 'stopped',
+        events: expect.arrayContaining([
+          {
+            kind: 'text',
+            text: '已经扫完 renderer 的一半文件。',
+          },
+        ]),
+      }),
+    ])
   })
 })

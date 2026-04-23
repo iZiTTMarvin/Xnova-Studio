@@ -1,0 +1,13 @@
+{"file": ".trellis/workflow.md", "reason": "Project workflow and conventions"}
+{"file": ".trellis/spec/backend/index.md", "reason": "Backend development guide"}
+{"file": ".trellis/spec/frontend/index.md", "reason": "Frontend development guide"}
+{"file": "docs/implement/phase7-polish-and-release.md", "reason": "发布准备阶段需求来源"}
+{"file": "docs/implement/phase4-electron-host.md", "reason": "打包不能破坏Electron宿主基线"}
+{"file": ".trellis/spec/backend/runtime-boundary.md", "reason": "打包配置不能破坏既有边界"}
+{"file": ".trellis/spec/backend/logging-guidelines.md", "reason": "发布前需要保留必要日志能力"}
+{"file": ".trellis/spec/backend/quality-guidelines.md", "reason": "打包与文档同步也要有验证"}
+{"file": ".trellis/spec/frontend/directory-structure.md", "reason": "打包和产物目录不能破坏renderer落点"}
+{"file": ".trellis/spec/guides/cross-layer-thinking-guide.md", "reason": "打包准备同时涉及宿主和文档"}
+{"file": "studio/package.json", "reason": "当前studio脚本与依赖入口"}
+{"file": "studio/electron.vite.config.ts", "reason": "当前Electron构建配置入口"}
+{"file": "CHANGELOG.md", "reason": "发布准备需要同步版本记录"}

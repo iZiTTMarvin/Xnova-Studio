@@ -4,6 +4,7 @@ import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/re
 import { afterEach, describe, expect, it } from 'vitest'
 import { App } from '../src/renderer/App'
 import { resolveModeSelection } from '../src/renderer/utils/mode-resolver'
+import { writeProjectWorkPreference } from '../src/renderer/utils/work-preferences'
 
 afterEach(() => {
   cleanup()
@@ -77,6 +78,8 @@ function createBridge() {
             updatedAt: '2026-04-22T10:00:00.000Z',
             gitBranch: 'main',
             messageCount: 12,
+            providerId: 'openai',
+            modelId: 'gpt-4o',
             subagents: [],
           },
         ],
@@ -89,6 +92,8 @@ function createBridge() {
           providerId: 'anthropic',
           recommendedMode: 'xforge' as const,
           allowedModes: ['standard', 'xforge'] as const,
+          availablePrimaryAgentIds: ['general', 'planner'],
+          availableModelIds: ['claude-sonnet-4-6', 'gpt-4o'],
         },
         warnings: [],
       }),
@@ -124,12 +129,9 @@ describe('mode switch and recovery', () => {
   })
 
   it('顶部存在唯一的 Standard / XForge 切换入口，且切换 mode 不清空项目 / 会话', async () => {
-    window.localStorage.setItem(
-      'xnova.studio.project-mode.v1',
-      JSON.stringify({
-        'D:/workspace/demo': 'xforge',
-      }),
-    )
+    writeProjectWorkPreference('D:/workspace/demo', {
+      mode: 'xforge',
+    })
 
     ;(window as Window & { xnovaStudio?: unknown }).xnovaStudio = createBridge()
 
@@ -148,5 +150,43 @@ describe('mode switch and recovery', () => {
 
     expect(screen.getByRole('heading', { name: '继续实现 project-aware shell' })).toBeTruthy()
     expect(screen.getAllByText('D:/workspace/demo').length).toBeGreaterThan(0)
+  })
+
+  it('最近工作偏好可跨重启恢复，并支持一键回到项目推荐值', async () => {
+    writeProjectWorkPreference('D:/workspace/demo', {
+      sessionId: 'session-1',
+      mode: 'standard',
+      agentId: 'planner',
+      modelId: 'gpt-4o',
+    })
+
+    ;(window as Window & { xnovaStudio?: unknown }).xnovaStudio = createBridge()
+
+    render(<App />)
+
+    await waitFor(() => {
+      expect(screen.getByText('已恢复最近工作状态。')).toBeTruthy()
+    })
+
+    expect(screen.getAllByText('planner').length).toBeGreaterThan(0)
+    expect(screen.getAllByText('gpt-4o').length).toBeGreaterThan(0)
+    expect(
+      screen.getByRole('button', { name: '回到项目推荐值' }).hasAttribute('disabled'),
+    ).toBe(false)
+    expect(
+      screen.getByRole('button', { name: 'Standard' }).getAttribute('aria-pressed'),
+    ).toBe('true')
+
+    fireEvent.click(screen.getByRole('button', { name: '回到项目推荐值' }))
+
+    await waitFor(() => {
+      expect(screen.getByText('已回到项目推荐值。')).toBeTruthy()
+    })
+
+    expect(screen.getAllByText('general').length).toBeGreaterThan(0)
+    expect(screen.getAllByText('claude-sonnet-4-6').length).toBeGreaterThan(0)
+    expect(
+      screen.getByRole('button', { name: 'XForge' }).getAttribute('aria-pressed'),
+    ).toBe('true')
   })
 })

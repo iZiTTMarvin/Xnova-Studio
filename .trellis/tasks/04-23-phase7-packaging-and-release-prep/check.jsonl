@@ -1,0 +1,8 @@
+{"file": ".claude/commands/trellis/finish-work.md", "reason": "Finish work checklist"}
+{"file": ".agents/skills/trellis-check/SKILL.md", "reason": "Code quality check spec"}
+{"file": "docs/implement/phase7-polish-and-release.md", "reason": "检查发布准备交付物完整"}
+{"file": "docs/implement/phase4-electron-host.md", "reason": "检查打包未破坏宿主能力"}
+{"file": ".trellis/spec/backend/runtime-boundary.md", "reason": "检查打包配置不引入越界依赖"}
+{"file": ".trellis/spec/backend/quality-guidelines.md", "reason": "检查打包验证与文档同步"}
+{"file": ".trellis/spec/frontend/directory-structure.md", "reason": "检查产物与源码目录边界"}
+{"file": ".trellis/spec/guides/cross-layer-thinking-guide.md", "reason": "检查打包方案跨层一致"}

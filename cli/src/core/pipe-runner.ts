@@ -11,7 +11,7 @@
 
 import { buildArgsSummary, formatDuration } from '../ui/format-utils.js'
 import { loadEffectiveRuntimeConfig } from '../config/resolver.js'
-import { closeDb } from '../persistence/index.js'
+import { closeDb } from '../persistence/db.js'
 import { createRuntime } from '../runtime/index.js'
 import type { RuntimeEvent, RuntimeHostBridge } from '../runtime/types.js'
 import type { Message } from './types.js'

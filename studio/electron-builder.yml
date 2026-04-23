@@ -1,0 +1,28 @@
+appId: com.xnova.studio
+productName: Xnova Studio
+directories:
+  output: release
+files:
+  - dist/**
+  - package.json
+  - '!src/**'
+  - '!tests/**'
+  - '!node_modules/.cache/**'
+  - '!electron.vite.config.ts'
+  - '!tsconfig.json'
+  - '!vitest.config.ts'
+asar: true
+win:
+  target:
+    - target: nsis
+      arch:
+        - x64
+  executableName: Xnova Studio
+nsis:
+  artifactName: Xnova-Studio-${version}-${arch}-setup.${ext}
+  oneClick: false
+  perMachine: false
+  allowToChangeInstallationDirectory: true
+  createDesktopShortcut: always
+  createStartMenuShortcut: true
+npmRebuild: false

@@ -1,0 +1,10 @@
+{"file": ".claude/commands/trellis/finish-work.md", "reason": "Finish work checklist"}
+{"file": ".agents/skills/trellis-check/SKILL.md", "reason": "Code quality check spec"}
+{"file": "docs/implement/phase7-polish-and-release.md", "reason": "检查memory与subagent边缘反馈完整性"}
+{"file": "docs/implement/phase6-settings-and-tools.md", "reason": "检查Phase6能力没有被破坏"}
+{"file": ".trellis/spec/frontend/project-shell-v1.md", "reason": "检查没有长出第二套主工作流"}
+{"file": ".trellis/spec/frontend/quality-guidelines.md", "reason": "检查边缘状态测试与可见性"}
+{"file": ".trellis/spec/backend/runtime-boundary.md", "reason": "检查状态来源仍经由bridge"}
+{"file": ".trellis/spec/backend/agent-schema-v1.md", "reason": "检查subagent状态未偏离契约"}
+{"file": ".trellis/spec/backend/error-handling.md", "reason": "检查degraded和stopped都可解释"}
+{"file": ".trellis/spec/guides/cross-layer-thinking-guide.md", "reason": "检查runtime事件到UI映射一致"}

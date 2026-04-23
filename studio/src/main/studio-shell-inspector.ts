@@ -122,6 +122,7 @@ function selectProjectPath(
   request: StudioShellSnapshotRequest,
   hostState: StudioHostState,
   startupProject: StudioStartupProjectCandidate | null,
+  issues: StudioShellSnapshot['issues'],
 ): string | null {
   const explicitProjectPath = request.projectPath?.trim()
   if (explicitProjectPath) {
@@ -129,7 +130,15 @@ function selectProjectPath(
   }
 
   if (hostState.workspacePath?.trim()) {
-    return hostState.workspacePath
+    if (isExistingDirectory(hostState.workspacePath)) {
+      return hostState.workspacePath
+    }
+
+    issues.push({
+      code: 'workspace-missing',
+      severity: 'error',
+      message: '当前 Workspace 路径已失效，已回退到最近可用项目。',
+    })
   }
 
   return startupProject?.path ?? null
@@ -139,6 +148,11 @@ function buildProjectSessions(
   projectPath: string | null,
   summaries: SessionSummary[],
   store: Pick<SessionStore, 'loadMessages' | 'loadSubagents'>,
+  readSessionOverview: (summary: SessionSummary) => {
+    messageCount: number
+    provider: string | null
+    model: string | null
+  },
 ): StudioProjectSessionSummary[] {
   if (!projectPath) {
     return []
@@ -149,7 +163,7 @@ function buildProjectSessions(
     .slice(0, PROJECT_SESSION_LIMIT)
     .flatMap((summary) => {
       try {
-        const snapshot = store.loadMessages(summary.sessionId)
+        const overview = readSessionOverview(summary)
         const subagents = store.loadSubagents(summary.sessionId, projectPath)
 
         return [
@@ -159,12 +173,38 @@ function buildProjectSessions(
             title: summary.firstMessage || `会话 ${summary.sessionId.slice(0, 8)}`,
             updatedAt: summary.updatedAt,
             gitBranch: summary.gitBranch === 'unknown' ? null : summary.gitBranch,
-            messageCount: snapshot.messages.length,
-            subagents: subagents.map((subagent) => ({
-              agentId: subagent.agentId,
-              description: subagent.description,
-              status: subagent.status,
-            })),
+            messageCount: overview.messageCount,
+            providerId: overview.provider,
+            modelId: overview.model,
+            subagents: subagents.map((subagent) => {
+              let partialResult: string | null = null
+              if (subagent.status === 'stopped' || subagent.status === 'error') {
+                for (let index = subagent.events.length - 1; index >= 0; index -= 1) {
+                  const event = subagent.events[index]
+                  if (event?.kind === 'text') {
+                    partialResult = event.text
+                    break
+                  }
+                }
+              }
+
+              return {
+                agentId: subagent.agentId,
+                description: subagent.description,
+                status: subagent.status,
+                stateMessage:
+                  subagent.status === 'stopped'
+                    ? '已停止，保留部分结果。'
+                    : subagent.status === 'error'
+                      ? '执行异常结束，可查看部分结果。'
+                      : subagent.status === 'stopping'
+                        ? '正在停止…'
+                        : subagent.status === 'running'
+                          ? '正在执行中。'
+                          : '已完成。',
+                partialResult,
+              }
+            }),
           },
         ]
       } catch {
@@ -181,10 +221,18 @@ export interface StudioShellInspector {
 }
 
 export interface CreateStudioShellInspectorOptions {
-  store?: Pick<SessionStore, 'list' | 'loadMessages' | 'loadSubagents'>
+  store?: Pick<SessionStore, 'list' | 'loadMessages' | 'loadSubagents'> &
+    Partial<Pick<SessionStore, 'inspectSession'>>
   loadResolvedConfigFn?: typeof loadResolvedConfig
   getGitBranchFn?: typeof getGitBranch
   getPrimaryAgentId?: () => string
+  listPrimaryAgentIds?: () => string[]
+  onPerformanceSample?: (sample: {
+    phase: 'studio-shell-inspect'
+    durationMs: number
+    projectPath: string | null
+    sessionCount: number
+  }) => void
 }
 
 export function createStudioShellInspector(
@@ -197,15 +245,60 @@ export function createStudioShellInspector(
   const getPrimaryAgentId =
     options.getPrimaryAgentId ??
     (() => agentCatalog.resolvePrimaryAgent().agent.agentType)
+  const listPrimaryAgentIds =
+    options.listPrimaryAgentIds ??
+    (() => agentCatalog.getPrimaryCandidates().map((agent) => agent.frontmatter.id))
+  const sessionOverviewCache = new Map<
+    string,
+    {
+      cacheKey: string
+      overview: {
+        messageCount: number
+        provider: string | null
+        model: string | null
+      }
+    }
+  >()
 
   return {
     async inspect(request, hostState) {
+      const inspectStartedAt = Date.now()
       const summaries = store.list({ limit: 50 })
       const recentProjects = selectRecentProjects(summaries)
       const startupProject = selectStartupProject(recentProjects)
       const startupSession = selectStartupSession(startupProject, summaries, store)
-      const projectPath = selectProjectPath(request, hostState, startupProject)
-      const projectSessions = buildProjectSessions(projectPath, summaries, store)
+      const issues: StudioShellSnapshot['issues'] = []
+      const projectPath = selectProjectPath(request, hostState, startupProject, issues)
+      const readSessionOverview = (summary: SessionSummary) => {
+        const cacheKey = `${summary.updatedAt}:${summary.fileSize}`
+        const cached = sessionOverviewCache.get(summary.sessionId)
+        if (cached && cached.cacheKey === cacheKey) {
+          return cached.overview
+        }
+
+        const overview = store.inspectSession
+          ? store.inspectSession(summary.sessionId)
+          : (() => {
+              const snapshot = store.loadMessages(summary.sessionId)
+              return {
+                messageCount: snapshot.messages.length,
+                provider: snapshot.provider || null,
+                model: snapshot.model || null,
+              }
+            })()
+
+        sessionOverviewCache.set(summary.sessionId, {
+          cacheKey,
+          overview,
+        })
+        return overview
+      }
+      const projectSessions = buildProjectSessions(
+        projectPath,
+        summaries,
+        store,
+        readSessionOverview,
+      )
 
       const defaults = {
         projectPath,
@@ -215,6 +308,8 @@ export function createStudioShellInspector(
         providerId: null as string | null,
         recommendedMode: null as StudioModeId | null,
         allowedModes: ['standard', 'xforge'] as StudioModeId[],
+        availablePrimaryAgentIds: listPrimaryAgentIds(),
+        availableModelIds: [] as string[],
       }
       const warnings: string[] = []
 
@@ -228,9 +323,18 @@ export function createStudioShellInspector(
         defaults.allowedModes = normalizeAllowedModes(
           resolved.effective.modes?.allowed,
         )
+        defaults.availableModelIds =
+          resolved.effective.providers[defaults.providerId ?? '']?.models ?? []
+        if (resolved.warnings.some((warning) => warning.startsWith('project.toml'))) {
+          issues.push({
+            code: 'project-config-error',
+            severity: 'error',
+            message: '当前项目配置存在错误，已回退到 user + builtin 默认。',
+          })
+        }
       }
 
-      return {
+      const result = {
         startup: {
           recentProject: startupProject,
           recentSession: startupSession,
@@ -239,8 +343,18 @@ export function createStudioShellInspector(
         projectSessions,
         scratchpadEntries: [],
         defaults,
+        issues,
         warnings,
       }
+
+      options.onPerformanceSample?.({
+        phase: 'studio-shell-inspect',
+        durationMs: Date.now() - inspectStartedAt,
+        projectPath,
+        sessionCount: projectSessions.length,
+      })
+
+      return result
     },
   }
 }

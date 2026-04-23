@@ -1,0 +1,14 @@
+{"file": ".trellis/workflow.md", "reason": "Project workflow and conventions"}
+{"file": ".trellis/spec/backend/index.md", "reason": "Backend development guide"}
+{"file": ".trellis/spec/frontend/index.md", "reason": "Frontend development guide"}
+{"file": "docs/implement/phase7-polish-and-release.md", "reason": "Phase7阶段总需求与完成标准"}
+{"file": "docs/implement/phase5-project-aware-shell.md", "reason": "必须继承Phase5主壳边界"}
+{"file": "docs/implement/phase6-settings-and-tools.md", "reason": "必须继承Phase6设置与工具主体验"}
+{"file": ".trellis/spec/frontend/project-shell-v1.md", "reason": "主壳入口与模式切换硬约束"}
+{"file": ".trellis/spec/frontend/state-management.md", "reason": "恢复与偏好状态分层约束"}
+{"file": ".trellis/spec/frontend/quality-guidelines.md", "reason": "前端TDD与状态可见性要求"}
+{"file": ".trellis/spec/backend/runtime-boundary.md", "reason": "继续遵守runtime与宿主边界"}
+{"file": ".trellis/spec/backend/error-handling.md", "reason": "错误态不可静默"}
+{"file": ".trellis/spec/backend/logging-guidelines.md", "reason": "关键恢复与错误链路需要可观察性"}
+{"file": ".trellis/spec/backend/quality-guidelines.md", "reason": "后端质量门与回归要求"}
+{"file": ".trellis/spec/guides/cross-layer-thinking-guide.md", "reason": "Phase7是典型跨层收尾任务"}

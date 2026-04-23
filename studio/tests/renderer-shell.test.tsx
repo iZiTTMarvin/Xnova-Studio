@@ -13,6 +13,9 @@ function createBridge(options?: {
     workspacePath: string | null
     lastSelection: null
   }
+  runtimeInspectResult?: unknown
+  runtimeEvent?: unknown
+  memoryOverview?: unknown
   shellSnapshot?: unknown
 }) {
   const getState = vi.fn(async () => ({
@@ -35,8 +38,9 @@ function createBridge(options?: {
       onStateChanged: () => () => {},
     },
     runtime: {
-      inspect: vi.fn(async () => ({
+      inspect: vi.fn(async () => options?.runtimeInspectResult ?? {
         ok: true as const,
+        status: 'ready' as const,
         snapshot: {
           sessionId: null,
           isRunning: false,
@@ -46,8 +50,16 @@ function createBridge(options?: {
         },
         workspacePath: options?.hostState?.workspacePath ?? null,
         configWarnings: [],
-      })),
-      onEvent: () => () => {},
+        issues: [],
+      }),
+      onEvent: (listener: (event: unknown) => void) => {
+        if (options?.runtimeEvent) {
+          queueMicrotask(() => {
+            listener(options.runtimeEvent)
+          })
+        }
+        return () => {}
+      },
     },
     shell: {
       getSnapshot: vi.fn(async () => options?.shellSnapshot ?? {
@@ -67,8 +79,33 @@ function createBridge(options?: {
           recommendedMode: null,
           allowedModes: ['standard', 'xforge'],
         },
+        issues: [],
         warnings: [],
       }),
+    },
+    memory: {
+      getOverview: vi.fn(async () => options?.memoryOverview ?? {
+        enabled: true,
+        status: 'ready' as const,
+        statusMessage: 'Embedding 已就绪（维度 1536）。',
+        embedding: {
+          configured: true,
+          dimension: 1536,
+          missingFields: [],
+        },
+        overview: {
+          projectPath: options?.hostState?.workspacePath ?? null,
+          globalEntries: 3,
+          projectEntries: 2,
+          vectorChunks: 10,
+        },
+        source: {},
+        warnings: [],
+      }),
+      rebuild: vi.fn(async () => ({
+        success: true as const,
+        message: 'Memory 索引已完成重建。',
+      })),
     },
   }
 }
@@ -92,6 +129,37 @@ describe('renderer project-aware shell', () => {
     expect(screen.queryByText('Overview')).toBeNull()
   })
 
+  it('runtime 未就绪时显示明确提示，而不是静默 ready', async () => {
+    ;(window as Window & { xnovaStudio?: unknown }).xnovaStudio = createBridge({
+      runtimeInspectResult: {
+        ok: true as const,
+        status: 'not-ready' as const,
+        snapshot: {
+          sessionId: null,
+          isRunning: false,
+          provider: 'anthropic',
+          model: 'claude-sonnet-4-6',
+          warnings: [],
+        },
+        workspacePath: null,
+        configWarnings: [],
+        issues: [
+          {
+            code: 'runtime-not-ready',
+            severity: 'warning',
+            message: '当前尚未绑定 Workspace，runtime 未就绪。',
+          },
+        ],
+      },
+    })
+
+    render(<App />)
+
+    await waitFor(() => {
+      expect(screen.getByText('当前尚未绑定 Workspace，runtime 未就绪。')).toBeTruthy()
+    })
+  })
+
   it('没有最近项目时默认进入空白聊天页，而不是 Overview', async () => {
     ;(window as Window & { xnovaStudio?: unknown }).xnovaStudio = createBridge()
 
@@ -101,6 +169,7 @@ describe('renderer project-aware shell', () => {
       expect(screen.getByText('从空白聊天开始')).toBeTruthy()
     })
 
+    expect(screen.getByText('当前没有可恢复的最近工作状态，已使用项目推荐值。')).toBeTruthy()
     expect(screen.getByText('继续一个已有项目')).toBeTruthy()
     expect(screen.getByText('分析当前项目结构')).toBeTruthy()
     expect(screen.queryByText('Overview')).toBeNull()
@@ -142,6 +211,8 @@ describe('renderer project-aware shell', () => {
             updatedAt: '2026-04-22T10:00:00.000Z',
             gitBranch: 'main',
             messageCount: 12,
+            providerId: 'anthropic',
+            modelId: 'claude-sonnet-4-6',
             subagents: [],
           },
         ],
@@ -165,6 +236,7 @@ describe('renderer project-aware shell', () => {
       expect(screen.getByText('已恢复最近工作会话')).toBeTruthy()
     })
 
+    expect(screen.getByText('已恢复最近工作状态。')).toBeTruthy()
     expect(screen.getByRole('heading', { name: '继续实现 project-aware shell' })).toBeTruthy()
     expect(screen.queryByText('从空白聊天开始')).toBeNull()
   })
@@ -206,7 +278,207 @@ describe('renderer project-aware shell', () => {
       expect(screen.getByText('最近项目路径已失效，已回退到空白聊天页。')).toBeTruthy()
     })
 
+    expect(screen.getByText('最近工作偏好存在不可恢复项，已回退到项目推荐值。')).toBeTruthy()
     expect(screen.getByText('从空白聊天开始')).toBeTruthy()
+  })
+
+  it('project config 损坏时显示明确提示，不会静默吞掉 warning', async () => {
+    ;(window as Window & { xnovaStudio?: unknown }).xnovaStudio = createBridge({
+      hostState: {
+        workspacePath: 'D:/workspace/demo',
+        lastSelection: null,
+      },
+      shellSnapshot: {
+        startup: {
+          recentProject: null,
+          recentSession: null,
+        },
+        recentProjects: [],
+        projectSessions: [],
+        scratchpadEntries: [],
+        defaults: {
+          projectPath: 'D:/workspace/demo',
+          branch: 'main',
+          agentId: 'general',
+          modelId: 'claude-sonnet-4-6',
+          providerId: 'anthropic',
+          recommendedMode: null,
+          allowedModes: ['standard', 'xforge'],
+        },
+        issues: [
+          {
+            code: 'project-config-error',
+            severity: 'error',
+            message: '当前项目配置存在错误，已回退到 user + builtin 默认。',
+          },
+        ],
+        warnings: ['project.toml parse error at line 1:1 — invalid value'],
+      },
+    })
+
+    render(<App />)
+
+    await waitFor(() => {
+      expect(screen.getByText('当前项目配置存在错误，已回退到 user + builtin 默认。')).toBeTruthy()
+    })
+  })
+
+  it('memory 降级态会在主工作流中显式提示，而不只停留在设置页', async () => {
+    vi.useFakeTimers()
+    ;(window as Window & { xnovaStudio?: unknown }).xnovaStudio = createBridge({
+      memoryOverview: {
+        enabled: true,
+        status: 'bm25',
+        statusMessage: 'Embedding 未完整配置，当前降级为 BM25 关键词检索。',
+        embedding: {
+          configured: false,
+          dimension: null,
+          missingFields: ['api_key', 'base_url', 'model'],
+        },
+        overview: {
+          projectPath: 'D:/workspace/demo',
+          globalEntries: 2,
+          projectEntries: 1,
+          vectorChunks: 0,
+        },
+        source: {},
+        warnings: [],
+      },
+    })
+
+    render(<App />)
+
+    await act(async () => {
+      await Promise.resolve()
+      await Promise.resolve()
+    })
+
+    expect(screen.queryByText('Embedding 未完整配置，当前降级为 BM25 关键词检索。')).toBeNull()
+
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(200)
+      await Promise.resolve()
+    })
+
+    vi.useRealTimers()
+
+    expect(screen.getByText('Embedding 未完整配置，当前降级为 BM25 关键词检索。')).toBeTruthy()
+  })
+
+  it('memory degraded 会提示索引待恢复，并给出重建建议', async () => {
+    vi.useFakeTimers()
+    ;(window as Window & { xnovaStudio?: unknown }).xnovaStudio = createBridge({
+      memoryOverview: {
+        enabled: true,
+        status: 'degraded',
+        statusMessage: 'Embedding 已配置，但向量索引未就绪，当前降级为 BM25 关键词检索。',
+        embedding: {
+          configured: true,
+          dimension: null,
+          missingFields: [],
+        },
+        overview: {
+          projectPath: 'D:/workspace/demo',
+          globalEntries: 2,
+          projectEntries: 1,
+          vectorChunks: 0,
+        },
+        source: {},
+        warnings: [],
+      },
+    })
+
+    render(<App />)
+
+    await act(async () => {
+      await Promise.resolve()
+      await Promise.resolve()
+    })
+
+    expect(screen.queryByText('建议尽快进入设置页重建 Memory 索引，恢复向量检索。')).toBeNull()
+
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(200)
+      await Promise.resolve()
+    })
+
+    vi.useRealTimers()
+
+    expect(screen.getByText('索引待恢复')).toBeTruthy()
+    expect(screen.getByText('建议尽快进入设置页重建 Memory 索引，恢复向量检索。')).toBeTruthy()
+  })
+
+  it('subagent 停止并带有 partial result 时在主工作流中有明确反馈', async () => {
+    ;(window as Window & { xnovaStudio?: unknown }).xnovaStudio = createBridge({
+      runtimeEvent: {
+        type: 'subagent_done',
+        timestamp: '2026-04-23T00:00:00.000Z',
+        agentId: 'agent-1',
+        payload: {
+          agentId: 'agent-1',
+          output: JSON.stringify({
+            status: 'stopped',
+            partialResult: '已经扫描到 renderer/hooks 目录。',
+          }),
+        },
+      },
+      shellSnapshot: {
+        startup: {
+          recentProject: {
+            path: 'D:/workspace/demo',
+            lastActiveAt: 10,
+            exists: true,
+          },
+          recentSession: {
+            projectPath: 'D:/workspace/demo',
+            sessionId: 'session-1',
+            valid: true,
+          },
+        },
+        recentProjects: [
+          {
+            path: 'D:/workspace/demo',
+            name: 'demo',
+            lastActiveAt: 10,
+            exists: true,
+            gitBranch: 'main',
+          },
+        ],
+        projectSessions: [
+          {
+            sessionId: 'session-1',
+            projectPath: 'D:/workspace/demo',
+            title: '继续实现 project-aware shell',
+            updatedAt: '2026-04-22T10:00:00.000Z',
+            gitBranch: 'main',
+            messageCount: 12,
+            providerId: 'anthropic',
+            modelId: 'claude-sonnet-4-6',
+            subagents: [],
+          },
+        ],
+        scratchpadEntries: [],
+        defaults: {
+          projectPath: 'D:/workspace/demo',
+          branch: 'main',
+          agentId: 'general',
+          modelId: 'claude-sonnet-4-6',
+          providerId: 'anthropic',
+          recommendedMode: 'xforge',
+          allowedModes: ['standard', 'xforge'],
+        },
+        issues: [],
+        warnings: [],
+      },
+    })
+
+    render(<App />)
+
+    await waitFor(() => {
+      expect(screen.getByText('子 Agent 已停止，保留部分结果。')).toBeTruthy()
+    })
+
+    expect(screen.getByText('已经扫描到 renderer/hooks 目录。')).toBeTruthy()
   })
 
   it('bridge 初始缺失时会重试探测，并在后续注入后恢复 startup route', async () => {
@@ -251,6 +523,8 @@ describe('renderer project-aware shell', () => {
             updatedAt: '2026-04-22T10:00:00.000Z',
             gitBranch: 'main',
             messageCount: 3,
+            providerId: 'anthropic',
+            modelId: 'claude-sonnet-4-6',
             subagents: [],
           },
         ],

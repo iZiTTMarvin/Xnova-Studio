@@ -9,7 +9,9 @@ import { ContextBar } from '../components/ContextBar'
 import { ProjectTreePanel } from '../components/ProjectTreePanel'
 import { ScratchpadList } from '../components/ScratchpadList'
 import { useStudioBridge } from '../hooks/useStudioBridge'
+import { useMemoryOverview } from '../hooks/useMemoryOverview'
 import { useSettingsToolsPageModel } from '../hooks/useSettingsToolsPageModel'
+import { resolveMemoryFeedbackPresentation } from '../utils/memory-feedback'
 import { StudioSettingsPage } from './SettingsPage'
 import { StudioToolsPage } from './ToolsPage'
 
@@ -40,9 +42,21 @@ export function StudioHomePage() {
     scratchpadEntries,
     workContext,
     currentMode,
+    currentAgentId,
+    currentModelId,
+    recoveryStatus,
+    recoverySources,
+    statusIssues,
+    canRestoreProjectDefaults,
+    restoreProjectDefaults,
     switchMode,
+    lastRuntimeEvent,
   } = useStudioBridge()
   const [activeNavId, setActiveNavId] = useState<PrimaryNavId>('quick-chat')
+  const memoryOverview = useMemoryOverview(memoryApi, {
+    enabled: shellStatus === 'ready' && activeNavId !== 'settings',
+    deferMs: 150,
+  })
 
   const { settingsPage, toolsPage } = useSettingsToolsPageModel({
     hostStatus,
@@ -101,6 +115,62 @@ export function StudioHomePage() {
   )
 
   const chatBlockContent = <ScratchpadList entries={scratchpadEntries} />
+
+  const liveSubagentFeedback = useMemo(() => {
+    if (!lastRuntimeEvent || lastRuntimeEvent.type !== 'subagent_done') {
+      return null
+    }
+
+    const payload = lastRuntimeEvent.payload ?? {}
+    const rawOutput = typeof payload.output === 'string' ? payload.output : null
+    if (!rawOutput) {
+      return {
+        message: '子 Agent 已结束。',
+        partialResult: null,
+      }
+    }
+
+    try {
+      const parsed = JSON.parse(rawOutput) as Record<string, unknown>
+      if (parsed.status === 'stopped') {
+        return {
+          message: '子 Agent 已停止，保留部分结果。',
+          partialResult:
+            typeof parsed.partialResult === 'string' ? parsed.partialResult : null,
+        }
+      }
+    } catch {
+      // 非 JSON 输出按普通文本处理
+    }
+
+    return {
+      message: '子 Agent 已结束。',
+      partialResult: rawOutput,
+    }
+  }, [lastRuntimeEvent])
+
+  const sessionSubagentFeedback = useMemo(
+    () =>
+      (activeSession?.subagents ?? []).filter(
+        (subagent) => subagent.status !== 'done',
+      ),
+    [activeSession],
+  )
+
+  const shouldShowMemoryFeedback =
+    shellStatus === 'ready' &&
+    activeNavId !== 'settings' &&
+    memoryApi !== null &&
+    (memoryOverview.status !== 'ready' ||
+      memoryOverview.snapshot?.status !== 'ready' ||
+      memoryOverview.error !== null ||
+      memoryOverview.isRebuilding)
+  const memoryFeedback = resolveMemoryFeedbackPresentation({
+    snapshot: memoryOverview.snapshot,
+    status: memoryOverview.status,
+    error: memoryOverview.error,
+    actionMessage: memoryOverview.actionMessage,
+  })
 
   const content = activeNavId === 'search'
     ? (
@@ -237,6 +307,69 @@ export function StudioHomePage() {
           </section>
         ) : null}
 
+        {statusIssues.length > 0 ? (
+          <section className="detail-card" aria-label="状态问题卡片">
+            {statusIssues.map((issue) => (
+              <div key={`${issue.code}-${issue.message}`} className="detail-row">
+                <span>{issue.code}</span>
+                <strong>{issue.message}</strong>
+              </div>
+            ))}
+          </section>
+        ) : null}
+
+        {shouldShowMemoryFeedback ? (
+          <section className="detail-card" aria-label="Memory 主流程反馈">
+            <div className="detail-row">
+              <span>Memory</span>
+              <strong>{memoryFeedback.statusLabel}</strong>
+            </div>
+            <div className="detail-row">
+              <span>当前反馈</span>
+              <strong>{memoryFeedback.statusMessage}</strong>
+            </div>
+            {memoryFeedback.actionHint ? (
+              <div className="detail-row">
+                <span>建议动作</span>
+                <strong>{memoryFeedback.actionHint}</strong>
+              </div>
+            ) : null}
+          </section>
+        ) : null}
+
+        {liveSubagentFeedback || sessionSubagentFeedback.length > 0 ? (
+          <section className="detail-card" aria-label="SubAgent 主流程反馈">
+            {liveSubagentFeedback ? (
+              <>
+                <div className="detail-row">
+                  <span>SubAgent 运行反馈</span>
+                  <strong>{liveSubagentFeedback.message}</strong>
+                </div>
+                {liveSubagentFeedback.partialResult ? (
+                  <div className="detail-row">
+                    <span>部分结果</span>
+                    <strong>{liveSubagentFeedback.partialResult}</strong>
+                  </div>
+                ) : null}
+              </>
+            ) : null}
+            {sessionSubagentFeedback.map((subagent) => (
+              <div key={subagent.agentId} className="detail-row">
+                <span>{subagent.agentId}</span>
+                <strong>{subagent.stateMessage ?? subagent.status}</strong>
+              </div>
+            ))}
+            {sessionSubagentFeedback.map((subagent) =>
+              subagent.partialResult ? (
+                <div key={`${subagent.agentId}-partial`} className="detail-row">
+                  <span>部分结果</span>
+                  <strong>{subagent.partialResult}</strong>
+                </div>
+              ) : null,
+            )}
+          </section>
+        ) : null}
+
         <section className="hero-card">
           <p className="hero-eyebrow">
             {activeNavId === 'settings' || activeNavId === 'tools'
@@ -276,6 +409,37 @@ export function StudioHomePage() {
 
         <ContextBar workContext={workContext} />
 
+        <section className="detail-card" aria-label="恢复状态卡片">
+          <div className="detail-row">
+            <span>恢复状态</span>
+            <strong>{recoveryStatus.message}</strong>
+          </div>
+          <div className="detail-row">
+            <span>会话来源</span>
+            <strong>{recoverySources.session}</strong>
+          </div>
+          <div className="detail-row">
+            <span>Mode 来源</span>
+            <strong>{recoverySources.mode}</strong>
+          </div>
+          <div className="detail-row">
+            <span>Agent 来源</span>
+            <strong>{recoverySources.agent}</strong>
+          </div>
+          <div className="detail-row">
+            <span>模型来源</span>
+            <strong>{recoverySources.model}</strong>
+          </div>
+          <button
+            type="button"
+            className="secondary-button"
+            onClick={restoreProjectDefaults}
+            disabled={!canRestoreProjectDefaults}
+          >
+            回到项目推荐值
+          </button>
+        </section>
+
         {content}
 
         <section className="detail-card">
@@ -284,12 +448,12 @@ export function StudioHomePage() {
             <strong>{shellSnapshot?.recentProjects.length ?? 0}</strong>
           </div>
           <div className="detail-row">
-            <span>当前项目默认 Agent</span>
-            <strong>{shellSnapshot?.defaults.agentId ?? '未解析'}</strong>
+            <span>当前 Agent</span>
+            <strong>{currentAgentId ?? '未解析'}</strong>
           </div>
           <div className="detail-row">
             <span>当前模型</span>
-            <strong>{shellSnapshot?.defaults.modelId ?? '未解析'}</strong>
+            <strong>{currentModelId ?? '未解析'}</strong>
           </div>
         </section>
       </main>

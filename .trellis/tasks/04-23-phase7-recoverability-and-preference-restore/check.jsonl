@@ -1,0 +1,10 @@
+{"file": ".claude/commands/trellis/finish-work.md", "reason": "Finish work checklist"}
+{"file": ".agents/skills/trellis-check/SKILL.md", "reason": "Code quality check spec"}
+{"file": "docs/implement/phase7-polish-and-release.md", "reason": "检查恢复目标是否全部实现"}
+{"file": ".trellis/spec/frontend/project-shell-v1.md", "reason": "检查没有新增第二个模式入口"}
+{"file": ".trellis/spec/frontend/state-management.md", "reason": "检查恢复优先级和事实源"}
+{"file": ".trellis/spec/frontend/quality-guidelines.md", "reason": "检查恢复测试与四态展示"}
+{"file": ".trellis/spec/backend/runtime-boundary.md", "reason": "检查恢复实现未越过bridge边界"}
+{"file": ".trellis/spec/backend/config-toml-migration.md", "reason": "检查恢复优先级与写回规则"}
+{"file": ".trellis/spec/backend/error-handling.md", "reason": "检查回退和无数据状态可见"}
+{"file": ".trellis/spec/guides/cross-layer-thinking-guide.md", "reason": "检查恢复跨层链路一致性"}

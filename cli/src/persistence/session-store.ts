@@ -448,8 +448,10 @@ export class SessionStore {
           }
         }
 
-        const status: 'done' | 'error' | 'running' = endEvent
-          ? (endEvent.totalErrors && endEvent.totalErrors > 0 ? 'error' : 'done')
+        const status: 'done' | 'error' | 'running' | 'stopped' = endEvent
+          ? endEvent.status === 'stopped'
+            ? 'stopped'
+            : (endEvent.totalErrors && endEvent.totalErrors > 0 ? 'error' : 'done')
           : 'running' // 没有 session_end 说明还在运行或异常退出
 
         results.push({
@@ -464,6 +466,67 @@ export class SessionStore {
     }
 
     return results
+  }
+
+  /**
+   * 以轻量方式读取会话摘要，避免恢复树形列表时构造完整消息快照。
+   *
+   * 返回：
+   * - messageCount: user + assistant 消息数
+   * - provider/model: 以最后一次 assistant/session_resume 为准
+   */
+  inspectSession(sessionId: string): {
+    messageCount: number
+    provider: string | null
+    model: string | null
+  } {
+    const filePath = this.#resolveFilePath(sessionId)
+    if (!filePath) {
+      throw new Error(`Session not found: ${sessionId}`)
+    }
+
+    const content = readFileSync(filePath, 'utf-8')
+    const lines = content.trim().split('\n').filter(Boolean)
+
+    let messageCount = 0
+    let provider: string | null = null
+    let model: string | null = null
+
+    for (const line of lines) {
+      const event = JSON.parse(line) as SessionEvent
+
+      if (event.type === 'user' || event.type === 'assistant') {
+        messageCount += 1
+      }
+
+      if (event.type === 'assistant') {
+        if (typeof event.message?.provider === 'string') {
+          provider = event.message.provider
+        }
+        if (typeof event.message?.model === 'string') {
+          model = event.message.model
+        }
+      }
+
+      if (
+        (event.type === 'session_start' || event.type === 'session_resume') &&
+        typeof event.provider === 'string'
+      ) {
+        provider = event.provider
+      }
+      if (
+        (event.type === 'session_start' || event.type === 'session_resume') &&
+        typeof event.model === 'string'
+      ) {
+        model = event.model
+      }
+    }
+
+    return {
+      messageCount,
+      provider,
+      model,
+    }
   }
 
   /**

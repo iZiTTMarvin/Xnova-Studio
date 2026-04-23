@@ -12,7 +12,7 @@
 
 import { initialize } from '../../core/initializer.js'
 import { stopFileWatcher } from '../../core/bootstrap.js'
-import { closeDb } from '../../persistence/index.js'
+import { closeDb } from '../../persistence/db.js'
 import { leaveAlternateScreen } from '../../ui/terminal-screen.js'
 import { getCurrentSessionId, sessionLogger } from '../../ui/useChat.js'
 import { registerLifecycle } from './lifecycle.js'

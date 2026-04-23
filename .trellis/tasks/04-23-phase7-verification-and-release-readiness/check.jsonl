@@ -1,0 +1,11 @@
+{"file": ".claude/commands/trellis/finish-work.md", "reason": "Finish work checklist"}
+{"file": ".agents/skills/trellis-check/SKILL.md", "reason": "Code quality check spec"}
+{"file": "docs/implement/phase7-polish-and-release.md", "reason": "最终收口必须逐条解释为何满足"}
+{"file": "docs/implement/phase5-project-aware-shell.md", "reason": "检查未破坏Phase5交互主线"}
+{"file": "docs/implement/phase6-settings-and-tools.md", "reason": "检查未破坏Phase6设置和工具"}
+{"file": ".trellis/spec/frontend/project-shell-v1.md", "reason": "检查主壳和模式切换仍唯一"}
+{"file": ".trellis/spec/frontend/quality-guidelines.md", "reason": "检查测试和手工关键路径"}
+{"file": ".trellis/spec/backend/runtime-boundary.md", "reason": "检查打包态和运行态边界"}
+{"file": ".trellis/spec/backend/error-handling.md", "reason": "检查错误态与降级态"}
+{"file": ".trellis/spec/backend/quality-guidelines.md", "reason": "检查全套质量门"}
+{"file": ".trellis/spec/guides/cross-layer-thinking-guide.md", "reason": "检查多层验收一致性"}

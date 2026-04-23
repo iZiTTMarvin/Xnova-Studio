@@ -292,9 +292,11 @@ function createRuntimeEvent(
       timestamp: new Date().toISOString(),
       payload: {
         refresh: Boolean(request.refresh),
+        status: result.status,
         snapshot: result.snapshot,
         workspacePath: result.workspacePath,
         configWarnings: result.configWarnings,
+        issues: result.issues,
       },
     }
   }
@@ -302,14 +304,16 @@ function createRuntimeEvent(
   return {
     type: 'runtime.error',
     timestamp: new Date().toISOString(),
-    payload: {
-      refresh: Boolean(request.refresh),
-      message: result.error,
-      workspacePath: result.workspacePath,
-      configWarnings: result.configWarnings,
-    },
+      payload: {
+        refresh: Boolean(request.refresh),
+        status: result.status,
+        message: result.error,
+        workspacePath: result.workspacePath,
+        configWarnings: result.configWarnings,
+        issues: result.issues,
+      },
+    }
   }
-}
 
 export interface RegisterStudioMainIpcHandlersOptions {
   ipcMainLike: StudioIpcMainLike
@@ -436,9 +440,11 @@ export function registerStudioMainIpcHandlers(
         const message = error instanceof Error ? error.message : String(error)
         const result: RuntimeInspectResult = {
           ok: false,
+          status: 'error',
           error: `runtime inspect 失败: ${message}`,
           workspacePath: hostState.workspacePath,
           configWarnings: [],
+          issues: [],
         }
         broadcast(
           STUDIO_BRIDGE_CHANNELS.runtimeEvent,

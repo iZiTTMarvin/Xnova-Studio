@@ -44,6 +44,8 @@ function createInput(
       recommendedMode: null,
       allowedModes: ['standard', 'xforge'],
     },
+    agentId: 'general',
+    modelId: 'claude-sonnet-4-6',
     mode: 'standard',
     contextUsageLabel: '42%',
     ...overrides,
@@ -95,6 +97,8 @@ describe('work context and context bar', () => {
               recommendedMode: null,
               allowedModes: ['standard', 'xforge'],
             },
+            agentId: null,
+            modelId: null,
             contextUsageLabel: null,
           }),
         )}

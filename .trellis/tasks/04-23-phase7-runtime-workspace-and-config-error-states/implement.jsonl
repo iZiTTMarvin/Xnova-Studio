@@ -1,0 +1,21 @@
+{"file": ".trellis/workflow.md", "reason": "Project workflow and conventions"}
+{"file": ".trellis/spec/backend/index.md", "reason": "Backend development guide"}
+{"file": ".trellis/spec/frontend/index.md", "reason": "Frontend development guide"}
+{"file": "docs/implement/phase7-polish-and-release.md", "reason": "错误态与边缘状态需求来源"}
+{"file": "docs/implement/phase4-electron-host.md", "reason": "不能回退Phase4宿主边界"}
+{"file": "docs/implement/phase5-project-aware-shell.md", "reason": "错误态必须融入现有主壳"}
+{"file": ".trellis/spec/frontend/project-shell-v1.md", "reason": "主壳错误展示位置与入口边界"}
+{"file": ".trellis/spec/frontend/state-management.md", "reason": "错误态状态分层与恢复联动"}
+{"file": ".trellis/spec/frontend/type-safety.md", "reason": "外部输入和事件payload必须先校验"}
+{"file": ".trellis/spec/frontend/quality-guidelines.md", "reason": "失败态必须先补测试"}
+{"file": ".trellis/spec/backend/runtime-boundary.md", "reason": "继续走preload和IPC安全边界"}
+{"file": ".trellis/spec/backend/config-toml-migration.md", "reason": "project config错误必须遵守TOML契约"}
+{"file": ".trellis/spec/backend/error-handling.md", "reason": "配置和路径错误必须用户可见"}
+{"file": ".trellis/spec/backend/logging-guidelines.md", "reason": "错误路径需要结构化日志"}
+{"file": ".trellis/spec/backend/database-guidelines.md", "reason": "恢复和配置错误不可破坏持久化边界"}
+{"file": ".trellis/spec/guides/cross-layer-thinking-guide.md", "reason": "错误态传播横跨host和renderer"}
+{"file": "studio/src/main/studio-runtime-inspector.ts", "reason": "当前runtime状态读取入口"}
+{"file": "studio/src/main/studio-shell-inspector.ts", "reason": "当前workspace与会话状态读取入口"}
+{"file": "studio/src/main/studio-ipc.ts", "reason": "当前错误态IPC合同入口"}
+{"file": "studio/src/preload/studio-bridge-api.ts", "reason": "当前宿主桥接入口"}
+{"file": "studio/src/preload/studio-validators.ts", "reason": "当前payload校验入口"}

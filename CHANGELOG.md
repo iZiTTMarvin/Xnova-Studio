@@ -1,4 +1,14 @@
 ## 2026-04-23
+- **Phase 7 · Polish and Release**：桌面主壳完成恢复、错误态、边缘反馈、性能收口与发布准备
+  - `studio/src/renderer/**`、`studio/src/main/**` 与 `cli/src/**` 打通最近项目/会话/Mode/Agent/Model 恢复、结构化错误合同、memory / subagent 主流程反馈，以及大会话恢复的轻量摘要与性能采样
+  - `studio/package.json`、`studio/electron-builder.yml`、`README.md`、`docs/release/xnova-studio-v1-trial.md` 补齐 Windows 打包脚本、目录产物链路、版本信息与试用说明
+  - 完成 `pnpm -C cli test/typecheck`、`pnpm -C studio test/typecheck/build`、`pnpm -C studio pack:dir` 与 Electron smoke；`pack:win` 两次卡在外部 NSIS 二进制下载超时，已记录为当前残余风险
+
+- **Phase 7 · Residual Risk Cleanup**：补齐 Memory degraded 反馈与持久化安全 barrel 边界
+  - `studio/src/renderer/**` 新增 Memory 状态映射与建议动作，让 `degraded / bm25 / disabled` 在主工作流和设置页都以中文状态呈现，而不是直接暴露原始状态码
+  - `cli/src/persistence/index.ts` 收口为 session JSONL 安全 barrel；`closeDb` 调用点改成 leaf import，并补 `index-boundary` 回归测试锁住 `db.ts` 不再经由 barrel 透出
+  - 重新验证 `pnpm -C cli test/typecheck`、`pnpm -C studio test/typecheck/build/pack:dir` 与 Electron smoke，确认修复未破坏 Phase 7 主链路
+
 - **Phase 6 · Settings and Tools**：桌面主壳完成 Providers、Memory、MCP、Skills / Plugins 的 Phase 6 整合
   - `studio/src/renderer/**` 新增 Settings / Tools 页面骨架、Provider 表单、Memory 状态卡片、MCP 状态卡片和 Skills / Plugins 状态卡片，统一走 preload bridge，不回退到旧 Web 壳
   - `cli/` 新增 Provider / Memory / MCP / Skills / Plugins 纯服务，打通 TOML、概览、管理入口与状态判定，并让旧 dashboard API 复用同一条服务逻辑

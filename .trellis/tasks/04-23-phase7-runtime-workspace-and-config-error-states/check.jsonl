@@ -1,0 +1,10 @@
+{"file": ".claude/commands/trellis/finish-work.md", "reason": "Finish work checklist"}
+{"file": ".agents/skills/trellis-check/SKILL.md", "reason": "Code quality check spec"}
+{"file": "docs/implement/phase7-polish-and-release.md", "reason": "检查Phase7错误态是否覆盖完整"}
+{"file": "docs/implement/phase4-electron-host.md", "reason": "检查main没有回退成业务层"}
+{"file": ".trellis/spec/frontend/type-safety.md", "reason": "检查外部输入全部先校验再收窄"}
+{"file": ".trellis/spec/frontend/quality-guidelines.md", "reason": "检查损坏态和失败态测试"}
+{"file": ".trellis/spec/backend/runtime-boundary.md", "reason": "检查renderer未直连底层能力"}
+{"file": ".trellis/spec/backend/config-toml-migration.md", "reason": "检查project config错误不被静默覆盖"}
+{"file": ".trellis/spec/backend/error-handling.md", "reason": "检查错误结果可解释"}
+{"file": ".trellis/spec/guides/cross-layer-thinking-guide.md", "reason": "检查跨层错误传播一致"}

@@ -13,12 +13,22 @@ import {
   resolveStartupRoute,
   type StartupRouteResult,
 } from '../utils/startup-route'
-import {
-  readProjectModePreference,
-  resolveModeSelection,
-  writeProjectModePreference,
-} from '../utils/mode-resolver'
 import { resolveWorkContext } from '../utils/work-context'
+import {
+  clearProjectWorkPreference,
+  readProjectWorkPreference,
+  resolveWorkPreferenceRestore,
+  writeProjectWorkPreference,
+  type ResolvedWorkPreference,
+  type WorkPreferenceRestoreStatus,
+  type WorkPreferenceRestoreSources,
+} from '../utils/work-preferences'
+
+interface RecoveryState {
+  status: WorkPreferenceRestoreStatus
+  sources: WorkPreferenceRestoreSources
+  projectDefaults: ResolvedWorkPreference['projectDefaults']
+}
 
 function getErrorMessage(error: unknown): string {
   return error instanceof Error ? error.message : String(error)
@@ -28,38 +38,43 @@ function buildShellRequest(projectPath?: string | null) {
   return projectPath === undefined ? {} : { projectPath }
 }
 
-function resolveSelectionFromSnapshot(
+function resolveProjectPathFromSnapshot(
   snapshot: StudioShellSnapshot,
   selection?: {
     projectPath?: string | null
-    sessionId?: string | null
   },
-): {
-  projectPath: string | null
-  sessionId: string | null
-} {
+): string | null {
   const route = resolveStartupRoute({
     recentProject: snapshot.startup.recentProject,
     recentSession: snapshot.startup.recentSession,
   })
 
-  const projectPath =
+  return (
     selection?.projectPath ??
     (route.kind === 'restore-session'
       ? route.projectPath
       : snapshot.defaults.projectPath ??
         snapshot.recentProjects[0]?.path ??
         null)
-  const sessionId =
-    selection?.sessionId ??
-    (route.kind === 'restore-session' && route.projectPath === projectPath
-      ? route.sessionId
-      : snapshot.projectSessions[0]?.sessionId ?? null)
+  )
+}
 
-  return {
-    projectPath,
-    sessionId,
+function resolveDisplayRecoveryStatus(
+  startupRoute: StartupRouteResult,
+  baseStatus: WorkPreferenceRestoreStatus,
+): WorkPreferenceRestoreStatus {
+  if (
+    startupRoute.kind === 'blank-chat' &&
+    (startupRoute.reason === 'project-missing' ||
+      startupRoute.reason === 'session-invalid')
+  ) {
+    return {
+      kind: 'fallback',
+      message: '最近工作偏好存在不可恢复项，已回退到项目推荐值。',
+    }
   }
+
+  return baseStatus
 }
 
 export function useStudioBridge() {
@@ -87,6 +102,25 @@ export function useStudioBridge() {
   const [selectedProjectPath, setSelectedProjectPath] = useState<string | null>(null)
   const [selectedSessionId, setSelectedSessionId] = useState<string | null>(null)
   const [currentMode, setCurrentMode] = useState<'standard' | 'xforge'>('standard')
+  const [currentAgentId, setCurrentAgentId] = useState<string | null>(null)
+  const [currentModelId, setCurrentModelId] = useState<string | null>(null)
+  const [recoveryState, setRecoveryState] = useState<RecoveryState>({
+    status: {
+      kind: 'empty',
+      message: '当前没有可恢复的最近工作状态，已使用项目推荐值。',
+    },
+    sources: {
+      session: 'none',
+      mode: 'builtin',
+      agent: 'none',
+      model: 'none',
+    },
+    projectDefaults: {
+      mode: 'standard',
+      agentId: null,
+      modelId: null,
+    },
+  })
 
   const startupRoute: StartupRouteResult = useMemo(
     () =>
@@ -133,11 +167,38 @@ export function useStudioBridge() {
         selectedProjectPath,
         activeSession,
         defaults: shellSnapshot?.defaults ?? null,
+        agentId: currentAgentId,
+        modelId: currentModelId,
         mode: currentMode,
         contextUsageLabel: null,
       }),
-    [activeSession, currentMode, selectedProjectPath, shellSnapshot],
+    [
+      activeSession,
+      currentAgentId,
+      currentMode,
+      currentModelId,
+      selectedProjectPath,
+      shellSnapshot,
+    ],
   )
+
+  const canRestoreProjectDefaults =
+    selectedProjectPath !== null &&
+    (currentMode !== recoveryState.projectDefaults.mode ||
+      currentAgentId !== recoveryState.projectDefaults.agentId ||
+      currentModelId !== recoveryState.projectDefaults.modelId)
+
+  const statusIssues = useMemo(() => {
+    const issues = [
+      ...(shellSnapshot?.issues ?? []),
+      ...(runtimeInspectResult?.issues ?? []),
+    ]
+
+    return issues.filter((issue, index) => {
+      const key = `${issue.code}:${issue.message}`
+      return issues.findIndex((candidate) => `${candidate.code}:${candidate.message}` === key) === index
+    })
+  }, [runtimeInspectResult, shellSnapshot])
 
   const inspectRuntime = async (
     activeBridge: StudioBridgeApi,
@@ -153,8 +214,12 @@ export function useStudioBridge() {
       setRuntimeInspectResult(result)
 
       if (result.ok) {
-        setRuntimeStatus('ready')
-        setRuntimeError(null)
+        setRuntimeStatus(result.status === 'ready' ? 'ready' : 'disabled')
+        setRuntimeError(
+          result.status === 'ready'
+            ? null
+            : (result.issues[0]?.message ?? 'runtime 未就绪。'),
+        )
         return
       }
 
@@ -193,6 +258,25 @@ export function useStudioBridge() {
       setRuntimeStatus('disabled')
       setRuntimeError('宿主桥接不可用')
       setRuntimeInspectResult(null)
+      setCurrentAgentId(null)
+      setCurrentModelId(null)
+      setRecoveryState({
+        status: {
+          kind: 'empty',
+          message: '当前没有可恢复的最近工作状态，已使用项目推荐值。',
+        },
+        sources: {
+          session: 'none',
+          mode: 'builtin',
+          agent: 'none',
+          model: 'none',
+        },
+        projectDefaults: {
+          mode: 'standard',
+          agentId: null,
+          modelId: null,
+        },
+      })
       return
     }
 
@@ -211,11 +295,37 @@ export function useStudioBridge() {
         sessionId?: string | null
       },
     ) => {
-      const nextSelection = resolveSelectionFromSnapshot(snapshot, selection)
+      const nextProjectPath = resolveProjectPathFromSnapshot(snapshot, selection)
+      const nextStartupRoute = resolveStartupRoute({
+        recentProject: snapshot.startup.recentProject,
+        recentSession: snapshot.startup.recentSession,
+      })
+      const storedPreference = readProjectWorkPreference(nextProjectPath)
+      const restored = resolveWorkPreferenceRestore({
+        projectPath: nextProjectPath,
+        startupSessionId:
+          selection?.sessionId ??
+          (nextStartupRoute.kind === 'restore-session' &&
+          nextStartupRoute.projectPath === nextProjectPath
+            ? nextStartupRoute.sessionId
+            : null),
+        sessions: snapshot.projectSessions,
+        defaults: snapshot.defaults,
+        storedPreference,
+      })
+
       setShellSnapshot(snapshot)
       setShellStatus('ready')
-      setSelectedProjectPath(nextSelection.projectPath)
-      setSelectedSessionId(nextSelection.sessionId)
+      setSelectedProjectPath(nextProjectPath)
+      setSelectedSessionId(selection?.sessionId ?? restored.sessionId)
+      setCurrentMode(restored.mode)
+      setCurrentAgentId(restored.agentId)
+      setCurrentModelId(restored.modelId)
+      setRecoveryState({
+        status: resolveDisplayRecoveryStatus(nextStartupRoute, restored.status),
+        sources: restored.sources,
+        projectDefaults: restored.projectDefaults,
+      })
     }
 
     const loadShellSnapshot = async (
@@ -314,13 +424,30 @@ export function useStudioBridge() {
       const snapshot = await bridge.shell.getSnapshot(
         buildShellRequest(response.state.workspacePath),
       )
-      const selection = resolveSelectionFromSnapshot(snapshot, {
+      setShellStatus('ready')
+      const selection = {
         projectPath: response.state.workspacePath,
+      }
+      const nextProjectPath = resolveProjectPathFromSnapshot(snapshot, selection)
+      const storedPreference = readProjectWorkPreference(nextProjectPath)
+      const restored = resolveWorkPreferenceRestore({
+        projectPath: nextProjectPath,
+        startupSessionId: snapshot.startup.recentSession?.sessionId ?? null,
+        sessions: snapshot.projectSessions,
+        defaults: snapshot.defaults,
+        storedPreference,
       })
       setShellSnapshot(snapshot)
-      setShellStatus('ready')
-      setSelectedProjectPath(selection.projectPath)
-      setSelectedSessionId(selection.sessionId)
+      setSelectedProjectPath(nextProjectPath)
+      setSelectedSessionId(restored.sessionId)
+      setCurrentMode(restored.mode)
+      setCurrentAgentId(restored.agentId)
+      setCurrentModelId(restored.modelId)
+      setRecoveryState({
+        status: resolveDisplayRecoveryStatus(startupRoute, restored.status),
+        sources: restored.sources,
+        projectDefaults: restored.projectDefaults,
+      })
       await inspectRuntime(bridge, true)
     } catch (error) {
       const message = getErrorMessage(error)
@@ -345,13 +472,26 @@ export function useStudioBridge() {
 
     try {
       const snapshot = await bridge.shell.getSnapshot({ projectPath })
-      const selection = resolveSelectionFromSnapshot(snapshot, {
+      const storedPreference = readProjectWorkPreference(projectPath)
+      const restored = resolveWorkPreferenceRestore({
         projectPath,
+        startupSessionId: snapshot.startup.recentSession?.sessionId ?? null,
+        sessions: snapshot.projectSessions,
+        defaults: snapshot.defaults,
+        storedPreference,
       })
       setShellSnapshot(snapshot)
       setShellStatus('ready')
-      setSelectedProjectPath(selection.projectPath)
-      setSelectedSessionId(selection.sessionId)
+      setSelectedProjectPath(projectPath)
+      setSelectedSessionId(restored.sessionId)
+      setCurrentMode(restored.mode)
+      setCurrentAgentId(restored.agentId)
+      setCurrentModelId(restored.modelId)
+      setRecoveryState({
+        status: resolveDisplayRecoveryStatus(startupRoute, restored.status),
+        sources: restored.sources,
+        projectDefaults: restored.projectDefaults,
+      })
       await inspectRuntime(bridge, true)
     } catch (error) {
       setShellStatus('error')
@@ -361,6 +501,18 @@ export function useStudioBridge() {
 
   const selectSession = (sessionId: string): void => {
     setSelectedSessionId(sessionId)
+    if (!selectedProjectPath) {
+      return
+    }
+
+    const nextSession =
+      shellSnapshot?.projectSessions.find((session) => session.sessionId === sessionId) ?? null
+    const nextModelId = nextSession?.modelId ?? recoveryState.projectDefaults.modelId
+    setCurrentModelId(nextModelId)
+    writeProjectWorkPreference(selectedProjectPath, {
+      sessionId,
+      modelId: nextModelId,
+    })
   }
 
   const startupNotice = useMemo(() => {
@@ -382,28 +534,37 @@ export function useStudioBridge() {
     }
   }, [bridge, shellError, startupRoute])
 
-  useEffect(() => {
-    if (!shellSnapshot) {
-      return
-    }
-
-    const allowedModes = shellSnapshot.defaults.allowedModes
-    const recentMode = readProjectModePreference(selectedProjectPath)
-    const nextMode = resolveModeSelection({
-      recentMode,
-      recommendedMode: shellSnapshot.defaults.recommendedMode,
-      allowedModes,
-    })
-    setCurrentMode(nextMode)
-  }, [selectedProjectPath, shellSnapshot])
-
   const switchMode = (mode: 'standard' | 'xforge'): void => {
     if (!shellSnapshot?.defaults.allowedModes.includes(mode)) {
       return
     }
 
     setCurrentMode(mode)
-    writeProjectModePreference(selectedProjectPath, mode)
+    writeProjectWorkPreference(selectedProjectPath, { mode })
+  }
+
+  const restoreProjectDefaults = (): void => {
+    if (!selectedProjectPath) {
+      return
+    }
+
+    clearProjectWorkPreference(selectedProjectPath, ['mode', 'agentId', 'modelId'])
+    setCurrentMode(recoveryState.projectDefaults.mode)
+    setCurrentAgentId(recoveryState.projectDefaults.agentId)
+    setCurrentModelId(recoveryState.projectDefaults.modelId)
+    setRecoveryState((current) => ({
+      ...current,
+      status: {
+        kind: 'restored',
+        message: '已回到项目推荐值。',
+      },
+      sources: {
+        ...current.sources,
+        mode: 'project-default',
+        agent: current.projectDefaults.agentId ? 'project-default' : 'none',
+        model: current.projectDefaults.modelId ? 'project-default' : 'none',
+      },
+    }))
   }
 
   return {
@@ -428,6 +589,13 @@ export function useStudioBridge() {
     scratchpadEntries,
     workContext,
     currentMode,
+    currentAgentId,
+    currentModelId,
+    recoveryStatus: recoveryState.status,
+    recoverySources: recoveryState.sources,
+    statusIssues,
+    canRestoreProjectDefaults,
+    restoreProjectDefaults,
     switchMode,
     lastRuntimeEvent,
     settingsApi: (bridge?.settings ?? null) as StudioSettingsApi | null,

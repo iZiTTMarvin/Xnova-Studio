@@ -18,5 +18,3 @@ export {
 
 /** 全局单例，存储路径 ~/.xnovacode/sessions/ */
 export const sessionStore = new SessionStore(join(homedir(), '.xnovacode', 'sessions'))
-
-export { getDb, createDb, closeDb, ensureMemoryVectors, getStoredEmbeddingDimension } from './db.js'

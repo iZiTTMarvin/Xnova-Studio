@@ -1,0 +1,33 @@
+{
+  "id": "phase7-polish-and-release",
+  "name": "phase7-polish-and-release",
+  "title": "Phase 7 · Polish and Release",
+  "description": "",
+  "status": "planning",
+  "dev_type": "fullstack",
+  "scope": null,
+  "package": null,
+  "priority": "P0",
+  "creator": "xuhaochen",
+  "assignee": "xuhaochen",
+  "createdAt": "2026-04-23",
+  "completedAt": null,
+  "branch": null,
+  "base_branch": "main",
+  "worktree_path": null,
+  "commit": null,
+  "pr_url": null,
+  "subtasks": [],
+  "children": [
+    "04-23-phase7-recoverability-and-preference-restore",
+    "04-23-phase7-runtime-workspace-and-config-error-states",
+    "04-23-phase7-memory-and-subagent-edge-feedback",
+    "04-23-phase7-shell-performance-and-large-session-recovery",
+    "04-23-phase7-packaging-and-release-prep",
+    "04-23-phase7-verification-and-release-readiness"
+  ],
+  "parent": null,
+  "relatedFiles": [],
+  "notes": "",
+  "meta": {}
+}

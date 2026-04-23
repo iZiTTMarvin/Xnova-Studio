@@ -17,6 +17,7 @@ import type {
   RuntimeSnapshotView,
   StudioHostState,
   StudioModeId,
+  StudioStatusIssue,
   StudioProjectSessionSummary,
   StudioRecentProjectSummary,
   StudioScratchpadEntry,
@@ -72,6 +73,29 @@ function parseStringArray(value: unknown, subject: string): string[] {
   }
 
   return [...value]
+}
+
+function parseStatusIssue(payload: unknown, subject: string): StudioStatusIssue {
+  const value = assertPlainObject(payload, subject)
+  if (
+    value.code !== 'runtime-not-ready' &&
+    value.code !== 'workspace-missing' &&
+    value.code !== 'project-config-error'
+  ) {
+    throw new StudioBridgeValidationError(`${subject}.code 非法。`)
+  }
+  if (value.severity !== 'warning' && value.severity !== 'error') {
+    throw new StudioBridgeValidationError(`${subject}.severity 非法。`)
+  }
+  if (typeof value.message !== 'string') {
+    throw new StudioBridgeValidationError(`${subject}.message 必须是字符串。`)
+  }
+
+  return {
+    code: value.code,
+    severity: value.severity,
+    message: value.message,
+  }
 }
 
 export function assertStudioNoPayload(
@@ -847,6 +871,13 @@ export function parseStudioRuntimeInspectResult(
   payload: unknown,
 ): RuntimeInspectResult {
   const value = assertPlainObject(payload, 'runtime inspect 响应')
+  if (
+    value.status !== 'ready' &&
+    value.status !== 'not-ready' &&
+    value.status !== 'error'
+  ) {
+    throw new StudioBridgeValidationError('runtime.status 非法。')
+  }
   if (value.workspacePath !== null && value.workspacePath !== undefined && typeof value.workspacePath !== 'string') {
     throw new StudioBridgeValidationError('runtime.workspacePath 必须是字符串或 null。')
   }
@@ -856,22 +887,38 @@ export function parseStudioRuntimeInspectResult(
     value.configWarnings === undefined
       ? []
       : parseStringArray(value.configWarnings, 'runtime.configWarnings')
+  if (value.issues !== undefined && !Array.isArray(value.issues)) {
+    throw new StudioBridgeValidationError('runtime.issues 必须是数组。')
+  }
+  const issues =
+    value.issues === undefined
+      ? []
+      : value.issues.map((item, index) =>
+          parseStatusIssue(item, `runtime.issues[${index}]`),
+        )
 
   if (value.ok === true) {
+    if (value.status === 'error') {
+      throw new StudioBridgeValidationError('runtime.ok=true 时 status 不能是 error。')
+    }
     return {
       ok: true,
+      status: value.status,
       snapshot: parseRuntimeSnapshotView(value.snapshot),
       workspacePath,
       configWarnings,
+      issues,
     }
   }
 
   if (value.ok === false && typeof value.error === 'string') {
     return {
       ok: false,
+      status: 'error',
       error: value.error,
       workspacePath,
       configWarnings,
+      issues,
     }
   }
 
@@ -1006,6 +1053,20 @@ function parseProjectSessionSummary(
   if (typeof value.messageCount !== 'number') {
     throw new StudioBridgeValidationError('projectSessions.messageCount 必须是数字。')
   }
+  if (
+    value.providerId !== null &&
+    value.providerId !== undefined &&
+    typeof value.providerId !== 'string'
+  ) {
+    throw new StudioBridgeValidationError('projectSessions.providerId 必须是字符串或 null。')
+  }
+  if (
+    value.modelId !== null &&
+    value.modelId !== undefined &&
+    typeof value.modelId !== 'string'
+  ) {
+    throw new StudioBridgeValidationError('projectSessions.modelId 必须是字符串或 null。')
+  }
   if (!Array.isArray(value.subagents)) {
     throw new StudioBridgeValidationError('projectSessions.subagents 必须是数组。')
   }
@@ -1017,6 +1078,12 @@ function parseProjectSessionSummary(
     updatedAt: value.updatedAt,
     gitBranch: value.gitBranch === undefined ? null : (value.gitBranch as string | null),
     messageCount: value.messageCount,
+    ...(value.providerId === undefined
+      ? {}
+      : { providerId: value.providerId as string | null }),
+    ...(value.modelId === undefined
+      ? {}
+      : { modelId: value.modelId as string | null }),
     subagents: value.subagents.map((subagent) => {
       const subagentValue = assertPlainObject(subagent, 'subagent 项')
       if (typeof subagentValue.agentId !== 'string') {
@@ -1024,6 +1091,20 @@ function parseProjectSessionSummary(
       }
       if (typeof subagentValue.description !== 'string') {
         throw new StudioBridgeValidationError('subagent.description 必须是字符串。')
+      }
+      if (
+        subagentValue.stateMessage !== undefined &&
+        subagentValue.stateMessage !== null &&
+        typeof subagentValue.stateMessage !== 'string'
+      ) {
+        throw new StudioBridgeValidationError('subagent.stateMessage 必须是字符串或 null。')
+      }
+      if (
+        subagentValue.partialResult !== undefined &&
+        subagentValue.partialResult !== null &&
+        typeof subagentValue.partialResult !== 'string'
+      ) {
+        throw new StudioBridgeValidationError('subagent.partialResult 必须是字符串或 null。')
       }
       if (
         typeof subagentValue.status !== 'string' ||
@@ -1037,6 +1118,12 @@ function parseProjectSessionSummary(
         agentId: subagentValue.agentId,
         description: subagentValue.description,
         status: subagentValue.status as StudioProjectSessionSummary['subagents'][number]['status'],
+        ...(subagentValue.stateMessage === undefined
+          ? {}
+          : { stateMessage: subagentValue.stateMessage as string | null }),
+        ...(subagentValue.partialResult === undefined
+          ? {}
+          : { partialResult: subagentValue.partialResult as string | null }),
       }
     }),
   }
@@ -1076,6 +1163,22 @@ function parseShellDefaults(payload: unknown): StudioShellDefaults {
   if (!Array.isArray(value.allowedModes)) {
     throw new StudioBridgeValidationError('shell.defaults.allowedModes 必须是数组。')
   }
+  if (
+    value.availablePrimaryAgentIds !== undefined &&
+    !Array.isArray(value.availablePrimaryAgentIds)
+  ) {
+    throw new StudioBridgeValidationError(
+      'shell.defaults.availablePrimaryAgentIds 必须是字符串数组。',
+    )
+  }
+  if (
+    value.availableModelIds !== undefined &&
+    !Array.isArray(value.availableModelIds)
+  ) {
+    throw new StudioBridgeValidationError(
+      'shell.defaults.availableModelIds 必须是字符串数组。',
+    )
+  }
 
   return {
     projectPath: parseNullableString(value.projectPath, 'shell.defaults.projectPath'),
@@ -1090,6 +1193,22 @@ function parseShellDefaults(payload: unknown): StudioShellDefaults {
     allowedModes: value.allowedModes.map((mode) =>
       parseModeId(mode, 'shell.defaults.allowedModes'),
     ),
+    ...(value.availablePrimaryAgentIds === undefined
+      ? {}
+      : {
+          availablePrimaryAgentIds: parseStringArray(
+            value.availablePrimaryAgentIds,
+            'shell.defaults.availablePrimaryAgentIds',
+          ),
+        }),
+    ...(value.availableModelIds === undefined
+      ? {}
+      : {
+          availableModelIds: parseStringArray(
+            value.availableModelIds,
+            'shell.defaults.availableModelIds',
+          ),
+        }),
   }
 }
 
@@ -1108,6 +1227,9 @@ export function parseStudioShellSnapshot(
   if (!Array.isArray(value.scratchpadEntries)) {
     throw new StudioBridgeValidationError('shell.scratchpadEntries 必须是数组。')
   }
+  if (value.issues !== undefined && !Array.isArray(value.issues)) {
+    throw new StudioBridgeValidationError('shell.issues 必须是数组。')
+  }
 
   return {
     startup: {
@@ -1124,6 +1246,12 @@ export function parseStudioShellSnapshot(
     projectSessions: value.projectSessions.map((item) => parseProjectSessionSummary(item)),
     scratchpadEntries: value.scratchpadEntries.map((item) => parseScratchpadEntry(item)),
     defaults: parseShellDefaults(value.defaults),
+    issues:
+      value.issues === undefined
+        ? []
+        : value.issues.map((item, index) =>
+            parseStatusIssue(item, `shell.issues[${index}]`),
+          ),
     warnings:
       value.warnings === undefined
         ? []

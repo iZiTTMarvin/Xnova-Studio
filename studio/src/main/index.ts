@@ -22,7 +22,11 @@ function waitForLogFlush(): Promise<void> {
 const logger = createMainLogger()
 const smokeConfig = readSmokeConfig(process.env)
 const runtimeInspector = createStudioRuntimeInspector()
-const shellInspector = createStudioShellInspector()
+const shellInspector = createStudioShellInspector({
+  onPerformanceSample(sample) {
+    logger.info('shell inspector 性能采样', sample)
+  },
+})
 const providerSettingsService = createStudioProviderSettingsService()
 const memoryService = createStudioMemoryService()
 const mcpService = createStudioMcpService()

@@ -74,6 +74,7 @@ describe('studio preload validators', () => {
     expect(
       parseStudioRuntimeInspectResult({
         ok: true,
+        status: 'ready',
         snapshot: {
           sessionId: null,
           isRunning: false,
@@ -83,9 +84,11 @@ describe('studio preload validators', () => {
         },
         workspacePath: 'D:/workspace/demo',
         configWarnings: ['legacy migration failed'],
+        issues: [],
       }),
     ).toEqual({
       ok: true,
+      status: 'ready',
       snapshot: {
         sessionId: null,
         isRunning: false,
@@ -95,6 +98,7 @@ describe('studio preload validators', () => {
       },
       workspacePath: 'D:/workspace/demo',
       configWarnings: ['legacy migration failed'],
+      issues: [],
     })
 
     expect(
@@ -154,6 +158,8 @@ describe('studio preload validators', () => {
             updatedAt: '2026-04-22T00:00:00.000Z',
             gitBranch: 'main',
             messageCount: 12,
+            providerId: 'anthropic',
+            modelId: 'claude-sonnet-4-6',
             subagents: [],
           },
         ],
@@ -166,7 +172,16 @@ describe('studio preload validators', () => {
           providerId: 'anthropic',
           recommendedMode: 'xforge',
           allowedModes: ['standard', 'xforge'],
+          availablePrimaryAgentIds: ['general', 'planner'],
+          availableModelIds: ['claude-sonnet-4-6', 'gpt-4o'],
         },
+        issues: [
+          {
+            code: 'project-config-error',
+            severity: 'error',
+            message: '当前项目配置存在错误，已回退到 user + builtin 默认。',
+          },
+        ],
         warnings: [],
       }),
     ).toEqual({
@@ -199,6 +214,8 @@ describe('studio preload validators', () => {
           updatedAt: '2026-04-22T00:00:00.000Z',
           gitBranch: 'main',
           messageCount: 12,
+          providerId: 'anthropic',
+          modelId: 'claude-sonnet-4-6',
           subagents: [],
         },
       ],
@@ -211,7 +228,16 @@ describe('studio preload validators', () => {
         providerId: 'anthropic',
         recommendedMode: 'xforge',
         allowedModes: ['standard', 'xforge'],
+        availablePrimaryAgentIds: ['general', 'planner'],
+        availableModelIds: ['claude-sonnet-4-6', 'gpt-4o'],
       },
+      issues: [
+        {
+          code: 'project-config-error',
+          severity: 'error',
+          message: '当前项目配置存在错误，已回退到 user + builtin 默认。',
+        },
+      ],
       warnings: [],
     })
   })

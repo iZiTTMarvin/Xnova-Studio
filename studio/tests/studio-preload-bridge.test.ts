@@ -32,6 +32,7 @@ class FakeIpcRenderer {
     if (channel === STUDIO_BRIDGE_CHANNELS.runtimeInspect) {
       return {
         ok: true,
+        status: 'ready',
         snapshot: {
           sessionId: null,
           isRunning: false,
@@ -41,6 +42,7 @@ class FakeIpcRenderer {
         },
         workspacePath: 'D:/workspace/demo',
         configWarnings: [],
+        issues: [],
         echoRefresh: payload,
       }
     }
@@ -63,6 +65,7 @@ class FakeIpcRenderer {
           recommendedMode: null,
           allowedModes: ['standard', 'xforge'],
         },
+        issues: [],
         warnings: [],
       }
     }
@@ -146,6 +149,7 @@ describe('studio preload bridge', () => {
 
     await expect(api.runtime.inspect({ refresh: true })).resolves.toEqual({
       ok: true,
+      status: 'ready',
       snapshot: {
         sessionId: null,
         isRunning: false,
@@ -155,6 +159,7 @@ describe('studio preload bridge', () => {
       },
       workspacePath: 'D:/workspace/demo',
       configWarnings: [],
+      issues: [],
     })
     expect(ipcRenderer.invoke).toHaveBeenCalledWith(
       STUDIO_BRIDGE_CHANNELS.runtimeInspect,
@@ -216,6 +221,7 @@ describe('studio preload bridge', () => {
         recommendedMode: null,
         allowedModes: ['standard', 'xforge'],
       },
+      issues: [],
       warnings: [],
     })
 

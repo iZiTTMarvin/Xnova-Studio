@@ -299,10 +299,14 @@ const store = new SessionStore(join(homedir(), '.xnovacode', 'sessions'))
 - 规则：
   - **禁止**把这类服务静态 import 到 Electron main 的启动主路径
   - 如果确实需要通过 IPC 触发，必须延迟到 handler 调用时再 `import()`，并确保失败能显式返回给 renderer
+  - **补充红线（2026-04-23 Phase 7）**：
+    即便是 `readMemoryOverview()` 这类“只读概览”服务，也**不能**在模块顶层静态 `import '../persistence/db.js'`；
+    否则 Electron 打包态会在导入阶段直接触发 `@libsql/...` native require，连 fallback 逻辑都来不及执行
 - 典型风险：
   - `electron-vite build` 通过，但真实启动立刻报
     `Could not dynamically require "@libsql/..."`
 - 推荐做法：
   - 启动主路径只挂载 thin IPC handler
   - handler 内部按需加载会触发 native 依赖的实现
+  - 对 read-only overview / status service，也要把 `db.ts` 读取下沉到函数内部（例如默认 getter 用 `await import('../persistence/db.js')`），而不是停留在文件顶层 import
   - renderer 把失败显示成降级提示，不允许主进程因某张状态卡片直接崩溃

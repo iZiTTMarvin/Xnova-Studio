@@ -3,7 +3,6 @@ import { homedir } from 'node:os'
 import { join } from 'node:path'
 import type { ConfigManager, MemoryConfig } from '../config/config-manager.js'
 import { FileStore } from './storage/file-store.js'
-import { getDb, getStoredEmbeddingDimension } from '../persistence/db.js'
 
 export type MemoryOverviewStatus = 'disabled' | 'bm25' | 'ready' | 'degraded'
 
@@ -39,8 +38,8 @@ export interface MemoryRebuildResult {
 export interface ReadMemoryOverviewOptions {
   configManager: Pick<ConfigManager, 'load' | 'getLastWarnings' | 'getPaths'>
   fileStore?: Pick<FileStore, 'scan'>
-  getStoredEmbeddingDimension?: () => number | null
-  countVectorChunks?: () => number
+  getStoredEmbeddingDimension?: () => number | null | Promise<number | null>
+  countVectorChunks?: () => number | Promise<number>
 }
 
 export interface RebuildMemoryIndexOptions extends ReadMemoryOverviewOptions {
@@ -117,9 +116,19 @@ function resolveStatus(
   }
 }
 
-function defaultCountVectorChunks(): number {
+async function defaultGetStoredEmbeddingDimension(): Promise<number | null> {
   try {
-    const db = getDb()
+    const module = await import('../persistence/db.js')
+    return module.getStoredEmbeddingDimension()
+  } catch {
+    return null
+  }
+}
+
+async function defaultCountVectorChunks(): Promise<number> {
+  try {
+    const module = await import('../persistence/db.js')
+    const db = module.getDb()
     const row = db.prepare('SELECT COUNT(*) as count FROM memory_vectors').get() as
       | { count: number }
       | undefined
@@ -188,8 +197,10 @@ export async function readMemoryOverview(
     }
   }
 
-  const dimension = (options.getStoredEmbeddingDimension ?? getStoredEmbeddingDimension)()
-  const vectorChunks = (options.countVectorChunks ?? defaultCountVectorChunks)()
+  const dimension = await (
+    options.getStoredEmbeddingDimension ?? defaultGetStoredEmbeddingDimension
+  )()
+  const vectorChunks = await (options.countVectorChunks ?? defaultCountVectorChunks)()
   const status = resolveStatus(enabled, missingFields, dimension)
 
   return {

@@ -47,6 +47,7 @@ function createShellSnapshot(): StudioShellSnapshot {
       recommendedMode: null,
       allowedModes: ['standard', 'xforge'],
     },
+    issues: [],
     warnings: [],
   }
 }
@@ -136,6 +137,7 @@ describe('studio main ipc handlers', () => {
     const send = vi.fn()
     const inspectRuntime = vi.fn(async (_request, state) => ({
       ok: true as const,
+      status: 'ready' as const,
       snapshot: {
         sessionId: null,
         isRunning: false,
@@ -145,6 +147,7 @@ describe('studio main ipc handlers', () => {
       },
       workspacePath: state.workspacePath,
       configWarnings: ['legacy migration failed'],
+      issues: [],
     }))
 
     registerStudioMainIpcHandlers({
@@ -178,6 +181,7 @@ describe('studio main ipc handlers', () => {
       Promise.resolve(runtimeInspectHandler?.({}, { refresh: true })),
     ).resolves.toEqual({
       ok: true,
+      status: 'ready',
       snapshot: {
         sessionId: null,
         isRunning: false,
@@ -187,6 +191,7 @@ describe('studio main ipc handlers', () => {
       },
       workspacePath: 'D:/workspace/demo',
       configWarnings: ['legacy migration failed'],
+      issues: [],
     })
     expect(inspectRuntime).toHaveBeenCalledWith(
       { refresh: true },

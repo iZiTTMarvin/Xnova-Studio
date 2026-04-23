@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest'
-import { mkdirSync, writeFileSync, rmSync, existsSync } from 'node:fs'
+import { mkdirSync, writeFileSync, rmSync, existsSync, readFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { tmpdir } from 'node:os'
 import { ConfigManager } from '../../config/config-manager.js'
@@ -33,6 +33,15 @@ describe('memory overview service', () => {
     if (existsSync(ws.root)) {
       rmSync(ws.root, { recursive: true, force: true })
     }
+  })
+
+  it('overview-service 不应静态 import persistence/db，避免 Electron 打包态直接触发 native require', () => {
+    const source = readFileSync(
+      'D:\\visual_ProgrammingSoftware\\毕设and简历Projects\\Xnova-Code\\cli\\src\\memory\\overview-service.ts',
+      'utf-8',
+    )
+
+    expect(source).not.toContain("from '../persistence/db.js'")
   })
 
   it('embedding 配置不完整时显示 BM25 降级，并区分全局 / 项目记忆概览', async () => {

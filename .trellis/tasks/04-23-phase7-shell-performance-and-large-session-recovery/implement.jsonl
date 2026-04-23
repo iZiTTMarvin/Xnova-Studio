@@ -1,0 +1,18 @@
+{"file": ".trellis/workflow.md", "reason": "Project workflow and conventions"}
+{"file": ".trellis/spec/backend/index.md", "reason": "Backend development guide"}
+{"file": ".trellis/spec/frontend/index.md", "reason": "Frontend development guide"}
+{"file": "docs/implement/phase7-polish-and-release.md", "reason": "性能阶段需求来源"}
+{"file": "docs/implement/phase5-project-aware-shell.md", "reason": "性能优化不能破坏主壳叙事"}
+{"file": ".trellis/spec/frontend/project-shell-v1.md", "reason": "主壳结构和入口顺序不可回退"}
+{"file": ".trellis/spec/frontend/state-management.md", "reason": "数据读取顺序与状态拆分约束"}
+{"file": ".trellis/spec/frontend/hook-guidelines.md", "reason": "副作用和订阅优化边界"}
+{"file": ".trellis/spec/frontend/quality-guidelines.md", "reason": "性能优化也要保持测试闭环"}
+{"file": ".trellis/spec/backend/runtime-boundary.md", "reason": "不能为性能绕过宿主边界"}
+{"file": ".trellis/spec/backend/logging-guidelines.md", "reason": "性能观察需要日志证据"}
+{"file": ".trellis/spec/backend/database-guidelines.md", "reason": "大会话恢复涉及持久化读取边界"}
+{"file": ".trellis/spec/backend/quality-guidelines.md", "reason": "性能优化前后要有验证"}
+{"file": ".trellis/spec/guides/cross-layer-thinking-guide.md", "reason": "性能问题跨main和renderer"}
+{"file": "studio/src/main/studio-shell-inspector.ts", "reason": "当前壳数据读取入口"}
+{"file": "studio/src/renderer/hooks/useStudioBridge.ts", "reason": "当前启动与恢复加载入口"}
+{"file": "studio/src/renderer/pages/StudioHomePage.tsx", "reason": "当前主壳渲染热点"}
+{"file": "cli/src/persistence/session-store.ts", "reason": "当前大会话事实源"}

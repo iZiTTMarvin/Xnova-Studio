@@ -33,9 +33,21 @@ export function createStudioRuntimeInspector(
         const snapshot = runtimeInspector({
           config: configManager.load(),
         })
+        const configWarnings = configManager.getLastWarnings()
+        const issues =
+          hostState.workspacePath === null
+            ? [
+                {
+                  code: 'runtime-not-ready' as const,
+                  severity: 'warning' as const,
+                  message: '当前尚未绑定 Workspace，runtime 未就绪。',
+                },
+              ]
+            : []
 
         return {
           ok: true,
+          status: issues.length > 0 ? 'not-ready' : 'ready',
           snapshot: {
             sessionId: snapshot.sessionId,
             isRunning: snapshot.isRunning,
@@ -44,15 +56,18 @@ export function createStudioRuntimeInspector(
             warnings: [...snapshot.warnings],
           },
           workspacePath: hostState.workspacePath,
-          configWarnings: configManager.getLastWarnings(),
+          configWarnings,
+          issues,
         }
       } catch (error) {
         const message = error instanceof Error ? error.message : String(error)
         return {
           ok: false,
+          status: 'error',
           error: `runtime inspect 失败: ${message}`,
           workspacePath: hostState.workspacePath,
           configWarnings: configManager.getLastWarnings(),
+          issues: [],
         }
       }
     },

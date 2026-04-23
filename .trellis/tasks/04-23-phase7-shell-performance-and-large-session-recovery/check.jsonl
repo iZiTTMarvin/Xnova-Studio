@@ -1,0 +1,9 @@
+{"file": ".claude/commands/trellis/finish-work.md", "reason": "Finish work checklist"}
+{"file": ".agents/skills/trellis-check/SKILL.md", "reason": "Code quality check spec"}
+{"file": "docs/implement/phase7-polish-and-release.md", "reason": "检查Phase7性能目标达成"}
+{"file": ".trellis/spec/frontend/project-shell-v1.md", "reason": "检查性能优化没有破坏主壳"}
+{"file": ".trellis/spec/frontend/quality-guidelines.md", "reason": "检查性能回归验证完整"}
+{"file": ".trellis/spec/backend/runtime-boundary.md", "reason": "检查没有越界读取"}
+{"file": ".trellis/spec/backend/logging-guidelines.md", "reason": "检查性能观察可复查"}
+{"file": ".trellis/spec/backend/quality-guidelines.md", "reason": "检查优化后测试和类型门完整"}
+{"file": ".trellis/spec/guides/cross-layer-thinking-guide.md", "reason": "检查性能链路跨层一致"}

@@ -1,0 +1,18 @@
+{"file": ".trellis/workflow.md", "reason": "Project workflow and conventions"}
+{"file": ".trellis/spec/backend/index.md", "reason": "Backend development guide"}
+{"file": ".trellis/spec/frontend/index.md", "reason": "Frontend development guide"}
+{"file": "docs/implement/phase7-polish-and-release.md", "reason": "Recoverability子阶段需求来源"}
+{"file": "docs/implement/phase5-project-aware-shell.md", "reason": "恢复逻辑必须建立在Phase5主壳之上"}
+{"file": ".trellis/spec/frontend/project-shell-v1.md", "reason": "默认首页与模式入口硬约束"}
+{"file": ".trellis/spec/frontend/state-management.md", "reason": "恢复优先级和单一事实源约束"}
+{"file": ".trellis/spec/frontend/hook-guidelines.md", "reason": "恢复副作用与订阅清理边界"}
+{"file": ".trellis/spec/frontend/quality-guidelines.md", "reason": "恢复路径必须先补测试"}
+{"file": ".trellis/spec/backend/runtime-boundary.md", "reason": "renderer不能直连持久化层"}
+{"file": ".trellis/spec/backend/config-toml-migration.md", "reason": "project大于user大于builtin的配置优先级"}
+{"file": ".trellis/spec/backend/error-handling.md", "reason": "恢复失败必须可见"}
+{"file": ".trellis/spec/backend/logging-guidelines.md", "reason": "恢复回退链路需要日志证据"}
+{"file": ".trellis/spec/guides/cross-layer-thinking-guide.md", "reason": "恢复链路横跨持久化与主壳"}
+{"file": "studio/src/renderer/utils/startup-route.ts", "reason": "当前启动恢复规则入口"}
+{"file": "studio/src/renderer/utils/mode-resolver.ts", "reason": "当前模式恢复与推荐值逻辑"}
+{"file": "studio/src/renderer/hooks/useStudioBridge.ts", "reason": "当前主壳恢复状态装配入口"}
+{"file": "studio/src/main/studio-shell-inspector.ts", "reason": "当前项目与会话恢复事实源"}

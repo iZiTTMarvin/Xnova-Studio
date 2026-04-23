@@ -14,11 +14,18 @@ export interface UseMemoryOverviewResult {
   rebuild: () => Promise<void>
 }
 
+export interface UseMemoryOverviewOptions {
+  enabled?: boolean
+  deferMs?: number
+}
+
 export function useMemoryOverview(
   memoryApi: StudioMemoryApi | null,
+  options: UseMemoryOverviewOptions = {},
 ): UseMemoryOverviewResult {
+  const enabled = options.enabled ?? true
   const [status, setStatus] = useState<'loading' | 'ready' | 'disabled' | 'error'>(
-    memoryApi ? 'loading' : 'disabled',
+    memoryApi && enabled ? 'loading' : 'disabled',
   )
   const [snapshot, setSnapshot] = useState<StudioMemoryOverviewSnapshot | null>(null)
   const [error, setError] = useState<string | null>(null)
@@ -26,7 +33,7 @@ export function useMemoryOverview(
   const [isRebuilding, setIsRebuilding] = useState(false)
 
   useEffect(() => {
-    if (!memoryApi) {
+    if (!memoryApi || !enabled) {
       setStatus('disabled')
       setError('当前宿主桥接不可用，Memory 状态暂时不可读取。')
       setSnapshot(null)
@@ -38,27 +45,41 @@ export function useMemoryOverview(
     setError(null)
     setActionMessage(null)
 
-    void memoryApi
-      .getOverview()
-      .then((nextSnapshot) => {
-        if (disposed) {
-          return
-        }
-        setSnapshot(nextSnapshot)
-        setStatus('ready')
-      })
-      .catch((reason) => {
-        if (disposed) {
-          return
-        }
-        setStatus('error')
-        setError(reason instanceof Error ? reason.message : String(reason))
-      })
+    const loadOverview = () => {
+      void memoryApi
+        .getOverview()
+        .then((nextSnapshot) => {
+          if (disposed) {
+            return
+          }
+          setSnapshot(nextSnapshot)
+          setStatus('ready')
+        })
+        .catch((reason) => {
+          if (disposed) {
+            return
+          }
+          setStatus('error')
+          setError(reason instanceof Error ? reason.message : String(reason))
+        })
+    }
+
+    const timer =
+      options.deferMs && options.deferMs > 0
+        ? window.setTimeout(loadOverview, options.deferMs)
+        : null
+
+    if (timer === null) {
+      loadOverview()
+    }
 
     return () => {
       disposed = true
+      if (timer !== null) {
+        window.clearTimeout(timer)
+      }
     }
-  }, [memoryApi])
+  }, [enabled, memoryApi, options.deferMs])
 
   const rebuild = async (): Promise<void> => {
     if (!memoryApi) {

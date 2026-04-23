@@ -12,7 +12,7 @@
  */
 
 import { readFileSync, writeFileSync, unlinkSync, existsSync, mkdirSync, readdirSync, statSync } from 'node:fs'
-import { join, relative, dirname, basename, extname } from 'node:path'
+import { join, relative, dirname, basename } from 'node:path'
 import { homedir } from 'node:os'
 import type { IFileStore, MemoryEntry, MemoryScope, MemoryFrontmatter, MemoryType, MemorySource } from '@memory/types.js'
 

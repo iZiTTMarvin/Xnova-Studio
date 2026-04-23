@@ -29,6 +29,7 @@ function createShellSnapshot(
       recommendedMode: null,
       allowedModes: ['standard', 'xforge'],
     },
+    issues: [],
     warnings: [],
     ...overrides,
   }
@@ -64,6 +65,7 @@ function createBridge(options?: {
     runtime: {
       inspect: vi.fn(async () => options?.runtimeInspectResult ?? {
         ok: true as const,
+        status: 'ready' as const,
         snapshot: {
           sessionId: null,
           isRunning: false,
@@ -73,6 +75,7 @@ function createBridge(options?: {
         },
         workspacePath: options?.hostState?.workspacePath ?? null,
         configWarnings: [],
+        issues: [],
       }),
       onEvent: () => () => {},
     },
@@ -140,9 +143,11 @@ describe('settings and tools shell integration', () => {
       }),
       runtimeInspectResult: {
         ok: false,
+        status: 'error',
         error: 'runtime service down',
         workspacePath: 'D:/workspace/demo',
         configWarnings: ['memory degraded'],
+        issues: [],
       },
     })
 

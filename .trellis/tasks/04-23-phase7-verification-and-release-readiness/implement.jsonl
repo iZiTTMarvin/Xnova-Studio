@@ -1,0 +1,13 @@
+{"file": ".trellis/workflow.md", "reason": "Project workflow and conventions"}
+{"file": ".trellis/spec/backend/index.md", "reason": "Backend development guide"}
+{"file": ".trellis/spec/frontend/index.md", "reason": "Frontend development guide"}
+{"file": "docs/implement/phase7-polish-and-release.md", "reason": "最终验证必须逐条对照Phase7完成标准"}
+{"file": "docs/implement/phase5-project-aware-shell.md", "reason": "验证不能破坏Phase5主壳"}
+{"file": "docs/implement/phase6-settings-and-tools.md", "reason": "验证不能破坏Phase6状态页能力"}
+{"file": ".trellis/spec/frontend/project-shell-v1.md", "reason": "验证主壳入口与模式切换边界"}
+{"file": ".trellis/spec/frontend/quality-guidelines.md", "reason": "验证前端状态和测试覆盖"}
+{"file": ".trellis/spec/backend/runtime-boundary.md", "reason": "验证bridge和宿主边界"}
+{"file": ".trellis/spec/backend/error-handling.md", "reason": "验证失败态和降级态可见"}
+{"file": ".trellis/spec/backend/quality-guidelines.md", "reason": "验证测试与质量门完整"}
+{"file": ".trellis/spec/guides/cross-layer-thinking-guide.md", "reason": "验证跨层恢复与打包链路"}
+{"file": "studio/package.json", "reason": "验证studio命令与打包脚本"}

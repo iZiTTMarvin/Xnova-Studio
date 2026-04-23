@@ -26,6 +26,17 @@ export interface RuntimeInspectRequest {
 
 export type StudioModeId = 'standard' | 'xforge'
 
+export type StudioStatusIssueCode =
+  | 'runtime-not-ready'
+  | 'workspace-missing'
+  | 'project-config-error'
+
+export interface StudioStatusIssue {
+  code: StudioStatusIssueCode
+  severity: 'warning' | 'error'
+  message: string
+}
+
 export interface RuntimeSnapshotView {
   sessionId: string | null
   isRunning: boolean
@@ -37,15 +48,19 @@ export interface RuntimeSnapshotView {
 export type RuntimeInspectResult =
   | {
       ok: true
+      status: 'ready' | 'not-ready'
       snapshot: RuntimeSnapshotView
       workspacePath: string | null
       configWarnings: string[]
+      issues: StudioStatusIssue[]
     }
   | {
       ok: false
+      status: 'error'
       error: string
       workspacePath: string | null
       configWarnings: string[]
+      issues: StudioStatusIssue[]
     }
 
 export interface StudioRuntimeEvent {
@@ -84,6 +99,8 @@ export interface StudioProjectSubagentSummary {
   agentId: string
   description: string
   status: 'running' | 'stopping' | 'stopped' | 'done' | 'error'
+  stateMessage?: string | null
+  partialResult?: string | null
 }
 
 export interface StudioProjectSessionSummary {
@@ -93,6 +110,8 @@ export interface StudioProjectSessionSummary {
   updatedAt: string
   gitBranch: string | null
   messageCount: number
+  providerId?: string | null
+  modelId?: string | null
   subagents: StudioProjectSubagentSummary[]
 }
 
@@ -110,6 +129,8 @@ export interface StudioShellDefaults {
   providerId: string | null
   recommendedMode: StudioModeId | null
   allowedModes: StudioModeId[]
+  availablePrimaryAgentIds?: string[]
+  availableModelIds?: string[]
 }
 
 export interface StudioShellSnapshot {
@@ -121,6 +142,7 @@ export interface StudioShellSnapshot {
   projectSessions: StudioProjectSessionSummary[]
   scratchpadEntries: StudioScratchpadEntry[]
   defaults: StudioShellDefaults
+  issues: StudioStatusIssue[]
   warnings: string[]
 }
 
