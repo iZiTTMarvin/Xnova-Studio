@@ -1,0 +1,6 @@
+{"file": ".claude/commands/trellis/finish-work.md", "reason": "Finish work checklist"}
+{"file": ".agents/skills/trellis-check/SKILL.md", "reason": "Code quality check spec"}
+{"file": ".trellis/spec/frontend/project-shell-v1.md", "reason": "检查顶部唯一 mode 入口与不清空项目/会话"}
+{"file": ".trellis/spec/frontend/quality-guidelines.md", "reason": "检查 mode 切换失败态与恢复验证"}
+{"file": ".trellis/spec/backend/config-toml-migration.md", "reason": "检查 mode 恢复优先级没有偏离配置 spec"}
+{"file": ".trellis/spec/guides/cross-layer-thinking-guide.md", "reason": "检查 mode 恢复的跨层一致性"}

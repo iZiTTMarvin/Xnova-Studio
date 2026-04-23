@@ -1,0 +1,12 @@
+{"file": ".trellis/workflow.md", "reason": "Project workflow and conventions"}
+{"file": ".trellis/spec/backend/index.md", "reason": "Backend development guide"}
+{"file": ".trellis/spec/frontend/index.md", "reason": "Frontend development guide"}
+{"file": "docs/implement/phase5-project-aware-shell.md", "reason": "冷启动入口改造直接来自 Phase 5 文档"}
+{"file": "docs/implement/phase4-electron-host.md", "reason": "默认入口改造必须延续 Phase 4 的 studio renderer 落点"}
+{"file": ".trellis/spec/frontend/project-shell-v1.md", "reason": "默认首页、恢复优先级与 Overview 降级规则"}
+{"file": ".trellis/spec/frontend/state-management.md", "reason": "最近项目 / 最近会话恢复必须有单一事实源和明确优先级"}
+{"file": ".trellis/spec/frontend/directory-structure.md", "reason": "空白聊天页、启动路由和 Hook 的落位规则"}
+{"file": ".trellis/spec/frontend/hook-guidelines.md", "reason": "启动恢复 Hook 的副作用与清理规范"}
+{"file": ".trellis/spec/frontend/type-safety.md", "reason": "路由输入输出与外部恢复数据必须先校验再收窄"}
+{"file": ".trellis/spec/frontend/quality-guidelines.md", "reason": "冷启动恢复是必须先补失败测试的高风险改动"}
+{"file": ".trellis/spec/backend/runtime-boundary.md", "reason": "路由与恢复逻辑应留在 renderer，不回退到 main process"}

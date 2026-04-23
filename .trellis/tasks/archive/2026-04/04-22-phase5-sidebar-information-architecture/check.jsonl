@@ -1,0 +1,5 @@
+{"file": ".claude/commands/trellis/finish-work.md", "reason": "Finish work checklist"}
+{"file": ".agents/skills/trellis-check/SKILL.md", "reason": "Code quality check spec"}
+{"file": ".trellis/spec/frontend/project-shell-v1.md", "reason": "检查导航顺序、block 结构与单一信息架构"}
+{"file": ".trellis/spec/frontend/quality-guidelines.md", "reason": "检查空态、禁用态和布局可操作性"}
+{"file": ".trellis/spec/guides/code-reuse-thinking-guide.md", "reason": "检查是否不必要复制旧 Web Sidebar 逻辑"}

@@ -1,0 +1,12 @@
+{"file": ".trellis/workflow.md", "reason": "Project workflow and conventions"}
+{"file": ".trellis/spec/backend/index.md", "reason": "Backend development guide"}
+{"file": ".trellis/spec/frontend/index.md", "reason": "Frontend development guide"}
+{"file": "docs/implement/phase5-project-aware-shell.md", "reason": "Phase 5 验收必须逐条对照实现文档"}
+{"file": "docs/implement/phase4-electron-host.md", "reason": "检查 Phase 5 没有破坏已落地的 Electron host 基线"}
+{"file": ".trellis/spec/frontend/project-shell-v1.md", "reason": "验证默认入口、导航、上下文条、Mode 与 SubAgent UX"}
+{"file": ".trellis/spec/frontend/quality-guidelines.md", "reason": "验证失败态、空态、TDD 与构建门禁"}
+{"file": ".trellis/spec/frontend/type-safety.md", "reason": "验证恢复、事件与页面状态契约"}
+{"file": ".trellis/spec/backend/runtime-boundary.md", "reason": "验证没有回退 host/runtime/renderer 边界"}
+{"file": ".trellis/spec/backend/config-toml-migration.md", "reason": "验证 Mode / project 配置恢复与 spec 一致"}
+{"file": ".trellis/spec/backend/agent-schema-v1.md", "reason": "验证子代理树与 Agent 呈现没有偏离 schema"}
+{"file": ".trellis/spec/guides/cross-layer-thinking-guide.md", "reason": "Phase 5 验证需要覆盖 renderer、bridge、runtime、config 多层链路"}

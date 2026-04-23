@@ -1,0 +1,13 @@
+{"file": ".trellis/workflow.md", "reason": "Project workflow and conventions"}
+{"file": ".trellis/spec/backend/index.md", "reason": "Backend development guide"}
+{"file": ".trellis/spec/frontend/index.md", "reason": "Frontend development guide"}
+{"file": "docs/implement/phase5-project-aware-shell.md", "reason": "模式切换与恢复联动直接来自 Phase 5 文档"}
+{"file": "docs/implement/phase4-electron-host.md", "reason": "Mode 切换必须继续建立在 Phase 4 Electron host 边界上"}
+{"file": ".trellis/spec/frontend/project-shell-v1.md", "reason": "顶部唯一主切换入口与上下文条禁止第二入口的硬约束"}
+{"file": ".trellis/spec/frontend/state-management.md", "reason": "mode 与 project/session 状态恢复优先级需要单一事实源"}
+{"file": ".trellis/spec/frontend/component-guidelines.md", "reason": "顶部 mode switch 组件与壳布局拆分方式"}
+{"file": ".trellis/spec/frontend/type-safety.md", "reason": "mode resolver 与恢复输入输出必须显式类型化"}
+{"file": ".trellis/spec/frontend/quality-guidelines.md", "reason": "mode 切换与恢复是必须先补失败测试的高风险改动"}
+{"file": ".trellis/spec/backend/config-toml-migration.md", "reason": "mode 恢复要消费 project > user > builtin 配置优先级"}
+{"file": ".trellis/spec/backend/runtime-boundary.md", "reason": "mode 切换改变执行策略，但不应把状态逻辑推回 main/preload"}
+{"file": ".trellis/spec/guides/cross-layer-thinking-guide.md", "reason": "mode 恢复横跨 project config、recent state、renderer 与 runtime"}

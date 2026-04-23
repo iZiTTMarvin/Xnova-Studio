@@ -1,0 +1,5 @@
+{"file": ".claude/commands/trellis/finish-work.md", "reason": "Finish work checklist"}
+{"file": ".agents/skills/trellis-check/SKILL.md", "reason": "Code quality check spec"}
+{"file": ".trellis/spec/frontend/project-shell-v1.md", "reason": "检查字段顺序、可见性与单一 mode 入口约束"}
+{"file": ".trellis/spec/frontend/quality-guidelines.md", "reason": "检查上下文条的四态与界面可见反馈"}
+{"file": ".trellis/spec/frontend/type-safety.md", "reason": "检查 WorkContext 与事件 payload 类型安全"}

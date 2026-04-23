@@ -1,0 +1,12 @@
+{"file": ".trellis/workflow.md", "reason": "Project workflow and conventions"}
+{"file": ".trellis/spec/backend/index.md", "reason": "Backend development guide"}
+{"file": ".trellis/spec/frontend/index.md", "reason": "Frontend development guide"}
+{"file": "docs/implement/phase5-project-aware-shell.md", "reason": "上下文条字段要求直接来自 Phase 5 文档"}
+{"file": "docs/implement/phase4-electron-host.md", "reason": "上下文条必须建立在现有 studio renderer 与 preload/runtime bridge 之上"}
+{"file": ".trellis/spec/frontend/project-shell-v1.md", "reason": "上下文条字段顺序、空态与禁止第二个 mode 入口的硬约束"}
+{"file": ".trellis/spec/frontend/state-management.md", "reason": "WorkContext 需要成为项目恢复与显示的单一主状态源"}
+{"file": ".trellis/spec/frontend/component-guidelines.md", "reason": "上下文条作为展示组件的拆分与 props 建模"}
+{"file": ".trellis/spec/frontend/hook-guidelines.md", "reason": "上下文条订阅 runtime/host 状态时的清理规范"}
+{"file": ".trellis/spec/frontend/type-safety.md", "reason": "WorkContext 与字段 spec 必须精确类型化"}
+{"file": ".trellis/spec/frontend/quality-guidelines.md", "reason": "空态、disabled、error 必须在界面真实可见"}
+{"file": ".trellis/spec/backend/runtime-boundary.md", "reason": "上下文条消费 host/runtime 状态但不得越过 preload 边界"}

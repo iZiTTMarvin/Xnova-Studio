@@ -1,0 +1,9 @@
+{"file": ".trellis/workflow.md", "reason": "Project workflow and conventions"}
+{"file": ".trellis/spec/frontend/index.md", "reason": "Frontend development guide"}
+{"file": "docs/implement/phase5-project-aware-shell.md", "reason": "左侧信息架构改造直接来自 Phase 5 文档"}
+{"file": "docs/implement/phase4-electron-host.md", "reason": "左侧主壳应构建在 studio renderer，而非回退到 cli/web 主实现"}
+{"file": ".trellis/spec/frontend/project-shell-v1.md", "reason": "一级导航与项目/聊天 block 的固定信息架构"}
+{"file": ".trellis/spec/frontend/directory-structure.md", "reason": "主壳页面、组件与样式的落位规则"}
+{"file": ".trellis/spec/frontend/component-guidelines.md", "reason": "侧栏壳、导航、block 容器的组件拆分方式"}
+{"file": ".trellis/spec/frontend/quality-guidelines.md", "reason": "loading/empty/disabled 四态必须真实可见"}
+{"file": ".trellis/spec/guides/code-reuse-thinking-guide.md", "reason": "避免复制 cli/web 侧边栏实现而不抽象结构差异"}

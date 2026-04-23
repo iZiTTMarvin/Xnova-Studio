@@ -1,0 +1,7 @@
+{"file": ".claude/commands/trellis/finish-work.md", "reason": "Finish work checklist"}
+{"file": ".agents/skills/trellis-check/SKILL.md", "reason": "Code quality check spec"}
+{"file": "docs/implement/phase5-project-aware-shell.md", "reason": "最终验收必须逐条对照 Phase 5 文档"}
+{"file": "docs/implement/phase4-electron-host.md", "reason": "核查 Phase 5 不破坏既有 Electron host 边界"}
+{"file": ".trellis/spec/frontend/project-shell-v1.md", "reason": "核查 project-aware 主壳硬约束"}
+{"file": ".trellis/spec/frontend/quality-guidelines.md", "reason": "核查构建、失败态和测试门禁"}
+{"file": ".trellis/spec/backend/runtime-boundary.md", "reason": "核查 host/runtime/renderer 分层没有回退"}

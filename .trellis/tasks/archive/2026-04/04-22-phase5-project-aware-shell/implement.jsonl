@@ -1,0 +1,16 @@
+{"file": ".trellis/workflow.md", "reason": "Project workflow and conventions"}
+{"file": ".trellis/spec/backend/index.md", "reason": "Backend development guide"}
+{"file": ".trellis/spec/frontend/index.md", "reason": "Frontend development guide"}
+{"file": "docs/implement/phase5-project-aware-shell.md", "reason": "Phase 5 主任务的直接来源文档"}
+{"file": "docs/implement/phase4-electron-host.md", "reason": "Phase 5 必须建立在已落地的 Electron host 边界之上，不能回退实现位置"}
+{"file": ".trellis/spec/frontend/project-shell-v1.md", "reason": "project-aware 主壳的默认入口、导航、上下文条和 Mode 切换硬约束"}
+{"file": ".trellis/spec/frontend/state-management.md", "reason": "项目、会话、Mode、Agent、Model 的状态分层与恢复优先级"}
+{"file": ".trellis/spec/frontend/directory-structure.md", "reason": "锁定 studio renderer 的页面、组件、Hook 落位"}
+{"file": ".trellis/spec/frontend/component-guidelines.md", "reason": "主壳、侧栏、上下文条的容器/展示组件拆分规则"}
+{"file": ".trellis/spec/frontend/hook-guidelines.md", "reason": "恢复逻辑、事件订阅和清理模式"}
+{"file": ".trellis/spec/frontend/type-safety.md", "reason": "事件 payload、恢复结果和上下文状态必须类型安全"}
+{"file": ".trellis/spec/frontend/quality-guidelines.md", "reason": "Phase 5 的 TDD、失败态与验证门禁"}
+{"file": ".trellis/spec/backend/runtime-boundary.md", "reason": "继续遵守 shared runtime + Electron host 边界，不回退到 cli/web 或 renderer 直连底层"}
+{"file": ".trellis/spec/backend/config-toml-migration.md", "reason": "Mode 与项目配置恢复必须消费 project > user > builtin 结果"}
+{"file": ".trellis/spec/backend/agent-schema-v1.md", "reason": "主 Agent / SubAgent 呈现与恢复必须复用既有 schema 和过滤规则"}
+{"file": ".trellis/spec/guides/cross-layer-thinking-guide.md", "reason": "Phase 5 牵涉 startup、renderer、bridge、config 与 agent 多层数据流"}

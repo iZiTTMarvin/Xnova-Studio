@@ -1,0 +1,15 @@
+{"file": ".trellis/workflow.md", "reason": "Project workflow and conventions"}
+{"file": ".trellis/spec/backend/index.md", "reason": "Backend development guide"}
+{"file": ".trellis/spec/frontend/index.md", "reason": "Frontend development guide"}
+{"file": "docs/implement/phase5-project-aware-shell.md", "reason": "项目树、会话树、子代理树与 scratchpad 语义直接来自 Phase 5 文档"}
+{"file": "docs/implement/phase4-electron-host.md", "reason": "数据呈现必须继续通过 Electron host/runtime bridge，而不是 renderer 直连底层"}
+{"file": ".trellis/spec/frontend/project-shell-v1.md", "reason": "项目块、聊天块、SubAgent UX 与 scratchpad 语义边界"}
+{"file": ".trellis/spec/frontend/state-management.md", "reason": "project/session/agent/mode/model 的状态分层与同步原则"}
+{"file": ".trellis/spec/frontend/directory-structure.md", "reason": "tree 相关 Hook、组件、页面的落位规则"}
+{"file": ".trellis/spec/frontend/component-guidelines.md", "reason": "树形块和展示组件拆分方式"}
+{"file": ".trellis/spec/frontend/hook-guidelines.md", "reason": "树状态订阅、同步与清理模式"}
+{"file": ".trellis/spec/frontend/type-safety.md", "reason": "session/subagent/tree 事件必须用明确联合类型建模"}
+{"file": ".trellis/spec/frontend/quality-guidelines.md", "reason": "SubAgent 状态同步是必须先补失败测试的高风险改动"}
+{"file": ".trellis/spec/backend/agent-schema-v1.md", "reason": "主 Agent / SubAgent 候选池和来源语义必须复用既有 schema"}
+{"file": ".trellis/spec/backend/runtime-boundary.md", "reason": "树形数据与运行时事件必须通过 host/runtime bridge 消费"}
+{"file": ".trellis/spec/guides/cross-layer-thinking-guide.md", "reason": "tree sync 跨越 renderer、bridge、runtime 事件与持久化事实源"}
