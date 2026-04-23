@@ -9,6 +9,8 @@ import {
   parseStudioRuntimeEvent,
   parseStudioRuntimeInspectRequest,
   parseStudioRuntimeInspectResult,
+  parseStudioRuntimeSubmitRequest,
+  parseStudioRuntimeSubmitResult,
 } from '../src/preload/studio-validators'
 
 describe('studio preload validators', () => {
@@ -116,6 +118,46 @@ describe('studio preload validators', () => {
         refresh: true,
       },
     })
+  })
+
+  it('校验 runtime submit 请求与响应结构', () => {
+    expect(
+      parseStudioRuntimeSubmitRequest({
+        text: '  分析当前项目结构  ',
+        projectPath: 'D:/workspace/demo',
+        agentId: 'general',
+        modelId: 'claude-sonnet-4-6',
+      }),
+    ).toEqual({
+      text: '分析当前项目结构',
+      projectPath: 'D:/workspace/demo',
+      agentId: 'general',
+      modelId: 'claude-sonnet-4-6',
+    })
+
+    expect(
+      parseStudioRuntimeSubmitResult({
+        ok: true,
+        sessionId: 'session-1',
+      }),
+    ).toEqual({
+      ok: true,
+      sessionId: 'session-1',
+    })
+
+    expect(
+      parseStudioRuntimeSubmitResult({
+        ok: false,
+        error: 'submit 失败',
+      }),
+    ).toEqual({
+      ok: false,
+      error: 'submit 失败',
+    })
+
+    expect(() => parseStudioRuntimeSubmitRequest({ text: '   ' })).toThrow(
+      StudioBridgeValidationError,
+    )
   })
 
   it('校验 shell snapshot 请求与响应结构', () => {

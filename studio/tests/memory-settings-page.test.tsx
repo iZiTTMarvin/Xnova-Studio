@@ -2,12 +2,8 @@
 
 import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import { App } from '../src/renderer/App'
-import type { StudioMemoryOverviewSnapshot } from '../src/shared/studio-bridge-contract'
-
-function clearBridge() {
-  delete (window as Window & { xnovaStudio?: unknown }).xnovaStudio
-}
+import { StudioSettingsDialog } from '../src/renderer/components/StudioSettingsDialog'
+import type { StudioMemoryApi, StudioMemoryOverviewSnapshot } from '../src/shared/studio-bridge-contract'
 
 function createMemorySnapshot(): StudioMemoryOverviewSnapshot {
   return {
@@ -32,151 +28,58 @@ function createMemorySnapshot(): StudioMemoryOverviewSnapshot {
   }
 }
 
-function createBridge() {
-  const memory = {
+function createMemoryApi(): StudioMemoryApi {
+  return {
     getOverview: vi.fn(async () => createMemorySnapshot()),
     rebuild: vi.fn(async () => ({
-      success: true as const,
+      success: true,
       message: 'Memory 索引已完成重建。',
       snapshot: {
         ...createMemorySnapshot(),
-        status: 'ready' as const,
+        status: 'ready',
         statusMessage: 'Embedding 已就绪。',
         embedding: {
           configured: true,
           dimension: 1536,
           missingFields: [],
         },
-        overview: {
-          ...createMemorySnapshot().overview,
-          vectorChunks: 4,
-        },
       },
     })),
-  }
-
-  return {
-    host: {
-      getState: vi.fn(async () => ({
-        workspacePath: 'D:/workspace/demo',
-        lastSelection: null,
-      })),
-      openWorkspace: vi.fn(async () => ({
-        selection: {
-          ok: true as const,
-          code: 'selected' as const,
-          path: 'D:/workspace/demo',
-        },
-        state: {
-          workspacePath: 'D:/workspace/demo',
-          lastSelection: null,
-        },
-      })),
-      onStateChanged: () => () => {},
-    },
-    runtime: {
-      inspect: vi.fn(async () => ({
-        ok: true as const,
-        snapshot: {
-          sessionId: null,
-          isRunning: false,
-          provider: 'anthropic',
-          model: 'claude-sonnet-4-6',
-          warnings: [],
-        },
-        workspacePath: 'D:/workspace/demo',
-        configWarnings: [],
-      })),
-      onEvent: () => () => {},
-    },
-    shell: {
-      getSnapshot: vi.fn(async () => ({
-        startup: {
-          recentProject: null,
-          recentSession: null,
-        },
-        recentProjects: [],
-        projectSessions: [],
-        scratchpadEntries: [],
-        defaults: {
-          projectPath: 'D:/workspace/demo',
-          branch: 'main',
-          agentId: 'general',
-          modelId: 'claude-sonnet-4-6',
-          providerId: 'anthropic',
-          recommendedMode: null,
-          allowedModes: ['standard', 'xforge'],
-        },
-        warnings: [],
-      })),
-    },
-    settings: {
-      getProviderSettings: vi.fn(async () => ({
-        editableConfig: {
-          defaultProvider: 'anthropic',
-          defaultModel: 'claude-sonnet-4-6',
-          subAgentModel: null,
-          providers: [
-            {
-              id: 'anthropic',
-              apiKey: 'sk-ant',
-              baseURL: null,
-              protocol: 'anthropic',
-              models: ['claude-sonnet-4-6'],
-              visionModels: [],
-            },
-          ],
-        },
-        effectiveDefaults: {
-          defaultProvider: 'anthropic',
-          defaultModel: 'claude-sonnet-4-6',
-        },
-        source: {
-          userToml: 'C:/Users/demo/.xnovacode/config.toml',
-        },
-        warnings: [],
-      })),
-      saveProviderSettings: vi.fn(async () => ({
-        success: true as const,
-      })),
-      testProviderConnection: vi.fn(async () => ({
-        success: true as const,
-        providerId: 'anthropic',
-        model: 'claude-sonnet-4-6',
-        durationMs: 12,
-      })),
-    },
-    memory,
   }
 }
 
 afterEach(() => {
   cleanup()
-  clearBridge()
-  window.localStorage.clear()
 })
 
-describe('memory settings page', () => {
-  it('在设置页显示 memory 降级状态与全局 / 项目概览，并支持 rebuild 入口', async () => {
-    const bridge = createBridge()
-    ;(window as Window & { xnovaStudio?: unknown }).xnovaStudio = bridge
+describe('memory settings dialog', () => {
+  it('全局记忆模块显示开关与状态，并支持重建入口', async () => {
+    const memoryApi = createMemoryApi()
 
-    render(<App />)
+    render(
+      <StudioSettingsDialog
+        open
+        onClose={vi.fn()}
+        settingsApi={null}
+        memoryApi={memoryApi}
+        workspacePath="D:/workspace/demo"
+      />,
+    )
 
-    fireEvent.click(screen.getByRole('button', { name: '设置' }))
+    fireEvent.click(screen.getByRole('button', { name: '全局记忆' }))
 
     await waitFor(() => {
       expect(screen.getByText('Embedding 未完整配置，当前降级为 BM25 关键词检索。')).toBeTruthy()
     })
 
-    expect(screen.getByText('全局记忆')).toBeTruthy()
-    expect(screen.getByText('项目记忆')).toBeTruthy()
-    expect(screen.getByText('向量 chunk')).toBeTruthy()
+    expect(screen.getByText('已启用')).toBeTruthy()
+    expect(screen.getByText('全局 2')).toBeTruthy()
+    expect(screen.getByText('项目 1')).toBeTruthy()
 
-    fireEvent.click(screen.getByRole('button', { name: '重建 Memory 索引' }))
+    fireEvent.click(screen.getByRole('button', { name: '重建索引' }))
 
     await waitFor(() => {
-      expect(bridge.memory.rebuild).toHaveBeenCalledTimes(1)
+      expect(memoryApi.rebuild).toHaveBeenCalledTimes(1)
     })
 
     expect(screen.getByText('Memory 索引已完成重建。')).toBeTruthy()

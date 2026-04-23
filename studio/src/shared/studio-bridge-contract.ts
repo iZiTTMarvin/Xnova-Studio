@@ -24,6 +24,23 @@ export interface RuntimeInspectRequest {
   refresh?: boolean
 }
 
+export interface RuntimeSubmitRequest {
+  text: string
+  projectPath?: string | null
+  agentId?: string | null
+  modelId?: string | null
+}
+
+export type RuntimeSubmitResult =
+  | {
+      ok: true
+      sessionId: string | null
+    }
+  | {
+      ok: false
+      error: string
+    }
+
 export type StudioModeId = 'standard' | 'xforge'
 
 export type StudioStatusIssueCode =
@@ -306,6 +323,7 @@ export interface StudioHostApi {
 
 export interface StudioRuntimeApi {
   inspect(input?: RuntimeInspectRequest): Promise<RuntimeInspectResult>
+  submit(input: RuntimeSubmitRequest): Promise<RuntimeSubmitResult>
   onEvent(listener: (event: StudioRuntimeEvent) => void): () => void
 }
 
@@ -355,6 +373,7 @@ export const STUDIO_BRIDGE_CHANNELS = {
   hostOpenWorkspace: 'studio:host:open-workspace',
   hostStateChanged: 'studio:host:state-changed',
   runtimeInspect: 'studio:runtime:inspect',
+  runtimeSubmit: 'studio:runtime:submit',
   runtimeEvent: 'studio:runtime:event',
   shellGetSnapshot: 'studio:shell:get-snapshot',
   settingsGetProviderSettings: 'studio:settings:get-provider-settings',

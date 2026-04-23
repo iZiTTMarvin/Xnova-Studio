@@ -1,9 +1,13 @@
-import { useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import type {
   StudioProviderSettingsEntry,
   StudioProviderSettingsSnapshot,
 } from '../../shared/studio-bridge-contract'
-import type { ProviderTestResultView } from '../hooks/useProviderSettingsForm'
+import type {
+  AddProviderInput,
+  ProviderTestResultView,
+} from '../hooks/useProviderSettingsForm'
+import './ProviderSettingsCard.css'
 
 export interface ProviderSettingsCardProps {
   status: 'loading' | 'ready' | 'disabled' | 'error'
@@ -19,10 +23,8 @@ export interface ProviderSettingsCardProps {
   isSaving: boolean
   testingProviderId: string | null
   testResults: Record<string, ProviderTestResultView>
-  onDefaultProviderChange: (providerId: string) => void
-  onDefaultModelChange: (modelId: string) => void
-  onSubAgentModelChange: (modelId: string) => void
-  onAddProvider: (providerId: string) => boolean
+  onAddProvider: (input: AddProviderInput) => boolean
+  onRenameProvider: (providerId: string, nextProviderId: string) => boolean
   onUpdateProvider: (
     providerId: string,
     updater: (provider: StudioProviderSettingsEntry) => StudioProviderSettingsEntry,
@@ -32,39 +34,129 @@ export interface ProviderSettingsCardProps {
   onTestProvider: (providerId: string) => Promise<void>
 }
 
-function updateCsv(text: string): string[] {
-  return text
-    .split(/[,\n]/)
+function protocolLabel(protocol: StudioProviderSettingsEntry['protocol']): string {
+  return protocol === 'openai' ? 'openai compatible' : 'anthropic compatible'
+}
+
+function normalizeModelItems(items: string[]): string[] {
+  return items
     .map((item) => item.trim())
     .filter(Boolean)
 }
 
-function renderSourceValue(
-  value: string | undefined,
-): string {
-  return value ?? '未提供'
-}
-
 export function ProviderSettingsCard(props: ProviderSettingsCardProps) {
-  const [newProviderId, setNewProviderId] = useState('')
+  const [selectedProviderId, setSelectedProviderId] = useState<string | null>(null)
+  const [isAddDialogOpen, setIsAddDialogOpen] = useState(false)
+  const [newProviderName, setNewProviderName] = useState('')
+  const [newProviderProtocol, setNewProviderProtocol] = useState<AddProviderInput['protocol']>('openai')
+  const [providerNameDraft, setProviderNameDraft] = useState('')
+  const [modelEditorOpen, setModelEditorOpen] = useState(true)
+  const [newModelDraft, setNewModelDraft] = useState('')
+
+  const providers = props.draft?.providers ?? []
+
+  useEffect(() => {
+    if (providers.length === 0) {
+      setSelectedProviderId(null)
+      return
+    }
+
+    const firstProvider = providers[0]
+    if (!firstProvider) {
+      return
+    }
+
+    if (!selectedProviderId || !providers.some((provider) => provider.id === selectedProviderId)) {
+      setSelectedProviderId(firstProvider.id)
+    }
+  }, [providers, selectedProviderId])
+
+  const selectedProvider = useMemo(
+    () => providers.find((provider) => provider.id === selectedProviderId) ?? null,
+    [providers, selectedProviderId],
+  )
+
+  useEffect(() => {
+    setProviderNameDraft(selectedProvider?.id ?? '')
+    setNewModelDraft('')
+  }, [selectedProvider?.id])
+
+  const updateSelectedProvider = (
+    updater: (provider: StudioProviderSettingsEntry) => StudioProviderSettingsEntry,
+  ): void => {
+    if (!selectedProvider) {
+      return
+    }
+    props.onUpdateProvider(selectedProvider.id, updater)
+  }
+
+  const applyRename = (): void => {
+    if (!selectedProvider) {
+      return
+    }
+
+    const normalized = providerNameDraft.trim()
+    if (!normalized || normalized === selectedProvider.id) {
+      setProviderNameDraft(selectedProvider.id)
+      return
+    }
+
+    if (props.onRenameProvider(selectedProvider.id, normalized)) {
+      setSelectedProviderId(normalized)
+    }
+  }
+
+  const addModel = (): void => {
+    if (!selectedProvider) {
+      return
+    }
+
+    const normalized = newModelDraft.trim()
+    updateSelectedProvider((provider) => ({
+      ...provider,
+      models: [...provider.models, normalized],
+    }))
+    setModelEditorOpen(true)
+    setNewModelDraft('')
+  }
+
+  const addProvider = (): void => {
+    const normalized = newProviderName.trim()
+    if (!normalized) {
+      return
+    }
+
+    if (
+      props.onAddProvider({
+        providerId: normalized,
+        protocol: newProviderProtocol,
+      })
+    ) {
+      setSelectedProviderId(normalized)
+      setNewProviderName('')
+      setNewProviderProtocol('openai')
+      setIsAddDialogOpen(false)
+    }
+  }
 
   return (
-    <section className="feature-section-card provider-settings-card">
-      <div className="feature-section-header">
-        <h3>Provider 与模型</h3>
-        <span className={`feature-section-status feature-section-status-${props.status}`}>
-          {props.status === 'loading'
-            ? '加载中'
-            : props.status === 'disabled'
-              ? '不可用'
-              : props.status === 'error'
-                ? '错误'
-                : '已接入'}
-        </span>
+    <div className="provider-settings-shell">
+      <div className="provider-settings-header">
+        <div>
+          <h3>模型服务</h3>
+          <p>先添加平台，再配置密钥与地址。</p>
+        </div>
+        <button
+          type="button"
+          className="secondary-button"
+          onClick={() => {
+            setIsAddDialogOpen(true)
+          }}
+          disabled={props.status !== 'ready'}
+        >
+          添加平台
+        </button>
       </div>
-      <p className="feature-section-summary">
-        在桌面主壳里管理默认 provider、默认模型与连接测试，配置统一落到 TOML。
-      </p>
 
       {props.error ? (
         <div className="provider-feedback provider-feedback-error">
@@ -78,29 +170,8 @@ export function ProviderSettingsCard(props: ProviderSettingsCardProps) {
         </div>
       ) : null}
 
-      {props.snapshot ? (
-        <div className="provider-source-grid">
-          <div className="provider-source-item">
-            <span>user.toml</span>
-            <strong>{renderSourceValue(props.snapshot.source.userToml)}</strong>
-          </div>
-          <div className="provider-source-item">
-            <span>project.toml</span>
-            <strong>{renderSourceValue(props.snapshot.source.projectToml)}</strong>
-          </div>
-          <div className="provider-source-item">
-            <span>effective 默认值</span>
-            <strong>
-              {props.snapshot.effectiveDefaults.defaultProvider}
-              {' / '}
-              {props.snapshot.effectiveDefaults.defaultModel}
-            </strong>
-          </div>
-        </div>
-      ) : null}
-
       {props.snapshot?.warnings.length ? (
-        <div className="provider-feedback provider-feedback-error">
+        <div className="provider-feedback provider-feedback-warning">
           {props.snapshot.warnings.map((warning) => (
             <strong key={warning}>{warning}</strong>
           ))}
@@ -108,221 +179,288 @@ export function ProviderSettingsCard(props: ProviderSettingsCardProps) {
       ) : null}
 
       {props.status !== 'ready' || !props.draft ? (
-        <p className="feature-section-detail">
+        <p className="provider-placeholder-text">
           {props.status === 'loading'
-            ? '正在从宿主读取 Provider 配置…'
+            ? '正在读取模型服务配置…'
             : props.status === 'disabled'
-              ? '当前宿主桥接不可用，Provider 配置暂时不可读取。'
+              ? '当前宿主桥接不可用，无法编辑模型服务配置。'
               : props.status === 'error'
-                ? 'Provider 配置读取失败，请先处理错误后重试。'
-                : '尚未获取可编辑的 Provider 草稿。'}
+                ? '模型服务配置读取失败。'
+                : '暂无可编辑配置。'}
         </p>
       ) : (
-        <>
-          <div className="provider-form-grid">
-            <label className="provider-field">
-              <span>默认 Provider</span>
-              <select
-                aria-label="默认 Provider"
-                value={props.draft.defaultProvider}
-                onChange={(event) => {
-                  props.onDefaultProviderChange(event.target.value)
+        <div className="provider-settings-panels">
+          <section className="provider-platform-list" aria-label="平台列表">
+            {providers.map((provider) => (
+              <button
+                key={provider.id}
+                type="button"
+                className={`provider-platform-item ${
+                  selectedProvider?.id === provider.id ? 'provider-platform-item-active' : ''
+                }`}
+                onClick={() => {
+                  setSelectedProviderId(provider.id)
                 }}
               >
-                {props.draft.providers.map((provider) => (
-                  <option key={provider.id} value={provider.id}>
-                    {provider.id}
-                  </option>
-                ))}
-              </select>
-            </label>
+                <strong>{provider.id}</strong>
+                <span>{protocolLabel(provider.protocol)}</span>
+              </button>
+            ))}
+          </section>
 
-            <label className="provider-field">
-              <span>默认模型</span>
-              <input
-                aria-label="默认模型"
-                value={props.draft.defaultModel}
-                onChange={(event) => {
-                  props.onDefaultModelChange(event.target.value)
-                }}
-              />
-            </label>
-
-            <label className="provider-field">
-              <span>子 Agent 模型</span>
-              <input
-                aria-label="子 Agent 模型"
-                value={props.draft.subAgentModel ?? ''}
-                onChange={(event) => {
-                  props.onSubAgentModelChange(event.target.value)
-                }}
-                placeholder="留空则继承默认模型"
-              />
-            </label>
-          </div>
-
-          <div className="provider-toolbar">
-            <label className="provider-field provider-field-inline">
-              <span>新增 Provider ID</span>
-              <input
-                aria-label="新增 Provider ID"
-                value={newProviderId}
-                onChange={(event) => {
-                  setNewProviderId(event.target.value)
-                }}
-                placeholder="例如 deepseek"
-              />
-            </label>
-
-            <button
-              type="button"
-              className="secondary-button"
-              onClick={() => {
-                if (props.onAddProvider(newProviderId)) {
-                  setNewProviderId('')
-                }
-              }}
-            >
-              新增 Provider
-            </button>
-
-            <button
-              type="button"
-              className="primary-button"
-              onClick={() => {
-                void props.onSave()
-              }}
-              disabled={props.isSaving}
-            >
-              {props.isSaving ? '保存中…' : '保存 Provider 配置'}
-            </button>
-          </div>
-
-          <div className="provider-card-list">
-            {props.draft.providers.map((provider) => (
-              <article key={provider.id} className="provider-item-card">
-                <div className="provider-item-header">
-                  <h4>{provider.id}</h4>
-                  <div className="provider-item-actions">
-                    <button
-                      type="button"
-                      className="secondary-button"
-                      onClick={() => {
-                        void props.onTestProvider(provider.id)
-                      }}
-                      disabled={props.testingProviderId === provider.id}
-                      aria-label={`测试 ${provider.id}`}
-                    >
-                      {props.testingProviderId === provider.id
-                        ? '测试中…'
-                        : `测试 ${provider.id}`}
-                    </button>
-                    <button
-                      type="button"
-                      className="secondary-button"
-                      onClick={() => {
-                        props.onRemoveProvider(provider.id)
-                      }}
-                      aria-label={`删除 ${provider.id}`}
-                    >
-                      删除 Provider
-                    </button>
-                  </div>
+          <section className="provider-platform-detail" aria-label="平台详情">
+            {!selectedProvider ? (
+              <p className="provider-placeholder-text">请先选择一个平台。</p>
+            ) : (
+              <>
+                <div className="provider-detail-toolbar">
+                  <button
+                    type="button"
+                    className="secondary-button"
+                    onClick={() => {
+                      void props.onTestProvider(selectedProvider.id)
+                    }}
+                    disabled={props.testingProviderId === selectedProvider.id}
+                  >
+                    {props.testingProviderId === selectedProvider.id ? '测试中…' : '测试连接'}
+                  </button>
+                  <button
+                    type="button"
+                    className="primary-button"
+                    onClick={() => {
+                      void props.onSave()
+                    }}
+                    disabled={props.isSaving}
+                  >
+                    {props.isSaving ? '保存中…' : '保存配置'}
+                  </button>
                 </div>
 
-                {props.testResults[provider.id] ? (
+                {props.testResults[selectedProvider.id] ? (
                   <div
                     className={`provider-feedback ${
-                      props.testResults[provider.id]?.ok
+                      props.testResults[selectedProvider.id]?.ok
                         ? 'provider-feedback-success'
                         : 'provider-feedback-error'
                     }`}
                   >
-                    <strong>{props.testResults[provider.id]?.message}</strong>
+                    <strong>{props.testResults[selectedProvider.id]?.message}</strong>
                   </div>
                 ) : null}
 
                 <div className="provider-form-grid">
                   <label className="provider-field">
-                    <span>协议</span>
-                    <select
-                      value={provider.protocol}
+                    <span>平台名称</span>
+                    <div className="provider-inline-field">
+                      <input
+                        aria-label="当前平台名称"
+                        value={providerNameDraft}
+                        onChange={(event) => {
+                          setProviderNameDraft(event.target.value)
+                        }}
+                        onBlur={applyRename}
+                      />
+                      <button
+                        type="button"
+                        className="secondary-button"
+                        onClick={applyRename}
+                      >
+                        应用名称
+                      </button>
+                    </div>
+                  </label>
+
+                  <label className="provider-field">
+                    <span>API 密钥</span>
+                    <input
+                      aria-label="API 密钥"
+                      type="password"
+                      value={selectedProvider.apiKey}
                       onChange={(event) => {
-                        props.onUpdateProvider(provider.id, (current) => ({
-                          ...current,
-                          protocol: event.target.value as StudioProviderSettingsEntry['protocol'],
+                        const value = event.target.value
+                        updateSelectedProvider((provider) => ({
+                          ...provider,
+                          apiKey: value,
                         }))
+                      }}
+                    />
+                  </label>
+
+                  <label className="provider-field">
+                    <span>API 地址</span>
+                    <input
+                      aria-label="API 地址"
+                      value={selectedProvider.baseURL ?? ''}
+                      onChange={(event) => {
+                        const value = event.target.value.trim()
+                        updateSelectedProvider((provider) => ({
+                          ...provider,
+                          baseURL: value || null,
+                        }))
+                      }}
+                    />
+                  </label>
+                </div>
+
+                <div className="provider-model-header">
+                  <strong>模型列表</strong>
+                  <div className="provider-model-actions">
+                    <button
+                      type="button"
+                      className="secondary-button"
+                      onClick={() => {
+                        setModelEditorOpen((current) => !current)
                       }}
                     >
-                      <option value="anthropic">anthropic</option>
-                      <option value="openai">openai</option>
-                    </select>
-                  </label>
-
-                  <label className="provider-field">
-                    <span>API Key</span>
-                    <input
-                      type="password"
-                      value={provider.apiKey}
-                      onChange={(event) => {
-                        props.onUpdateProvider(provider.id, (current) => ({
-                          ...current,
-                          apiKey: event.target.value,
-                        }))
-                      }}
-                    />
-                  </label>
-
-                  <label className="provider-field">
-                    <span>Base URL</span>
-                    <input
-                      value={provider.baseURL ?? ''}
-                      onChange={(event) => {
-                        props.onUpdateProvider(provider.id, (current) => ({
-                          ...current,
-                          baseURL: event.target.value || null,
-                        }))
-                      }}
-                      placeholder="可选"
-                    />
-                  </label>
+                      管理模型
+                    </button>
+                    <button
+                      type="button"
+                      className="secondary-button"
+                      onClick={addModel}
+                    >
+                      添加模型
+                    </button>
+                  </div>
                 </div>
 
-                <div className="provider-form-grid provider-form-grid-stacked">
-                  <label className="provider-field">
-                    <span>模型列表</span>
-                    <textarea
-                      rows={3}
-                      value={provider.models.join('\n')}
-                      onChange={(event) => {
-                        props.onUpdateProvider(provider.id, (current) => ({
-                          ...current,
-                          models: updateCsv(event.target.value),
-                        }))
-                      }}
-                      placeholder="每行一个模型，或用逗号分隔"
-                    />
-                  </label>
-
-                  <label className="provider-field">
-                    <span>Vision 模型</span>
-                    <input
-                      value={provider.visionModels.join(', ')}
-                      onChange={(event) => {
-                        props.onUpdateProvider(provider.id, (current) => ({
-                          ...current,
-                          visionModels: updateCsv(event.target.value),
-                        }))
-                      }}
-                      placeholder="可选，逗号分隔"
-                    />
-                  </label>
+                <div className="provider-inline-field">
+                  <input
+                    aria-label="新增模型"
+                    value={newModelDraft}
+                    placeholder="输入模型 ID，例如 gpt-4.1-mini"
+                    onChange={(event) => {
+                      setNewModelDraft(event.target.value)
+                    }}
+                    onKeyDown={(event) => {
+                      if (event.key === 'Enter') {
+                        event.preventDefault()
+                        addModel()
+                      }
+                    }}
+                  />
                 </div>
-              </article>
-            ))}
-          </div>
-        </>
+
+                {modelEditorOpen ? (
+                  <div className="provider-model-list">
+                    {selectedProvider.models.map((model, index) => (
+                      <div key={`${selectedProvider.id}-model-${index}`} className="provider-model-row">
+                        <input
+                          aria-label={`模型 #${index + 1}`}
+                          value={model}
+                          onChange={(event) => {
+                            const value = event.target.value
+                            updateSelectedProvider((provider) => ({
+                              ...provider,
+                              models: provider.models.map((item, itemIndex) =>
+                                itemIndex === index ? value : item,
+                              ),
+                            }))
+                          }}
+                          onBlur={() => {
+                            updateSelectedProvider((provider) => ({
+                              ...provider,
+                              models: normalizeModelItems(provider.models),
+                            }))
+                          }}
+                        />
+                        <button
+                          type="button"
+                          className="secondary-button"
+                          onClick={() => {
+                            updateSelectedProvider((provider) => ({
+                              ...provider,
+                              models: provider.models.filter((_, itemIndex) => itemIndex !== index),
+                            }))
+                          }}
+                        >
+                          {`删除模型 #${index + 1}`}
+                        </button>
+                      </div>
+                    ))}
+                  </div>
+                ) : null}
+
+                <button
+                  type="button"
+                  className="danger-button"
+                  onClick={() => {
+                    props.onRemoveProvider(selectedProvider.id)
+                  }}
+                >
+                  删除平台
+                </button>
+              </>
+            )}
+          </section>
+        </div>
       )}
-    </section>
+
+      {isAddDialogOpen ? (
+        <div
+          className="provider-add-dialog-backdrop"
+          role="presentation"
+          onClick={() => {
+            setIsAddDialogOpen(false)
+          }}
+        >
+          <section
+            className="provider-add-dialog"
+            role="dialog"
+            aria-label="添加平台"
+            aria-modal="true"
+            onClick={(event) => {
+              event.stopPropagation()
+            }}
+          >
+            <h4>添加平台</h4>
+            <label className="provider-field">
+              <span>平台名称</span>
+              <input
+                aria-label="平台名称"
+                value={newProviderName}
+                onChange={(event) => {
+                  setNewProviderName(event.target.value)
+                }}
+                placeholder="例如 openrouter"
+              />
+            </label>
+
+            <label className="provider-field">
+              <span>平台类型</span>
+              <select
+                aria-label="平台类型"
+                value={newProviderProtocol}
+                onChange={(event) => {
+                  setNewProviderProtocol(event.target.value as AddProviderInput['protocol'])
+                }}
+              >
+                <option value="openai">openai compatible</option>
+                <option value="anthropic">anthropic compatible</option>
+              </select>
+            </label>
+
+            <div className="provider-add-dialog-actions">
+              <button
+                type="button"
+                className="secondary-button"
+                onClick={() => {
+                  setIsAddDialogOpen(false)
+                }}
+              >
+                取消
+              </button>
+              <button
+                type="button"
+                className="primary-button"
+                onClick={addProvider}
+              >
+                确认添加
+              </button>
+            </div>
+          </section>
+        </div>
+      ) : null}
+    </div>
   )
 }

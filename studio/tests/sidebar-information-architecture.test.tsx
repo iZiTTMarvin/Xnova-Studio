@@ -14,11 +14,13 @@ afterEach(() => {
 function renderSidebar(options?: {
   projectStatus?: SidebarBlockStatus
   chatStatus?: SidebarBlockStatus
+  onOpenSettings?: () => void
 }) {
   return render(
     <ProjectShellSidebar
       activeNavId="quick-chat"
       onNavigate={vi.fn()}
+      onOpenSettings={options?.onOpenSettings ?? vi.fn()}
       projectBlock={{
         title: '项目',
         status: options?.projectStatus ?? 'ready',
@@ -49,10 +51,19 @@ describe('project-aware sidebar information architecture', () => {
       '搜索',
       'Agents',
       '项目',
-      '聊天',
       '工具',
-      '设置',
     ])
+  })
+
+  it('设置作为底部 utility 入口，独立于主导航', () => {
+    const onOpenSettings = vi.fn()
+    renderSidebar({ onOpenSettings })
+
+    const nav = screen.getByRole('navigation', { name: 'Studio 一级导航' })
+    expect(within(nav).queryByRole('button', { name: '设置' })).toBeNull()
+
+    fireEvent.click(screen.getByRole('button', { name: '设置' }))
+    expect(onOpenSettings).toHaveBeenCalledTimes(1)
   })
 
   it('项目与聊天两个 block 可以独立折叠 / 展开', () => {
@@ -77,6 +88,7 @@ describe('project-aware sidebar information architecture', () => {
       <ProjectShellSidebar
         activeNavId="quick-chat"
         onNavigate={vi.fn()}
+        onOpenSettings={vi.fn()}
         projectBlock={{
           title: '项目',
           status: 'loading',
@@ -99,6 +111,7 @@ describe('project-aware sidebar information architecture', () => {
       <ProjectShellSidebar
         activeNavId="quick-chat"
         onNavigate={vi.fn()}
+        onOpenSettings={vi.fn()}
         projectBlock={{
           title: '项目',
           status: 'disabled',

@@ -212,6 +212,92 @@ describe('studio main ipc handlers', () => {
     )
   })
 
+  it('runtime.submit 通过 main process 委托 shared runtime，并透传 runtime 事件', async () => {
+    const handlers = new Map<string, (_event: unknown, payload: unknown) => unknown>()
+    const send = vi.fn()
+    const submitRuntime = vi.fn(async (_request, _state, emitRuntimeEvent) => {
+      emitRuntimeEvent({
+        type: 'text_delta',
+        timestamp: '2026-04-23T00:00:00.000Z',
+        sessionId: 'session-1',
+        payload: {
+          text: '正在分析项目结构...',
+        },
+      })
+
+      return {
+        ok: true as const,
+        sessionId: 'session-1',
+      }
+    })
+
+    registerStudioMainIpcHandlers({
+      ipcMainLike: {
+        handle(channel, handler) {
+          handlers.set(channel, handler)
+        },
+      },
+      selectWorkspaceDirectory: vi.fn(async () => ({
+        ok: true as const,
+        code: 'selected' as const,
+        path: 'D:/workspace/demo',
+      })),
+      mainWindowManager: {
+        getMainWindow: () => ({
+          webContents: {
+            send,
+          },
+        }),
+      },
+      inspectRuntime: vi.fn(),
+      submitRuntime,
+      inspectShell: vi.fn(async () => createShellSnapshot()),
+      logger: createLogger(),
+    })
+
+    const openWorkspaceHandler = handlers.get(STUDIO_BRIDGE_CHANNELS.hostOpenWorkspace)
+    await Promise.resolve(openWorkspaceHandler?.({}, undefined))
+
+    const runtimeSubmitHandler = handlers.get(STUDIO_BRIDGE_CHANNELS.runtimeSubmit)
+    await expect(
+      Promise.resolve(
+        runtimeSubmitHandler?.({}, {
+          text: '分析当前项目',
+          projectPath: 'D:/workspace/demo',
+          agentId: 'general',
+          modelId: 'claude-sonnet-4-6',
+        }),
+      ),
+    ).resolves.toEqual({
+      ok: true,
+      sessionId: 'session-1',
+    })
+
+    expect(submitRuntime).toHaveBeenCalledWith(
+      {
+        text: '分析当前项目',
+        projectPath: 'D:/workspace/demo',
+        agentId: 'general',
+        modelId: 'claude-sonnet-4-6',
+      },
+      {
+        workspacePath: 'D:/workspace/demo',
+        lastSelection: {
+          ok: true,
+          code: 'selected',
+          path: 'D:/workspace/demo',
+        },
+      },
+      expect.any(Function),
+    )
+    expect(send).toHaveBeenCalledWith(
+      STUDIO_BRIDGE_CHANNELS.runtimeEvent,
+      expect.objectContaining({
+        type: 'text_delta',
+      }),
+    )
+  })
+
   it('openWorkspace 会串行处理，避免并发对话框竞争共享 host state', async () => {
     const handlers = new Map<string, (_event: unknown, payload: unknown) => unknown>()
     const firstSelection = createDeferred<WorkspaceSelectionResult>()

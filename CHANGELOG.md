@@ -1,4 +1,19 @@
 ## 2026-04-23
+- **Studio Settings Dialog**：重做设置为 Cherry 风格悬浮窗并打通模型服务可编辑流
+  - 新增/重写 `StudioSettingsDialog` 三栏结构：左侧模块导航、模型服务平台列表、平台配置详情；`open=false` 返回 `null`，根节点固定 `role="dialog"`
+  - 模型服务模块支持添加平台（仅 `openai compatible` / `anthropic compatible`）、编辑平台名/API Key/API 地址/模型列表，并可执行测试连接与保存（复用 `settingsApi`）
+  - 默认模型与全局记忆模块改为可操作面板，包含默认模型保存与 Memory 重建入口；同步补齐 `provider/memory/settings-tools` 对话框测试
+
+- **Studio Runtime Bridge**：打通 `runtime.submit` 最小可用链路
+  - `studio` 新增 `runtime.submit` 合同、preload 校验与 main IPC handler，并新增 `studio-runtime-service` 复用 `cli/src/runtime/create-runtime.ts` 执行单轮提交与事件回传
+  - `useStudioBridge` 新增 `submitPrompt(text)` 与 `isSubmitting`，提交成功后刷新 `shellSnapshot`/recent projects/project sessions，确保项目区可见新会话
+  - `studio-shell-inspector` 增加标题回退：当 summary 缺失首条消息时，从首个 user 消息提取前 10 字作为会话标题；同时在 CLI `sessionLogger` 增加 `setCwd()` 以保证会话归属到当前项目
+
+- **Studio Shell · 项目入口壳层重构**：主壳从占位页升级为可操作项目入口
+  - `studio/src/renderer/pages/StudioHomePage.tsx` 将“新对话”改为项目级可编辑/可提交入口，并新增可筛选可跳转的搜索页、可切换主 Agent 的 Agents 页
+  - `studio/src/renderer/components/ProjectShellSidebar.tsx` 移除一级“聊天/设置”按钮，保留“新对话”首项，并将“设置”迁至左下角 utility 入口
+  - 新增 `StudioSettingsDialog` 与壳层局部样式文件，且补齐 `renderer-shell/sidebar-information-architecture/project-session-trees` 回归测试
+
 - **Studio Shell · Codex Layout 收口**：新对话页、模式入口与设置状态按最新视觉/语义要求重新对齐
   - `studio/src/renderer/**` 将左侧首项调整为“新对话”，并把空白主工作面改成更接近 Codex App 的项目层布局，保留玻璃感、阴影与大圆角
   - `Standard / XForge` 仅在主工作页显示；设置/工具等非编码页不再重复出现模式切换

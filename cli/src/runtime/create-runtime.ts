@@ -78,6 +78,7 @@ export async function createRuntime(
         defaultProvider: providerName,
         defaultModel: modelName,
       }
+      sessionLogger.setCwd(input.cwd)
 
       const result = emptyTurnResult(lastSessionId)
       result.stopReason = 'end_turn'

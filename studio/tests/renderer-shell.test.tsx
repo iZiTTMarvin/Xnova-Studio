@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 
-import { act, cleanup, render, screen, waitFor } from '@testing-library/react'
+import { act, cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { App } from '../src/renderer/App'
 
@@ -17,12 +17,67 @@ function createBridge(options?: {
   runtimeEvent?: unknown
   memoryOverview?: unknown
   shellSnapshot?: unknown
+  runtimeSubmitPrompt?: (text: string) => Promise<void>
+  shellSetCurrentPrimaryAgent?: (agentId: string) => Promise<void>
 }) {
   const getState = vi.fn(async () => ({
     workspacePath: null,
     lastSelection: null,
     ...(options?.hostState ?? {}),
   }))
+
+  const runtimeApi = {
+    inspect: vi.fn(async () => options?.runtimeInspectResult ?? {
+      ok: true as const,
+      status: 'ready' as const,
+      snapshot: {
+        sessionId: null,
+        isRunning: false,
+        provider: 'anthropic',
+        model: 'claude-sonnet-4-6',
+        warnings: [],
+      },
+      workspacePath: options?.hostState?.workspacePath ?? null,
+      configWarnings: [],
+      issues: [],
+    }),
+    onEvent: (listener: (event: unknown) => void) => {
+      if (options?.runtimeEvent) {
+        queueMicrotask(() => {
+          listener(options.runtimeEvent)
+        })
+      }
+      return () => {}
+    },
+    ...(options?.runtimeSubmitPrompt ? { submitPrompt: options.runtimeSubmitPrompt } : {}),
+  }
+
+  const shellApi = {
+    getSnapshot: vi.fn(async () => options?.shellSnapshot ?? {
+      startup: {
+        recentProject: null,
+        recentSession: null,
+      },
+      recentProjects: [],
+      projectSessions: [],
+      scratchpadEntries: [],
+      defaults: {
+        projectPath: null,
+        branch: null,
+        agentId: null,
+        modelId: 'claude-sonnet-4-6',
+        providerId: 'anthropic',
+        recommendedMode: null,
+        allowedModes: ['standard', 'xforge'],
+        availablePrimaryAgentIds: ['general'],
+      },
+      issues: [],
+      warnings: [],
+    }),
+    ...(options?.shellSetCurrentPrimaryAgent
+      ? { setCurrentPrimaryAgent: options.shellSetCurrentPrimaryAgent }
+      : {}),
+  }
 
   return {
     host: {
@@ -37,52 +92,8 @@ function createBridge(options?: {
       })),
       onStateChanged: () => () => {},
     },
-    runtime: {
-      inspect: vi.fn(async () => options?.runtimeInspectResult ?? {
-        ok: true as const,
-        status: 'ready' as const,
-        snapshot: {
-          sessionId: null,
-          isRunning: false,
-          provider: 'anthropic',
-          model: 'claude-sonnet-4-6',
-          warnings: [],
-        },
-        workspacePath: options?.hostState?.workspacePath ?? null,
-        configWarnings: [],
-        issues: [],
-      }),
-      onEvent: (listener: (event: unknown) => void) => {
-        if (options?.runtimeEvent) {
-          queueMicrotask(() => {
-            listener(options.runtimeEvent)
-          })
-        }
-        return () => {}
-      },
-    },
-    shell: {
-      getSnapshot: vi.fn(async () => options?.shellSnapshot ?? {
-        startup: {
-          recentProject: null,
-          recentSession: null,
-        },
-        recentProjects: [],
-        projectSessions: [],
-        scratchpadEntries: [],
-        defaults: {
-          projectPath: null,
-          branch: null,
-          agentId: null,
-          modelId: 'claude-sonnet-4-6',
-          providerId: 'anthropic',
-          recommendedMode: null,
-          allowedModes: ['standard', 'xforge'],
-        },
-        issues: [],
-        warnings: [],
-      }),
-    },
+    runtime: runtimeApi,
+    shell: shellApi,
     memory: {
       getOverview: vi.fn(async () => options?.memoryOverview ?? {
         enabled: true,
@@ -125,7 +136,7 @@ describe('renderer project-aware shell', () => {
 
     expect(screen.getByRole('heading', { name: 'Xnova Studio' })).toBeTruthy()
     expect(screen.getByText('宿主桥接不可用')).toBeTruthy()
-    expect(screen.getByText('开始一个新项目')).toBeTruthy()
+    expect(screen.getByText('要开始什么项目？')).toBeTruthy()
     expect(screen.queryByText('Overview')).toBeNull()
   })
 
@@ -169,14 +180,143 @@ describe('renderer project-aware shell', () => {
       expect(screen.getByText('要开始什么项目？')).toBeTruthy()
     })
 
-    expect(screen.getByRole('button', { name: '新对话' })).toBeTruthy()
-    expect(screen.getByText('打开并继续一个已有项目')).toBeTruthy()
-    expect(screen.getByText('分析当前项目结构')).toBeTruthy()
+    const nav = screen.getByRole('navigation', { name: 'Studio 一级导航' })
+    expect(within(nav).getByRole('button', { name: '新对话' })).toBeTruthy()
+    expect(within(nav).getByRole('button', { name: '搜索' })).toBeTruthy()
+    expect(within(nav).getByRole('button', { name: 'Agents' })).toBeTruthy()
+    expect(within(nav).getByRole('button', { name: '项目' })).toBeTruthy()
+    expect(within(nav).getByRole('button', { name: '工具' })).toBeTruthy()
+    expect(within(nav).queryByRole('button', { name: '聊天' })).toBeNull()
+    expect(within(nav).queryByRole('button', { name: '设置' })).toBeNull()
+
+    expect(screen.getByRole('textbox', { name: '项目级新对话输入' })).toBeTruthy()
+    expect(screen.getByRole('button', { name: '发送提示词' })).toBeTruthy()
     expect(screen.getByRole('button', { name: '标准模式' })).toBeTruthy()
     expect(screen.getByRole('button', { name: 'XForge' })).toBeTruthy()
     expect(screen.queryByText('快速聊天')).toBeNull()
-    expect(screen.queryByText('从空白聊天开始')).toBeNull()
     expect(screen.queryByText('Overview')).toBeNull()
+  })
+
+  it('新对话输入可编辑，并在 bridge 提供 submitPrompt 时触发提交', async () => {
+    const runtimeSubmitPrompt = vi.fn(async () => undefined)
+    ;(window as Window & { xnovaStudio?: unknown }).xnovaStudio = createBridge({
+      runtimeSubmitPrompt,
+    })
+
+    render(<App />)
+
+    const input = await screen.findByRole('textbox', { name: '项目级新对话输入' })
+    fireEvent.change(input, { target: { value: '实现项目脚手架并补测试' } })
+    fireEvent.click(screen.getByRole('button', { name: '发送提示词' }))
+
+    await waitFor(() => {
+      expect(runtimeSubmitPrompt).toHaveBeenCalledWith('实现项目脚手架并补测试')
+    })
+  })
+
+  it('搜索页可基于项目与会话筛选，并能跳转到项目会话视图', async () => {
+    ;(window as Window & { xnovaStudio?: unknown }).xnovaStudio = createBridge({
+      shellSnapshot: {
+        startup: {
+          recentProject: null,
+          recentSession: null,
+        },
+        recentProjects: [
+          {
+            path: 'D:/workspace/demo',
+            name: 'demo',
+            lastActiveAt: 10,
+            exists: true,
+            gitBranch: 'main',
+          },
+        ],
+        projectSessions: [
+          {
+            sessionId: 'session-1',
+            projectPath: 'D:/workspace/demo',
+            title: '实现搜索入口',
+            updatedAt: '2026-04-22T10:00:00.000Z',
+            gitBranch: 'main',
+            messageCount: 8,
+            providerId: 'anthropic',
+            modelId: 'claude-sonnet-4-6',
+            subagents: [],
+          },
+        ],
+        scratchpadEntries: [],
+        defaults: {
+          projectPath: 'D:/workspace/demo',
+          branch: 'main',
+          agentId: 'general',
+          modelId: 'claude-sonnet-4-6',
+          providerId: 'anthropic',
+          recommendedMode: null,
+          allowedModes: ['standard', 'xforge'],
+          availablePrimaryAgentIds: ['general', 'planner'],
+        },
+        warnings: [],
+        issues: [],
+      },
+    })
+
+    render(<App />)
+
+    await waitFor(() => {
+      expect(screen.getByRole('button', { name: '搜索' })).toBeTruthy()
+    })
+
+    fireEvent.click(screen.getByRole('button', { name: '搜索' }))
+    expect(screen.getByRole('textbox', { name: '搜索项目与会话' })).toBeTruthy()
+    expect(screen.getByRole('button', { name: '会话 实现搜索入口' })).toBeTruthy()
+
+    fireEvent.change(screen.getByRole('textbox', { name: '搜索项目与会话' }), {
+      target: { value: 'demo' },
+    })
+    expect(screen.getByRole('button', { name: '项目 demo' })).toBeTruthy()
+
+    fireEvent.click(screen.getByRole('button', { name: '会话 实现搜索入口' }))
+    await waitFor(() => {
+      expect(screen.getByRole('heading', { name: '实现搜索入口' })).toBeTruthy()
+    })
+  })
+
+  it('Agents 页展示可用主 Agent，并支持切换当前 Agent', async () => {
+    const shellSetCurrentPrimaryAgent = vi.fn(async () => undefined)
+    ;(window as Window & { xnovaStudio?: unknown }).xnovaStudio = createBridge({
+      shellSetCurrentPrimaryAgent,
+      shellSnapshot: {
+        startup: {
+          recentProject: null,
+          recentSession: null,
+        },
+        recentProjects: [],
+        projectSessions: [],
+        scratchpadEntries: [],
+        defaults: {
+          projectPath: null,
+          branch: null,
+          agentId: 'general',
+          modelId: 'claude-sonnet-4-6',
+          providerId: 'anthropic',
+          recommendedMode: null,
+          allowedModes: ['standard', 'xforge'],
+          availablePrimaryAgentIds: ['general', 'planner', 'reviewer'],
+        },
+        warnings: [],
+        issues: [],
+      },
+    })
+
+    render(<App />)
+
+    fireEvent.click(await screen.findByRole('button', { name: 'Agents' }))
+    expect(screen.getByRole('button', { name: '切换到 planner' })).toBeTruthy()
+
+    fireEvent.click(screen.getByRole('button', { name: '切换到 planner' }))
+    await waitFor(() => {
+      expect(shellSetCurrentPrimaryAgent).toHaveBeenCalledWith('planner')
+    })
+    expect(screen.getByText('当前 Agent: planner')).toBeTruthy()
   })
 
   it('已绑定 workspace 时，新对话标题会跟随当前项目名动态变化', async () => {

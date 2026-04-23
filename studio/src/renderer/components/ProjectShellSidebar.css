@@ -1,0 +1,18 @@
+.sidebar-main {
+  display: flex;
+  flex: 1;
+  min-height: 0;
+  flex-direction: column;
+  gap: 14px;
+}
+
+.sidebar-utility {
+  margin-top: auto;
+  padding-top: 6px;
+  border-top: 1px solid var(--border-subtle);
+}
+
+.sidebar-utility-button {
+  width: 100%;
+  justify-content: flex-start;
+}

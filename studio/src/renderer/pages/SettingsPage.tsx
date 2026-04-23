@@ -27,10 +27,8 @@ export function StudioSettingsPage(props: StudioSettingsPageProps) {
         isSaving={providerForm.isSaving}
         testingProviderId={providerForm.testingProviderId}
         testResults={providerForm.testResults}
-        onDefaultProviderChange={providerForm.setDefaultProvider}
-        onDefaultModelChange={providerForm.setDefaultModel}
-        onSubAgentModelChange={providerForm.setSubAgentModel}
         onAddProvider={providerForm.addProvider}
+        onRenameProvider={providerForm.renameProvider}
         onUpdateProvider={providerForm.updateProvider}
         onRemoveProvider={providerForm.removeProvider}
         onSave={providerForm.save}

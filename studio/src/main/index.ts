@@ -10,6 +10,7 @@ import { createStudioMcpService } from './studio-mcp-service'
 import { createStudioSkillsPluginsService } from './studio-skills-plugins-service'
 import { createStudioShellInspector } from './studio-shell-inspector'
 import { createStudioRuntimeInspector } from './studio-runtime-inspector'
+import { createStudioRuntimeService } from './studio-runtime-service'
 import { createMainWindowManager } from './window'
 import { selectWorkspaceDirectory } from './workspace'
 
@@ -22,6 +23,9 @@ function waitForLogFlush(): Promise<void> {
 const logger = createMainLogger()
 const smokeConfig = readSmokeConfig(process.env)
 const runtimeInspector = createStudioRuntimeInspector()
+const runtimeService = createStudioRuntimeService({
+  logger,
+})
 const shellInspector = createStudioShellInspector({
   onPerformanceSample(sample) {
     logger.info('shell inspector 性能采样', sample)
@@ -60,6 +64,8 @@ registerStudioMainIpcHandlers({
         }),
   mainWindowManager,
   inspectRuntime: (request, state) => runtimeInspector.inspect(request, state),
+  submitRuntime: (request, state, emitRuntimeEvent) =>
+    runtimeService.submit(request, state, emitRuntimeEvent),
   inspectShell: (request, state) => shellInspector.inspect(request, state),
   getProviderSettings: (state) => providerSettingsService.getSnapshot(state),
   saveProviderSettings: (input, state) => providerSettingsService.save(input, state),

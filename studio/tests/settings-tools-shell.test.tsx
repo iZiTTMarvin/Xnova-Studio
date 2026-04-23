@@ -2,206 +2,136 @@
 
 import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import { App } from '../src/renderer/App'
-import type { RuntimeInspectResult, StudioShellSnapshot } from '../src/shared/studio-bridge-contract'
+import { StudioSettingsDialog } from '../src/renderer/components/StudioSettingsDialog'
+import type { StudioProviderSettingsSnapshot, StudioSettingsApi } from '../src/shared/studio-bridge-contract'
 
-function clearBridge() {
-  delete (window as Window & { xnovaStudio?: unknown }).xnovaStudio
-}
-
-function createShellSnapshot(
-  overrides?: Partial<StudioShellSnapshot>,
-): StudioShellSnapshot {
+function createProviderSnapshot(): StudioProviderSettingsSnapshot {
   return {
-    startup: {
-      recentProject: null,
-      recentSession: null,
+    editableConfig: {
+      defaultProvider: 'anthropic',
+      defaultModel: 'claude-sonnet-4-6',
+      subAgentModel: null,
+      providers: [
+        {
+          id: 'anthropic',
+          apiKey: 'sk-ant',
+          baseURL: null,
+          protocol: 'anthropic',
+          models: ['claude-sonnet-4-6'],
+          visionModels: [],
+        },
+      ],
     },
-    recentProjects: [],
-    projectSessions: [],
-    scratchpadEntries: [],
-    defaults: {
-      projectPath: null,
-      branch: null,
-      agentId: null,
-      modelId: 'claude-sonnet-4-6',
-      providerId: 'anthropic',
-      recommendedMode: null,
-      allowedModes: ['standard', 'xforge'],
+    effectiveDefaults: {
+      defaultProvider: 'anthropic',
+      defaultModel: 'claude-sonnet-4-6',
     },
-    issues: [],
+    source: {
+      userToml: 'C:/Users/demo/.xnovacode/config.toml',
+    },
     warnings: [],
-    ...overrides,
   }
 }
 
-function createBridge(options?: {
-  hostState?: {
-    workspacePath: string | null
-    lastSelection: null
-  }
-  shellSnapshot?: StudioShellSnapshot
-  runtimeInspectResult?: RuntimeInspectResult
-}) {
-  const getState = vi.fn(async () => ({
-    workspacePath: null,
-    lastSelection: null,
-    ...(options?.hostState ?? {}),
-  }))
-
+function createSettingsApi(): StudioSettingsApi {
   return {
-    host: {
-      getState,
-      openWorkspace: vi.fn(async () => ({
-        selection: {
-          ok: false as const,
-          code: 'cancelled' as const,
-          message: '用户取消了 workspace 目录选择',
+    getProviderSettings: vi.fn(async () => createProviderSnapshot()),
+    saveProviderSettings: vi.fn(async (input) => ({
+      success: true,
+      snapshot: {
+        ...createProviderSnapshot(),
+        editableConfig: {
+          ...input,
+          subAgentModel: input.subAgentModel ?? null,
         },
-        state: await getState(),
-      })),
-      onStateChanged: () => () => {},
-    },
-    runtime: {
-      inspect: vi.fn(async () => options?.runtimeInspectResult ?? {
-        ok: true as const,
-        status: 'ready' as const,
-        snapshot: {
-          sessionId: null,
-          isRunning: false,
-          provider: 'anthropic',
-          model: 'claude-sonnet-4-6',
-          warnings: [],
+        effectiveDefaults: {
+          defaultProvider: input.defaultProvider,
+          defaultModel: input.defaultModel,
         },
-        workspacePath: options?.hostState?.workspacePath ?? null,
-        configWarnings: [],
-        issues: [],
-      }),
-      onEvent: () => () => {},
-    },
-    shell: {
-      getSnapshot: vi.fn(async () => options?.shellSnapshot ?? createShellSnapshot()),
-    },
+      },
+    })),
+    testProviderConnection: vi.fn(async () => ({
+      success: true,
+      providerId: 'anthropic',
+      model: 'claude-sonnet-4-6',
+      durationMs: 10,
+    })),
   }
 }
 
 afterEach(() => {
-  clearBridge()
   cleanup()
-  window.localStorage.clear()
 })
 
-describe('settings and tools shell integration', () => {
-  it('bridge 可用但 runtime 仅 not-ready 时，设置页显示全局空态而不是宿主桥接不可用', async () => {
-    ;(window as Window & { xnovaStudio?: unknown }).xnovaStudio = createBridge({
-      runtimeInspectResult: {
-        ok: true,
-        status: 'not-ready',
-        snapshot: {
-          sessionId: null,
-          isRunning: false,
-          provider: 'anthropic',
-          model: 'claude-sonnet-4-6',
-          warnings: [],
-        },
-        workspacePath: null,
-        configWarnings: [],
-        issues: [
-          {
-            code: 'runtime-not-ready',
-            severity: 'warning',
-            message: '当前尚未绑定 Workspace，runtime 未就绪。',
-          },
-        ],
-      },
-    })
+describe('settings dialog shell', () => {
+  it('open=false 时不渲染悬浮窗', () => {
+    render(
+      <StudioSettingsDialog
+        open={false}
+        onClose={vi.fn()}
+        settingsApi={null}
+        memoryApi={null}
+        workspacePath={null}
+      />,
+    )
 
-    render(<App />)
-
-    await waitFor(() => {
-      expect(screen.getByText('要开始什么项目？')).toBeTruthy()
-    })
-
-    fireEvent.click(screen.getByRole('button', { name: '设置' }))
-
-    await waitFor(() => {
-      expect(screen.getByText('尚未绑定 Workspace，当前只展示全局设置骨架。')).toBeTruthy()
-    })
-
-    expect(
-      screen.queryByText('当前宿主桥接不可用，设置能力暂时不可读取。'),
-    ).toBeNull()
+    expect(screen.queryByRole('dialog')).toBeNull()
   })
 
-  it('在主壳中进入设置页骨架，并显示全局空态与后续 section 容器', async () => {
-    ;(window as Window & { xnovaStudio?: unknown }).xnovaStudio = createBridge()
-
-    render(<App />)
-
-    await waitFor(() => {
-      expect(screen.getByText('要开始什么项目？')).toBeTruthy()
-    })
-
-    fireEvent.click(screen.getByRole('button', { name: '设置' }))
-
-    expect(screen.getByRole('heading', { name: '设置与配置' })).toBeTruthy()
-    expect(screen.getByText('尚未绑定 Workspace，当前只展示全局设置骨架。')).toBeTruthy()
-    expect(screen.getByText('Provider 与模型')).toBeTruthy()
-    expect(screen.getByText('Memory')).toBeTruthy()
-    expect(screen.queryByRole('button', { name: '标准模式' })).toBeNull()
-    expect(screen.queryByRole('button', { name: 'XForge' })).toBeNull()
-  })
-
-  it('宿主缺失时工具页显示 disabled 状态，且不渲染项目工作页专属 mode 入口', () => {
-    clearBridge()
-
-    render(<App />)
-
-    fireEvent.click(screen.getByRole('button', { name: '工具' }))
-
-    expect(screen.getByRole('heading', { name: '工具状态与管理入口' })).toBeTruthy()
-    expect(screen.getByText('当前宿主桥接不可用，工具状态暂时不可读取。')).toBeTruthy()
-    expect(screen.getByText('MCP 状态')).toBeTruthy()
-    expect(screen.getByText('Skills / Plugins')).toBeTruthy()
-    expect(screen.queryByRole('button', { name: '标准模式' })).toBeNull()
-    expect(screen.queryByRole('button', { name: 'XForge' })).toBeNull()
-  })
-
-  it('运行时读取失败时工具页给出可见错误，而不是静默失败', async () => {
-    ;(window as Window & { xnovaStudio?: unknown }).xnovaStudio = createBridge({
-      hostState: {
-        workspacePath: 'D:/workspace/demo',
-        lastSelection: null,
-      },
-      shellSnapshot: createShellSnapshot({
-        defaults: {
-          projectPath: 'D:/workspace/demo',
-          branch: 'main',
-          agentId: 'general',
-          modelId: 'claude-sonnet-4-6',
-          providerId: 'anthropic',
-          recommendedMode: 'standard',
-          allowedModes: ['standard', 'xforge'],
-        },
-      }),
-      runtimeInspectResult: {
-        ok: false,
-        status: 'error',
-        error: 'runtime service down',
-        workspacePath: 'D:/workspace/demo',
-        configWarnings: ['memory degraded'],
-        issues: [],
-      },
-    })
-
-    render(<App />)
-
-    fireEvent.click(screen.getByRole('button', { name: '工具' }))
+  it('渲染为 role=dialog，并含三段入口与关闭操作', async () => {
+    const onClose = vi.fn()
+    render(
+      <StudioSettingsDialog
+        open
+        onClose={onClose}
+        settingsApi={createSettingsApi()}
+        memoryApi={null}
+        workspacePath="D:/workspace/demo"
+      />,
+    )
 
     await waitFor(() => {
-      expect(screen.getByText('运行时状态读取失败：runtime service down')).toBeTruthy()
+      expect(screen.getByRole('dialog', { name: '设置' })).toBeTruthy()
     })
 
-    expect(screen.getByText('memory degraded')).toBeTruthy()
+    expect(screen.getByRole('button', { name: '模型服务' })).toBeTruthy()
+    expect(screen.getByRole('button', { name: '默认模型' })).toBeTruthy()
+    expect(screen.getByRole('button', { name: '全局记忆' })).toBeTruthy()
+
+    fireEvent.click(screen.getByRole('button', { name: '关闭设置' }))
+    expect(onClose).toHaveBeenCalledTimes(1)
+  })
+
+  it('默认模型模块可简洁编辑并保存', async () => {
+    const settingsApi = createSettingsApi()
+
+    render(
+      <StudioSettingsDialog
+        open
+        onClose={vi.fn()}
+        settingsApi={settingsApi}
+        memoryApi={null}
+        workspacePath="D:/workspace/demo"
+      />,
+    )
+
+    fireEvent.click(screen.getByRole('button', { name: '默认模型' }))
+
+    await waitFor(() => {
+      expect(screen.getByLabelText('默认模型')).toBeTruthy()
+    })
+
+    fireEvent.change(screen.getByLabelText('默认模型'), {
+      target: { value: 'claude-opus-4-6' },
+    })
+    fireEvent.click(screen.getByRole('button', { name: '保存默认模型' }))
+
+    await waitFor(() => {
+      expect(settingsApi.saveProviderSettings).toHaveBeenCalledTimes(1)
+    })
+
+    expect(settingsApi.saveProviderSettings).toHaveBeenCalledWith(
+      expect.objectContaining({ defaultModel: 'claude-opus-4-6' }),
+    )
   })
 })

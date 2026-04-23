@@ -14,6 +14,8 @@ import type {
   StudioProviderSettingsSnapshot,
   RuntimeInspectRequest,
   RuntimeInspectResult,
+  RuntimeSubmitRequest,
+  RuntimeSubmitResult,
   RuntimeSnapshotView,
   StudioHostState,
   StudioModeId,
@@ -123,6 +125,64 @@ export function parseStudioRuntimeInspectRequest(
   }
 
   return value.refresh === undefined ? {} : { refresh: value.refresh }
+}
+
+export function parseStudioRuntimeSubmitRequest(
+  payload: unknown,
+): RuntimeSubmitRequest {
+  const value = assertPlainObject(payload, 'runtime.submit 参数')
+  if (
+    Object.keys(value).some(
+      (key) =>
+        key !== 'text' &&
+        key !== 'projectPath' &&
+        key !== 'agentId' &&
+        key !== 'modelId',
+    )
+  ) {
+    throw new StudioBridgeValidationError(
+      'runtime.submit 只允许 text/projectPath/agentId/modelId 字段。',
+    )
+  }
+  if (typeof value.text !== 'string') {
+    throw new StudioBridgeValidationError('runtime.submit.text 必须是字符串。')
+  }
+
+  const text = value.text.trim()
+  if (!text) {
+    throw new StudioBridgeValidationError('runtime.submit.text 不能为空。')
+  }
+
+  const parseNullableField = (
+    field: unknown,
+    subject: string,
+  ): string | null | undefined => {
+    if (field === undefined) {
+      return undefined
+    }
+    if (field === null) {
+      return null
+    }
+    if (typeof field !== 'string') {
+      throw new StudioBridgeValidationError(`${subject} 必须是字符串或 null。`)
+    }
+    const normalized = field.trim()
+    return normalized ? normalized : null
+  }
+
+  const projectPath = parseNullableField(
+    value.projectPath,
+    'runtime.submit.projectPath',
+  )
+  const agentId = parseNullableField(value.agentId, 'runtime.submit.agentId')
+  const modelId = parseNullableField(value.modelId, 'runtime.submit.modelId')
+
+  return {
+    text,
+    ...(projectPath === undefined ? {} : { projectPath }),
+    ...(agentId === undefined ? {} : { agentId }),
+    ...(modelId === undefined ? {} : { modelId }),
+  }
 }
 
 export function parseStudioShellSnapshotRequest(
@@ -923,6 +983,38 @@ export function parseStudioRuntimeInspectResult(
   }
 
   throw new StudioBridgeValidationError('runtime inspect 响应格式不合法。')
+}
+
+export function parseStudioRuntimeSubmitResult(
+  payload: unknown,
+): RuntimeSubmitResult {
+  const value = assertPlainObject(payload, 'runtime submit 响应')
+  if (value.ok === true) {
+    if (
+      value.sessionId !== undefined &&
+      value.sessionId !== null &&
+      typeof value.sessionId !== 'string'
+    ) {
+      throw new StudioBridgeValidationError(
+        'runtime.submit.sessionId 必须是字符串或 null。',
+      )
+    }
+
+    return {
+      ok: true,
+      sessionId:
+        value.sessionId === undefined ? null : (value.sessionId as string | null),
+    }
+  }
+
+  if (value.ok === false && typeof value.error === 'string') {
+    return {
+      ok: false,
+      error: value.error,
+    }
+  }
+
+  throw new StudioBridgeValidationError('runtime submit 响应格式不合法。')
 }
 
 export function parseStudioRuntimeEvent(payload: unknown): StudioRuntimeEvent {

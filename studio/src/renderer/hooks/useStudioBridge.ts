@@ -104,6 +104,7 @@ export function useStudioBridge() {
   const [currentMode, setCurrentMode] = useState<'standard' | 'xforge'>('standard')
   const [currentAgentId, setCurrentAgentId] = useState<string | null>(null)
   const [currentModelId, setCurrentModelId] = useState<string | null>(null)
+  const [isSubmitting, setIsSubmitting] = useState(false)
   const [recoveryState, setRecoveryState] = useState<RecoveryState>({
     status: {
       kind: 'empty',
@@ -188,6 +189,18 @@ export function useStudioBridge() {
       currentAgentId !== recoveryState.projectDefaults.agentId ||
       currentModelId !== recoveryState.projectDefaults.modelId)
 
+  const availablePrimaryAgentIds = useMemo(() => {
+    const ids = shellSnapshot?.defaults.availablePrimaryAgentIds ?? []
+    const next = [...ids]
+    if (currentAgentId && !next.includes(currentAgentId)) {
+      next.unshift(currentAgentId)
+    }
+    if (next.length === 0) {
+      next.push('general')
+    }
+    return next
+  }, [currentAgentId, shellSnapshot?.defaults.availablePrimaryAgentIds])
+
   const statusIssues = useMemo(() => {
     const issues = [
       ...(shellSnapshot?.issues ?? []),
@@ -253,6 +266,7 @@ export function useStudioBridge() {
       setShellError('宿主桥接不可用')
       setRuntimeStatus('disabled')
       setRuntimeError('宿主桥接不可用')
+      setIsSubmitting(false)
       setRuntimeInspectResult(null)
       setCurrentAgentId(null)
       setCurrentModelId(null)
@@ -563,6 +577,120 @@ export function useStudioBridge() {
     }))
   }
 
+  const switchPrimaryAgent = async (agentId: string): Promise<void> => {
+    if (!agentId) {
+      return
+    }
+
+    setCurrentAgentId(agentId)
+    if (selectedProjectPath) {
+      writeProjectWorkPreference(selectedProjectPath, { agentId })
+    }
+
+    // TODO: bridge contract 尚未固化 setCurrentPrimaryAgent，先走约定调用点。
+    const shellApi = bridge?.shell as
+      | { setCurrentPrimaryAgent?: (nextAgentId: string) => Promise<void> }
+      | undefined
+
+    if (!shellApi?.setCurrentPrimaryAgent) {
+      return
+    }
+
+    try {
+      await shellApi.setCurrentPrimaryAgent(agentId)
+    } catch (error) {
+      setShellError(getErrorMessage(error))
+    }
+  }
+
+  const submitPrompt = async (text: string): Promise<void> => {
+    const prompt = text.trim()
+    if (!prompt || !bridge) {
+      return
+    }
+
+    setIsSubmitting(true)
+    setRuntimeError(null)
+    setShellError(null)
+    const projectPath = selectedProjectPath ?? hostState.workspacePath ?? null
+
+    try {
+      const runtimeApi = bridge.runtime as typeof bridge.runtime & {
+        submitPrompt?: (content: string) => Promise<void>
+      }
+      const submitResult =
+        typeof runtimeApi.submit === 'function'
+          ? await runtimeApi.submit({
+              text: prompt,
+              projectPath,
+              agentId: currentAgentId,
+              modelId: currentModelId,
+            })
+          : typeof runtimeApi.submitPrompt === 'function'
+            ? await runtimeApi.submitPrompt(prompt).then(() => ({
+                ok: true as const,
+                sessionId: null,
+              }))
+            : {
+                ok: false as const,
+                error: 'runtime.submit 不可用。',
+              }
+      if (!submitResult.ok) {
+        setRuntimeStatus('error')
+        setRuntimeError(submitResult.error)
+        return
+      }
+
+      const snapshot = await bridge.shell.getSnapshot(buildShellRequest(projectPath))
+      const selection = {
+        ...(projectPath === undefined ? {} : { projectPath }),
+        ...(submitResult.sessionId === null
+          ? {}
+          : { sessionId: submitResult.sessionId }),
+      }
+      const nextProjectPath = resolveProjectPathFromSnapshot(snapshot, selection)
+      const nextStartupRoute = resolveStartupRoute({
+        recentProject: snapshot.startup.recentProject,
+        recentSession: snapshot.startup.recentSession,
+      })
+      const storedPreference = readProjectWorkPreference(nextProjectPath)
+      const restored = resolveWorkPreferenceRestore({
+        projectPath: nextProjectPath,
+        startupSessionId:
+          submitResult.sessionId ??
+          (nextStartupRoute.kind === 'restore-session' &&
+          nextStartupRoute.projectPath === nextProjectPath
+            ? nextStartupRoute.sessionId
+            : null),
+        sessions: snapshot.projectSessions,
+        defaults: snapshot.defaults,
+        storedPreference,
+      })
+
+      setShellSnapshot(snapshot)
+      setShellStatus('ready')
+      setSelectedProjectPath(nextProjectPath)
+      setSelectedSessionId(submitResult.sessionId ?? restored.sessionId)
+      setCurrentMode(restored.mode)
+      setCurrentAgentId(restored.agentId)
+      setCurrentModelId(restored.modelId)
+      setRecoveryState({
+        status: resolveDisplayRecoveryStatus(nextStartupRoute, restored.status),
+        sources: restored.sources,
+        projectDefaults: restored.projectDefaults,
+      })
+      await inspectRuntime(bridge, true)
+    } catch (error) {
+      const message = getErrorMessage(error)
+      setRuntimeStatus('error')
+      setRuntimeError(message)
+      setShellStatus('error')
+      setShellError(message)
+    } finally {
+      setIsSubmitting(false)
+    }
+  }
+
   return {
     hostStatus,
     hostState,
@@ -587,12 +715,16 @@ export function useStudioBridge() {
     currentMode,
     currentAgentId,
     currentModelId,
+    availablePrimaryAgentIds,
     recoveryStatus: recoveryState.status,
     recoverySources: recoveryState.sources,
     statusIssues,
     canRestoreProjectDefaults,
     restoreProjectDefaults,
     switchMode,
+    switchPrimaryAgent,
+    submitPrompt,
+    isSubmitting,
     lastRuntimeEvent,
     settingsApi: (bridge?.settings ?? null) as StudioSettingsApi | null,
     memoryApi: bridge?.memory ?? null,

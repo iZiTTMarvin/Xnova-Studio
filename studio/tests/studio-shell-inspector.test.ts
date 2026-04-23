@@ -237,6 +237,72 @@ describe('studio shell inspector', () => {
     })
   })
 
+  it('summary 缺失首条消息时，回退到首个 user 消息前 10 个字作为标题', async () => {
+    const existingProjectPath =
+      'D:\\visual_ProgrammingSoftware\\毕设and简历Projects\\Xnova-Code'
+    const inspector = createStudioShellInspector({
+      store: {
+        list() {
+          return [
+            createSummary({
+              cwd: existingProjectPath,
+              projectSlug: 'Xnova-Code',
+              filePath: `${existingProjectPath}\\session-1.jsonl`,
+              firstMessage: '',
+            }),
+          ]
+        },
+        loadMessages() {
+          return {
+            sessionId: 'session-1',
+            provider: 'openai',
+            model: 'gpt-4o',
+            cwd: existingProjectPath,
+            messages: [
+              {
+                id: 'user-1',
+                role: 'user',
+                content: '这是一个用于标题回退的首条消息',
+              },
+              {
+                id: 'assistant-1',
+                role: 'assistant',
+                content: '收到，我先分析代码结构。',
+              },
+            ],
+            leafEventUuid: 'assistant-1',
+          }
+        },
+        loadSubagents() {
+          return []
+        },
+      },
+      getPrimaryAgentId() {
+        return 'general'
+      },
+      listPrimaryAgentIds() {
+        return ['general']
+      },
+      getGitBranchFn() {
+        return 'main'
+      },
+    })
+
+    await expect(
+      inspector.inspect({}, {
+        workspacePath: existingProjectPath,
+        lastSelection: null,
+      }),
+    ).resolves.toMatchObject({
+      projectSessions: [
+        {
+          sessionId: 'session-1',
+          title: '这是一个用于标题回退',
+        },
+      ],
+    })
+  })
+
   it('host 持有的 workspace 路径失效时回退到最近可用项目并透出结构化 issue', async () => {
     const existingProjectPath =
       'D:\\visual_ProgrammingSoftware\\毕设and简历Projects\\Xnova-Code'

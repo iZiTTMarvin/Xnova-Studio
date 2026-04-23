@@ -8,16 +8,25 @@ import { ModeSwitch } from '../components/ModeSwitch'
 import { ContextBar } from '../components/ContextBar'
 import { ProjectTreePanel } from '../components/ProjectTreePanel'
 import { ScratchpadList } from '../components/ScratchpadList'
+import { StudioSettingsDialog } from '../components/StudioSettingsDialog'
 import { useStudioBridge } from '../hooks/useStudioBridge'
 import { useMemoryOverview } from '../hooks/useMemoryOverview'
 import { useSettingsToolsPageModel } from '../hooks/useSettingsToolsPageModel'
 import { resolveMemoryFeedbackPresentation } from '../utils/memory-feedback'
-import { StudioSettingsPage } from './SettingsPage'
 import { StudioToolsPage } from './ToolsPage'
+import './StudioHomePage.css'
 
 interface SelectedSubagentState {
   sessionId: string
   agentId: string
+}
+
+const DEFAULT_AGENT_SUMMARY = '负责项目级编码链路执行。'
+
+const AGENT_SUMMARY_MAP: Record<string, string> = {
+  general: '通用主 Agent，适合多场景协作。',
+  planner: '规划主 Agent，先拆解任务再推进实现。',
+  reviewer: '评审主 Agent，偏重质量门禁与回归。',
 }
 
 function getSubagentStatusLabel(status: 'running' | 'stopping' | 'stopped' | 'done' | 'error'): string {
@@ -43,6 +52,10 @@ function getPathLeaf(pathValue: string | null | undefined): string | null {
   const normalized = pathValue.replace(/\\/g, '/').replace(/\/+$/, '')
   const segments = normalized.split('/')
   return segments[segments.length - 1] ?? null
+}
+
+function normalizeKeyword(value: string): string {
+  return value.trim().toLowerCase()
 }
 
 export function StudioHomePage() {
@@ -74,22 +87,30 @@ export function StudioHomePage() {
     currentMode,
     currentAgentId,
     currentModelId,
+    availablePrimaryAgentIds,
     recoveryStatus,
     recoverySources,
     statusIssues,
     canRestoreProjectDefaults,
     restoreProjectDefaults,
     switchMode,
+    switchPrimaryAgent,
+    submitPrompt,
+    isSubmitting,
     lastRuntimeEvent,
   } = useStudioBridge()
   const [activeNavId, setActiveNavId] = useState<PrimaryNavId>('quick-chat')
   const [selectedSubagent, setSelectedSubagent] = useState<SelectedSubagentState | null>(null)
+  const [searchKeyword, setSearchKeyword] = useState('')
+  const [composerInput, setComposerInput] = useState('')
+  const [composerFeedback, setComposerFeedback] = useState<string | null>(null)
+  const [settingsDialogOpen, setSettingsDialogOpen] = useState(false)
   const memoryOverview = useMemoryOverview(memoryApi, {
-    enabled: shellStatus === 'ready' && activeNavId !== 'settings',
+    enabled: shellStatus === 'ready' && activeNavId !== 'tools',
     deferMs: 150,
   })
 
-  const { settingsPage, toolsPage } = useSettingsToolsPageModel({
+  const { toolsPage } = useSettingsToolsPageModel({
     hostStatus,
     hostState,
     hostError,
@@ -258,12 +279,8 @@ export function StudioHomePage() {
         return 'Agents'
       case 'projects':
         return selectedSubagentEntry ? '子代理会话' : activeSession?.title ?? '项目工作区'
-      case 'chat':
-        return '聊天'
       case 'tools':
         return '工具'
-      case 'settings':
-        return '设置'
     }
   }, [activeNavId, activeSession?.title, selectedSubagentEntry])
 
@@ -288,7 +305,7 @@ export function StudioHomePage() {
             return
           case 'model':
           case 'contextUsage':
-            setActiveNavId('settings')
+            setSettingsDialogOpen(true)
             return
         }
       }}
@@ -297,7 +314,7 @@ export function StudioHomePage() {
 
   const shouldShowMemoryFeedback =
     shellStatus === 'ready' &&
-    activeNavId !== 'settings' &&
+    activeNavId !== 'tools' &&
     memoryApi !== null &&
     (memoryOverview.status !== 'ready' ||
       memoryOverview.snapshot?.status !== 'ready' ||
@@ -310,194 +327,346 @@ export function StudioHomePage() {
     actionMessage: memoryOverview.actionMessage,
   })
 
-  const content = activeNavId === 'search'
-    ? (
-      <section className="session-card">
-        <p className="section-eyebrow">搜索</p>
-        <h2>搜索页已预留位置</h2>
-        <p className="feature-section-detail">本子任务只落信息架构，不提前实现搜索能力。</p>
-      </section>
-    )
-    : activeNavId === 'agents'
-      ? (
-        <section className="session-card">
-          <p className="section-eyebrow">Agents</p>
-          <h2>Agents 页已接入一级导航</h2>
-          <p className="feature-section-detail">本子任务只保证一级入口与壳结构稳定，不重做 Agent 深内容。</p>
+  const searchResult = useMemo(() => {
+    const keyword = normalizeKeyword(searchKeyword)
+    const projects = (shellSnapshot?.recentProjects ?? []).filter((project) => {
+      if (!keyword) {
+        return true
+      }
+      return normalizeKeyword(`${project.name} ${project.path} ${project.gitBranch ?? ''}`).includes(keyword)
+    })
+    const sessions = (shellSnapshot?.projectSessions ?? []).filter((session) => {
+      if (!keyword) {
+        return true
+      }
+      return normalizeKeyword(
+        `${session.title} ${session.sessionId} ${session.projectPath} ${session.gitBranch ?? ''}`,
+      ).includes(keyword)
+    })
+    return {
+      projects,
+      sessions,
+    }
+  }, [searchKeyword, shellSnapshot])
+
+  const handleSubmitPrompt = async (): Promise<void> => {
+    const nextText = composerInput.trim()
+    if (!nextText || isSubmitting) {
+      return
+    }
+
+    setComposerFeedback(null)
+    await submitPrompt(nextText)
+    setComposerInput('')
+    setActiveNavId('projects')
+  }
+
+  const searchContent = (
+    <section className="entry-panel shell-card">
+      <div className="entry-panel-header">
+        <h2>搜索项目与会话</h2>
+        <span className="mono">
+          {searchResult.projects.length + searchResult.sessions.length}
+          {' '}
+          项结果
+        </span>
+      </div>
+      <label className="entry-search-field">
+        <span>关键词</span>
+        <input
+          aria-label="搜索项目与会话"
+          value={searchKeyword}
+          onChange={(event) => {
+            setSearchKeyword(event.currentTarget.value)
+          }}
+          placeholder="项目名、会话标题、分支"
+        />
+      </label>
+
+      <div className="entry-grid">
+        <section className="entry-section">
+          <h3>项目</h3>
+          {searchResult.projects.length > 0 ? (
+            <div className="entry-list">
+              {searchResult.projects.map((project) => (
+                <button
+                  key={project.path}
+                  type="button"
+                  className="entry-item"
+                  aria-label={`项目 ${project.name}`}
+                  onClick={() => {
+                    setSelectedSubagent(null)
+                    setActiveNavId('projects')
+                    void selectProject(project.path)
+                  }}
+                >
+                  <strong>{project.name}</strong>
+                  <span className="mono">{project.path}</span>
+                  <span>{project.gitBranch ?? 'unknown'}</span>
+                </button>
+              ))}
+            </div>
+          ) : (
+            <p className="entry-empty">没有匹配项目</p>
+          )}
         </section>
-      )
+
+        <section className="entry-section">
+          <h3>会话</h3>
+          {searchResult.sessions.length > 0 ? (
+            <div className="entry-list">
+              {searchResult.sessions.map((session) => (
+                <button
+                  key={session.sessionId}
+                  type="button"
+                  className="entry-item"
+                  aria-label={`会话 ${session.title}`}
+                  onClick={() => {
+                    setSelectedSubagent(null)
+                    setActiveNavId('projects')
+                    void (async () => {
+                      await selectProject(session.projectPath)
+                      selectSession(session.sessionId)
+                    })()
+                  }}
+                >
+                  <strong>{session.title}</strong>
+                  <span className="mono">{session.projectPath}</span>
+                  <span>
+                    {session.gitBranch ?? 'unknown'}
+                    {' · '}
+                    {session.messageCount}
+                    {' '}
+                    条消息
+                  </span>
+                </button>
+              ))}
+            </div>
+          ) : (
+            <p className="entry-empty">没有匹配会话</p>
+          )}
+        </section>
+      </div>
+    </section>
+  )
+
+  const agentsContent = (
+    <section className="entry-panel shell-card">
+      <div className="entry-panel-header">
+        <h2>主 Agent</h2>
+        <span>当前 Agent: {currentAgentId ?? '未选择'}</span>
+      </div>
+
+      <div className="agent-grid" role="list">
+        {availablePrimaryAgentIds.map((agentId) => {
+          const isCurrent = currentAgentId === agentId
+          return (
+            <article key={agentId} className="agent-card" role="listitem">
+              <div className="agent-card-header">
+                <strong>{agentId}</strong>
+                {isCurrent ? <span className="mini-pill">当前</span> : null}
+              </div>
+              <p>{AGENT_SUMMARY_MAP[agentId] ?? DEFAULT_AGENT_SUMMARY}</p>
+              <button
+                type="button"
+                className="secondary-button"
+                aria-label={`切换到 ${agentId}`}
+                disabled={isCurrent}
+                onClick={() => {
+                  void switchPrimaryAgent(agentId)
+                }}
+              >
+                {isCurrent ? '已在使用' : '切换'}
+              </button>
+            </article>
+          )
+        })}
+      </div>
+    </section>
+  )
+
+  const projectSurfaceContent = selectedSubagentEntry ? (
+    <section className="workspace-surface" aria-label="子代理会话详情">
+      {workContextBar}
+      <section className="conversation-stage">
+        <div className="conversation-header">
+          <div>
+            <p className="section-eyebrow">SubAgent</p>
+            <h2>{selectedSubagentEntry.subagent.agentId}</h2>
+          </div>
+          <span
+            className={`feature-section-status feature-section-status-${
+              selectedSubagentEntry.subagent.status === 'error'
+                ? 'error'
+                : selectedSubagentEntry.subagent.status === 'done'
+                  ? 'ready'
+                  : selectedSubagentEntry.subagent.status === 'stopped'
+                    ? 'warning'
+                    : 'loading'
+            }`}
+          >
+            {selectedSubagentEntry.subagent.stateMessage ??
+              getSubagentStatusLabel(selectedSubagentEntry.subagent.status)}
+          </span>
+        </div>
+
+        <div className="message-stream">
+          <article className="message-block">
+            <p>{selectedSubagentEntry.subagent.description}</p>
+            <div className="runtime-log">
+              <div>
+                主会话：
+                {' '}
+                <span className="mono">{selectedSubagentEntry.session.title}</span>
+              </div>
+              <div>
+                分支：
+                {' '}
+                <span className="mono">{selectedSubagentEntry.session.gitBranch ?? '未知分支'}</span>
+              </div>
+              <div>
+                状态：
+                {' '}
+                {selectedSubagentEntry.subagent.stateMessage ??
+                  getSubagentStatusLabel(selectedSubagentEntry.subagent.status)}
+              </div>
+            </div>
+
+            {selectedSubagentEntry.subagent.partialResult ? (
+              <div className="inline-subagent">
+                <strong>部分结果</strong>
+                <span>{selectedSubagentEntry.subagent.partialResult}</span>
+              </div>
+            ) : null}
+          </article>
+        </div>
+      </section>
+    </section>
+  ) : activeSession ? (
+    <section className="workspace-surface">
+      {workContextBar}
+      <section className="session-card">
+        <p className="section-eyebrow">
+          {startupRoute.kind === 'restore-session' ? '已恢复最近工作会话' : '项目会话'}
+        </p>
+        <h2>{activeSession.title}</h2>
+        <div className="detail-row" style={{ marginTop: '12px' }}>
+          <span>项目</span>
+          <strong className="mono">{activeSession.projectPath}</strong>
+        </div>
+        <div className="detail-row">
+          <span>分支</span>
+          <strong className="mono">{activeSession.gitBranch ?? shellSnapshot?.defaults.branch ?? 'unknown'}</strong>
+        </div>
+        <div className="detail-row">
+          <span>消息</span>
+          <strong>{activeSession.messageCount} 条</strong>
+        </div>
+      </section>
+    </section>
+  ) : (
+    <section className="blank-chat-stage blank-chat-stage-codex">
+      <h2>{blankStageTitle}</h2>
+
+      <div className="composer-shell composer-shell-codex">
+        <textarea
+          className="composer-input"
+          rows={3}
+          value={composerInput}
+          aria-label="项目级新对话输入"
+          placeholder="描述你要在当前项目完成的目标"
+          onChange={(event) => {
+            setComposerInput(event.currentTarget.value)
+          }}
+          onKeyDown={(event) => {
+            if ((event.ctrlKey || event.metaKey) && event.key === 'Enter') {
+              event.preventDefault()
+              void handleSubmitPrompt()
+            }
+          }}
+        />
+        <div className="composer-footer">
+          <div className="composer-tools">
+            <button type="button" className="ghost-icon-button" aria-label="添加上下文">
+              +
+            </button>
+            <span className="mini-pill mini-pill-warning">项目入口</span>
+            <span className="mini-pill mono">{currentModelId ?? 'openai / gpt-5.4'}</span>
+          </div>
+          <button
+            className="composer-send"
+            aria-label="发送提示词"
+            disabled={isSubmitting || composerInput.trim().length === 0}
+            onClick={() => {
+              void handleSubmitPrompt()
+            }}
+          />
+        </div>
+      </div>
+
+      <div className="composer-context-shell">
+        {workContextBar}
+      </div>
+
+      <div className="suggestion-list suggestion-list-minimal">
+        <button
+          type="button"
+          className="suggestion-row suggestion-row-minimal"
+          onClick={() => {
+            void openWorkspace()
+          }}
+        >
+          <div className="suggestion-icon" />
+          <div>
+            <strong>绑定项目目录</strong>
+            <span>选择 workspace，让后续会话与分支上下文自动跟随。</span>
+          </div>
+        </button>
+        <button
+          type="button"
+          className="suggestion-row suggestion-row-minimal"
+          disabled={!shellSnapshot?.defaults.projectPath}
+          onClick={() => {
+            if (shellSnapshot?.defaults.projectPath) {
+              setActiveNavId('projects')
+            }
+          }}
+        >
+          <div className="suggestion-icon" />
+          <div>
+            <strong>继续当前项目会话</strong>
+            <span>直接进入项目会话树，延续最近工作状态。</span>
+          </div>
+        </button>
+      </div>
+
+      {composerFeedback ? (
+        <p className="composer-feedback">{composerFeedback}</p>
+      ) : null}
+    </section>
+  )
+
+  const content = activeNavId === 'search'
+    ? searchContent
+    : activeNavId === 'agents'
+      ? agentsContent
       : activeNavId === 'tools'
         ? <StudioToolsPage page={toolsPage} mcpApi={mcpApi} skillsPluginsApi={skillsPluginsApi} />
-      : activeNavId === 'settings'
-        ? <StudioSettingsPage page={settingsPage} settingsApi={settingsApi} memoryApi={memoryApi} />
-        : activeNavId === 'chat'
-          ? (
-            <section className="blank-chat-stage">
-                <p className="section-eyebrow">Scratchpad</p>
-                <h2>全局即时工作区</h2>
-                <p>不替代项目主链路，只做轻量 scratchpad。</p>
-              </section>
-            )
-            : (
-              <>
-                {startupRoute.kind === 'restore-session' ? (
-                  <section className="workspace-surface">
-                    {workContextBar}
-                    <section className="session-card">
-                      <p className="section-eyebrow">已恢复最近工作会话</p>
-                      <h2>{activeSession?.title ?? `会话 ${startupRoute.sessionId.slice(0, 8)}`}</h2>
-                      <div className="detail-row" style={{ marginTop: '12px' }}>
-                        <span>项目</span>
-                        <strong className="mono">{activeSession?.projectPath ?? startupRoute.projectPath}</strong>
-                      </div>
-                      <div className="detail-row">
-                        <span>分支</span>
-                        <strong className="mono">{activeSession?.gitBranch ?? shellSnapshot?.defaults.branch ?? 'unknown'}</strong>
-                      </div>
-                      <div className="detail-row">
-                        <span>消息</span>
-                        <strong>{activeSession?.messageCount ?? 0} 条</strong>
-                      </div>
-                    </section>
-                  </section>
-                ) : activeNavId === 'projects' && selectedSubagentEntry ? (
-                  <section className="workspace-surface" aria-label="子代理会话详情">
-                    {workContextBar}
-                    <section className="conversation-stage">
-                      <div className="conversation-header">
-                        <div>
-                          <p className="section-eyebrow">SubAgent</p>
-                          <h2>{selectedSubagentEntry.subagent.agentId}</h2>
-                        </div>
-                        <span
-                          className={`feature-section-status feature-section-status-${
-                            selectedSubagentEntry.subagent.status === 'error'
-                              ? 'error'
-                              : selectedSubagentEntry.subagent.status === 'done'
-                                ? 'ready'
-                                : selectedSubagentEntry.subagent.status === 'stopped'
-                                  ? 'warning'
-                                  : 'loading'
-                          }`}
-                        >
-                          {selectedSubagentEntry.subagent.stateMessage ??
-                            getSubagentStatusLabel(selectedSubagentEntry.subagent.status)}
-                        </span>
-                      </div>
-
-                      <div className="message-stream">
-                        <article className="message-block">
-                          <p>{selectedSubagentEntry.subagent.description}</p>
-                          <div className="runtime-log">
-                            <div>
-                              主会话：
-                              {' '}
-                              <span className="mono">{selectedSubagentEntry.session.title}</span>
-                            </div>
-                            <div>
-                              分支：
-                              {' '}
-                              <span className="mono">{selectedSubagentEntry.session.gitBranch ?? '未知分支'}</span>
-                            </div>
-                            <div>
-                              状态：
-                              {' '}
-                              {selectedSubagentEntry.subagent.stateMessage ??
-                                getSubagentStatusLabel(selectedSubagentEntry.subagent.status)}
-                            </div>
-                          </div>
-
-                          {selectedSubagentEntry.subagent.partialResult ? (
-                            <div className="inline-subagent">
-                              <strong>部分结果</strong>
-                              <span>{selectedSubagentEntry.subagent.partialResult}</span>
-                            </div>
-                          ) : null}
-                        </article>
-                      </div>
-                    </section>
-                  </section>
-                ) : (
-                  <section className="blank-chat-stage blank-chat-stage-codex">
-                    <h2>{blankStageTitle}</h2>
-
-                    <div className="composer-shell composer-shell-codex">
-                      <textarea
-                        className="composer-input"
-                        rows={3}
-                        placeholder="向 Xnova 提出任何问题。输入 @ 使用工具、文件或技能"
-                        readOnly
-                      />
-                      <div className="composer-footer">
-                        <div className="composer-tools">
-                          <button type="button" className="ghost-icon-button" aria-label="添加上下文">
-                            +
-                          </button>
-                          <span className="mini-pill mini-pill-warning">完全访问权限</span>
-                          <span className="mini-pill mono">{currentModelId ?? 'openai / gpt-5.4'}</span>
-                        </div>
-                        <button className="composer-send" aria-label="发送" />
-                      </div>
-                    </div>
-
-                    <div className="composer-context-shell">
-                      {workContextBar}
-                    </div>
-
-                    <div className="suggestion-list suggestion-list-minimal">
-                      <button
-                        type="button"
-                        className="suggestion-row suggestion-row-minimal"
-                        onClick={() => {
-                          void openWorkspace()
-                        }}
-                      >
-                        <div className="suggestion-icon" />
-                        <div>
-                          <strong>开始一个新项目</strong>
-                          <span>绑定 workspace 后，让 Xnova 从 0 到 1 推进初始化、编码与测试。</span>
-                        </div>
-                      </button>
-                      <button
-                        type="button"
-                        className="suggestion-row suggestion-row-minimal"
-                        onClick={() => {
-                          void openWorkspace()
-                        }}
-                      >
-                        <div className="suggestion-icon" />
-                        <div>
-                          <strong>打开并继续一个已有项目</strong>
-                          <span>恢复最近会话，把项目、分支、Agent、模型一起带回当前工作面。</span>
-                        </div>
-                      </button>
-                      <button
-                        type="button"
-                        className="suggestion-row suggestion-row-minimal"
-                        disabled={!shellSnapshot?.defaults.projectPath}
-                        onClick={() => {
-                          if (shellSnapshot?.defaults.projectPath) {
-                            setActiveNavId('projects')
-                          }
-                        }}
-                      >
-                        <div className="suggestion-icon" />
-                        <div>
-                          <strong>分析当前项目结构</strong>
-                          <span>基于当前 workspace 事实源，快速理解入口、模块边界与测试面。</span>
-                        </div>
-                      </button>
-                    </div>
-                  </section>
-                )}
-              </>
-            )
+        : projectSurfaceContent
 
   return (
     <div className="project-shell-layout">
       <ProjectShellSidebar
         activeNavId={activeNavId}
-        onNavigate={setActiveNavId}
+        onNavigate={(nextNavId) => {
+          setActiveNavId(nextNavId)
+          if (nextNavId !== 'projects') {
+            setSelectedSubagent(null)
+          }
+        }}
+        onOpenSettings={() => {
+          setSettingsDialogOpen(true)
+        }}
         projectBlock={{
           title: '项目',
           status: projectBlockStatus,
@@ -550,14 +719,12 @@ export function StudioHomePage() {
           </div>
         </header>
 
-        {/* 启动通知 */}
         {startupNotice ? (
           <section className="shell-banner">
             <strong>{startupNotice}</strong>
           </section>
         ) : null}
 
-        {/* 状态问题 */}
         {statusIssues.length > 0 ? (
           <section className="warning-list-card" aria-label="状态问题">
             <strong>状态问题</strong>
@@ -572,7 +739,6 @@ export function StudioHomePage() {
           </section>
         ) : null}
 
-        {/* Memory 反馈 */}
         {shouldShowMemoryFeedback ? (
           <section className="warning-list-card" aria-label="Memory 主流程反馈">
             <div className="warning-status-line">
@@ -588,7 +754,6 @@ export function StudioHomePage() {
           </section>
         ) : null}
 
-        {/* SubAgent 反馈 */}
         {liveSubagentFeedback || sessionSubagentFeedback.length > 0 ? (
           <section className="warning-list-card" aria-label="SubAgent 主流程反馈">
             <strong>SubAgent 状态</strong>
@@ -615,11 +780,9 @@ export function StudioHomePage() {
           </section>
         ) : null}
 
-        {/* 主内容区 */}
         {content}
 
-        {/* 恢复状态 — 仅在设置页外、且有需要时显示 */}
-        {activeNavId !== 'settings' && activeNavId !== 'tools' && recoveryStatus.kind !== 'empty' ? (
+        {activeNavId !== 'tools' && recoveryStatus.kind !== 'empty' ? (
           <section className="inline-card" style={{ padding: '14px 18px' }}>
             <div className="detail-row" style={{ padding: '6px 0' }}>
               <span>恢复状态</span>
@@ -645,6 +808,16 @@ export function StudioHomePage() {
           </section>
         ) : null}
       </main>
+
+      <StudioSettingsDialog
+        open={settingsDialogOpen}
+        onClose={() => {
+          setSettingsDialogOpen(false)
+        }}
+        settingsApi={settingsApi}
+        memoryApi={memoryApi}
+        workspacePath={selectedProjectPath ?? hostState.workspacePath}
+      />
     </div>
   )
 }

@@ -12,17 +12,22 @@ export interface ProviderTestResultView {
   message: string
 }
 
+export interface AddProviderInput {
+  providerId: string
+  protocol: 'openai' | 'anthropic'
+}
+
 function formatTestResult(result: StudioProviderConnectionTestResult): ProviderTestResultView {
   if (result.success) {
     return {
       ok: true,
-      message: `✅ ${result.model} 连通成功（${result.durationMs}ms）`,
+      message: `${result.model} 连通成功（${result.durationMs ?? 0}ms）`,
     }
   }
 
   return {
     ok: false,
-    message: `❌ ${result.model ?? result.providerId}: ${result.error}`,
+    message: `${result.model ?? result.providerId}: ${result.error ?? '连接失败'}`,
   }
 }
 
@@ -45,6 +50,22 @@ function resolveNextDefaultModel(provider: StudioProviderSettingsEntry): string 
   return provider.models[0] ?? ''
 }
 
+function updateTestResultKey(
+  current: Record<string, ProviderTestResultView>,
+  from: string,
+  to: string,
+): Record<string, ProviderTestResultView> {
+  const currentValue = current[from]
+  if (from === to || !currentValue) {
+    return current
+  }
+
+  const next = { ...current }
+  next[to] = currentValue
+  delete next[from]
+  return next
+}
+
 export interface UseProviderSettingsFormResult {
   status: 'loading' | 'ready' | 'disabled' | 'error'
   snapshot: StudioProviderSettingsSnapshot | null
@@ -57,7 +78,8 @@ export interface UseProviderSettingsFormResult {
   setDefaultProvider: (providerId: string) => void
   setDefaultModel: (modelId: string) => void
   setSubAgentModel: (modelId: string) => void
-  addProvider: (providerId: string) => boolean
+  addProvider: (input: AddProviderInput) => boolean
+  renameProvider: (providerId: string, nextProviderId: string) => boolean
   updateProvider: (
     providerId: string,
     updater: (provider: StudioProviderSettingsEntry) => StudioProviderSettingsEntry,
@@ -84,7 +106,7 @@ export function useProviderSettingsForm(
   useEffect(() => {
     if (!settingsApi) {
       setStatus('disabled')
-      setError('当前宿主桥接不可用，Provider 配置暂时不可读取。')
+      setError('当前宿主桥接不可用，模型服务配置暂时不可读取。')
       setSnapshot(null)
       setDraft(null)
       return
@@ -118,8 +140,8 @@ export function useProviderSettingsForm(
     }
   }, [settingsApi])
 
-  const providerMap = useMemo(() => {
-    return new Map((draft?.providers ?? []).map((provider) => [provider.id, provider]))
+  const providerIds = useMemo(() => {
+    return new Set((draft?.providers ?? []).map((provider) => provider.id))
   }, [draft])
 
   const setDefaultProvider = (providerId: string): void => {
@@ -135,6 +157,7 @@ export function useProviderSettingsForm(
         defaultModel: nextProvider ? resolveNextDefaultModel(nextProvider) : currentDraft.defaultModel,
       }
     })
+    setError(null)
   }
 
   const setDefaultModel = (modelId: string): void => {
@@ -146,6 +169,7 @@ export function useProviderSettingsForm(
           }
         : currentDraft,
     )
+    setError(null)
   }
 
   const setSubAgentModel = (modelId: string): void => {
@@ -157,38 +181,94 @@ export function useProviderSettingsForm(
           }
         : currentDraft,
     )
+    setError(null)
   }
 
-  const addProvider = (providerId: string): boolean => {
-    const normalized = providerId.trim()
+  const addProvider = (input: AddProviderInput): boolean => {
+    const normalized = input.providerId.trim()
     if (!normalized) {
-      setError('新增 Provider ID 不能为空。')
+      setError('平台名称不能为空。')
       return false
     }
 
-    if (providerMap.has(normalized)) {
-      setError(`Provider "${normalized}" 已存在。`)
+    if (providerIds.has(normalized)) {
+      setError(`平台 "${normalized}" 已存在。`)
       return false
     }
 
-    setDraft((currentDraft) =>
-      currentDraft
-        ? {
-            ...currentDraft,
-            providers: [
-              ...currentDraft.providers,
-              {
+    setDraft((currentDraft) => {
+      if (!currentDraft) {
+        return currentDraft
+      }
+
+      const providers = [
+        ...currentDraft.providers,
+        {
+          id: normalized,
+          apiKey: '',
+          baseURL: null,
+          protocol: input.protocol,
+          models: [],
+          visionModels: [],
+        },
+      ]
+
+      return {
+        ...currentDraft,
+        providers,
+        defaultProvider: currentDraft.defaultProvider || normalized,
+      }
+    })
+    setError(null)
+    return true
+  }
+
+  const renameProvider = (providerId: string, nextProviderId: string): boolean => {
+    const normalized = nextProviderId.trim()
+    if (!normalized) {
+      setError('平台名称不能为空。')
+      return false
+    }
+
+    if (providerId !== normalized && providerIds.has(normalized)) {
+      setError(`平台 "${normalized}" 已存在。`)
+      return false
+    }
+
+    let renamed = false
+    setDraft((currentDraft) => {
+      if (!currentDraft) {
+        return currentDraft
+      }
+
+      if (!currentDraft.providers.some((provider) => provider.id === providerId)) {
+        return currentDraft
+      }
+
+      renamed = true
+      return {
+        ...currentDraft,
+        providers: currentDraft.providers.map((provider) =>
+          provider.id === providerId
+            ? {
+                ...provider,
                 id: normalized,
-                apiKey: '',
-                baseURL: null,
-                protocol: normalized === 'anthropic' ? 'anthropic' : 'openai',
-                models: [],
-                visionModels: [],
-              },
-            ],
-          }
-        : currentDraft,
-    )
+              }
+            : provider,
+        ),
+        defaultProvider:
+          currentDraft.defaultProvider === providerId ? normalized : currentDraft.defaultProvider,
+      }
+    })
+
+    if (!renamed) {
+      return false
+    }
+
+    setTestResults((current) => updateTestResultKey(current, providerId, normalized))
+    if (testingProviderId === providerId) {
+      setTestingProviderId(normalized)
+    }
     setError(null)
     return true
   }
@@ -202,13 +282,27 @@ export function useProviderSettingsForm(
         return currentDraft
       }
 
+      const nextProviders = currentDraft.providers.map((provider) =>
+        provider.id === providerId ? updater(provider) : provider,
+      )
+
+      const defaultProviderEntry = nextProviders.find(
+        (provider) => provider.id === currentDraft.defaultProvider,
+      )
+      const shouldResetDefaultModel =
+        Boolean(defaultProviderEntry) &&
+        !defaultProviderEntry!.models.includes(currentDraft.defaultModel)
+
       return {
         ...currentDraft,
-        providers: currentDraft.providers.map((provider) =>
-          provider.id === providerId ? updater(provider) : provider,
-        ),
+        providers: nextProviders,
+        defaultModel:
+          shouldResetDefaultModel && defaultProviderEntry
+            ? resolveNextDefaultModel(defaultProviderEntry)
+            : currentDraft.defaultModel,
       }
     })
+    setError(null)
   }
 
   const removeProvider = (providerId: string): void => {
@@ -234,6 +328,21 @@ export function useProviderSettingsForm(
         defaultModel: nextDefaultModel,
       }
     })
+
+    setTestResults((current) => {
+      if (!current[providerId]) {
+        return current
+      }
+
+      const next = { ...current }
+      delete next[providerId]
+      return next
+    })
+
+    if (testingProviderId === providerId) {
+      setTestingProviderId(null)
+    }
+    setError(null)
   }
 
   const save = async (): Promise<void> => {
@@ -257,7 +366,7 @@ export function useProviderSettingsForm(
       setSaveMessage(
         result.snapshot.source.userToml
           ? `已写入 ${result.snapshot.source.userToml}`
-          : 'Provider 配置已保存',
+          : '配置已保存',
       )
     } catch (reason) {
       setError(reason instanceof Error ? reason.message : String(reason))
@@ -295,7 +404,7 @@ export function useProviderSettingsForm(
         ...current,
         [providerId]: {
           ok: false,
-          message: `❌ ${providerId}: ${reason instanceof Error ? reason.message : String(reason)}`,
+          message: `${providerId}: ${reason instanceof Error ? reason.message : String(reason)}`,
         },
       }))
     } finally {
@@ -316,6 +425,7 @@ export function useProviderSettingsForm(
     setDefaultModel,
     setSubAgentModel,
     addProvider,
+    renameProvider,
     updateProvider,
     removeProvider,
     save,

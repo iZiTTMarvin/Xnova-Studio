@@ -65,6 +65,13 @@ export class SessionLogger {
     return this.#accumulatedMs
   }
 
+  /** 更新当前会话写入目录（供多项目宿主在 submit 前注入） */
+  setCwd(cwd: string): void {
+    const nextCwd = cwd.trim()
+    if (!nextCwd) return
+    this.#cwd = nextCwd
+  }
+
   /** 绑定到一个已有会话（恢复/分叉时调用） */
   bind(sessionId: string, lastEventUuid?: string | null): void {
     this.#sessionId = sessionId

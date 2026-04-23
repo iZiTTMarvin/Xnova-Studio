@@ -1,16 +1,21 @@
 import type {
   RuntimeInspectRequest,
   RuntimeInspectResult,
+  RuntimeSubmitRequest,
+  RuntimeSubmitResult,
   StudioRuntimeEvent,
 } from '../shared/studio-bridge-contract'
 import { STUDIO_BRIDGE_CHANNELS, type StudioIpcRendererLike } from './studio-ipc-contract'
 import {
   parseStudioRuntimeEvent,
   parseStudioRuntimeInspectResult,
+  parseStudioRuntimeSubmitRequest,
+  parseStudioRuntimeSubmitResult,
 } from './studio-validators'
 
 export interface StudioRuntimeGateway {
   inspect(request: RuntimeInspectRequest): Promise<RuntimeInspectResult>
+  submit(request: RuntimeSubmitRequest): Promise<RuntimeSubmitResult>
   onEvent(listener: (event: StudioRuntimeEvent) => void): () => void
   dispose(): Promise<void>
 }
@@ -39,6 +44,14 @@ export function createStudioRuntimeGateway(
         request,
       )
       return parseStudioRuntimeInspectResult(payload)
+    },
+    async submit(request) {
+      const safeRequest = parseStudioRuntimeSubmitRequest(request)
+      const payload = await options.ipcRenderer.invoke(
+        STUDIO_BRIDGE_CHANNELS.runtimeSubmit,
+        safeRequest,
+      )
+      return parseStudioRuntimeSubmitResult(payload)
     },
     onEvent(listener) {
       listeners.add(listener)

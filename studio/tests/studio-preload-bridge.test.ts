@@ -47,6 +47,13 @@ class FakeIpcRenderer {
       }
     }
 
+    if (channel === STUDIO_BRIDGE_CHANNELS.runtimeSubmit) {
+      return {
+        ok: true,
+        sessionId: 'session-2',
+      }
+    }
+
     if (channel === STUDIO_BRIDGE_CHANNELS.shellGetSnapshot) {
       return {
         startup: {
@@ -192,6 +199,41 @@ describe('studio preload bridge', () => {
       },
     })
     expect(listener).toHaveBeenCalledTimes(1)
+  })
+
+  it('通过 IPC 提交 runtime prompt，并校验 submit 参数', async () => {
+    const ipcRenderer = new FakeIpcRenderer()
+    const api = createStudioBridgeApi({
+      ipcRenderer,
+    })
+
+    await expect(
+      api.runtime.submit({
+        text: '  分析当前项目  ',
+        projectPath: 'D:/workspace/demo',
+        agentId: 'general',
+        modelId: 'claude-sonnet-4-6',
+      }),
+    ).resolves.toEqual({
+      ok: true,
+      sessionId: 'session-2',
+    })
+
+    expect(ipcRenderer.invoke).toHaveBeenCalledWith(
+      STUDIO_BRIDGE_CHANNELS.runtimeSubmit,
+      {
+        text: '分析当前项目',
+        projectPath: 'D:/workspace/demo',
+        agentId: 'general',
+        modelId: 'claude-sonnet-4-6',
+      },
+    )
+
+    await expect(
+      (api.runtime.submit as (payload: unknown) => Promise<unknown>)({
+        text: '   ',
+      }),
+    ).rejects.toThrow('runtime.submit.text 不能为空')
   })
 
   it('通过 IPC 读取 shell snapshot，并校验请求参数', async () => {

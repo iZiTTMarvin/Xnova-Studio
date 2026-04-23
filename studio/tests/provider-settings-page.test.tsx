@@ -1,13 +1,13 @@
 // @vitest-environment jsdom
 
-import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
+import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import { App } from '../src/renderer/App'
-import type { StudioProviderSettingsSnapshot } from '../src/shared/studio-bridge-contract'
-
-function clearBridge() {
-  delete (window as Window & { xnovaStudio?: unknown }).xnovaStudio
-}
+import { StudioSettingsDialog } from '../src/renderer/components/StudioSettingsDialog'
+import type {
+  StudioProviderSettingsSaveInput,
+  StudioProviderSettingsSnapshot,
+  StudioSettingsApi,
+} from '../src/shared/studio-bridge-contract'
 
 function createProviderSnapshot(): StudioProviderSettingsSnapshot {
   return {
@@ -21,7 +21,7 @@ function createProviderSnapshot(): StudioProviderSettingsSnapshot {
           apiKey: 'sk-ant',
           baseURL: null,
           protocol: 'anthropic',
-          models: ['claude-sonnet-4-6', 'claude-opus-4-6'],
+          models: ['claude-sonnet-4-6'],
           visionModels: [],
         },
       ],
@@ -34,25 +34,20 @@ function createProviderSnapshot(): StudioProviderSettingsSnapshot {
       userToml: 'C:/Users/demo/.xnovacode/config.toml',
       projectToml: 'D:/workspace/demo/.xnovacode/project.toml',
     },
-    warnings: ['legacy migration retained'],
+    warnings: [],
   }
 }
 
-function createBridge() {
-  const settings = {
+function createSettingsApi(): StudioSettingsApi {
+  return {
     getProviderSettings: vi.fn(async () => createProviderSnapshot()),
-    saveProviderSettings: vi.fn(async (input: {
-      defaultProvider: string
-      defaultModel: string
-      subAgentModel: string | null
-      providers: StudioProviderSettingsSnapshot['editableConfig']['providers']
-    }) => ({
-      success: true as const,
+    saveProviderSettings: vi.fn(async (input: StudioProviderSettingsSaveInput) => ({
+      success: true,
       snapshot: {
         ...createProviderSnapshot(),
         editableConfig: {
-          ...createProviderSnapshot().editableConfig,
           ...input,
+          subAgentModel: input.subAgentModel ?? null,
         },
         effectiveDefaults: {
           defaultProvider: input.defaultProvider,
@@ -60,141 +55,101 @@ function createBridge() {
         },
       },
     })),
-    testProviderConnection: vi.fn(async (input: {
-      providerId: string
-      config: { models: string[] }
-    }) => ({
-      success: true as const,
+    testProviderConnection: vi.fn(async (input) => ({
+      success: true,
       providerId: input.providerId,
-      model: input.config.models[0] ?? 'claude-sonnet-4-6',
+      model: input.model ?? 'claude-sonnet-4-6',
       durationMs: 12,
     })),
-  }
-
-  return {
-    host: {
-      getState: vi.fn(async () => ({
-        workspacePath: 'D:/workspace/demo',
-        lastSelection: null,
-      })),
-      openWorkspace: vi.fn(async () => ({
-        selection: {
-          ok: true as const,
-          code: 'selected' as const,
-          path: 'D:/workspace/demo',
-        },
-        state: {
-          workspacePath: 'D:/workspace/demo',
-          lastSelection: null,
-        },
-      })),
-      onStateChanged: () => () => {},
-    },
-    runtime: {
-      inspect: vi.fn(async () => ({
-        ok: true as const,
-        snapshot: {
-          sessionId: null,
-          isRunning: false,
-          provider: 'anthropic',
-          model: 'claude-sonnet-4-6',
-          warnings: [],
-        },
-        workspacePath: 'D:/workspace/demo',
-        configWarnings: [],
-      })),
-      onEvent: () => () => {},
-    },
-    shell: {
-      getSnapshot: vi.fn(async () => ({
-        startup: {
-          recentProject: null,
-          recentSession: null,
-        },
-        recentProjects: [],
-        projectSessions: [],
-        scratchpadEntries: [],
-        defaults: {
-          projectPath: 'D:/workspace/demo',
-          branch: 'main',
-          agentId: 'general',
-          modelId: 'claude-sonnet-4-6',
-          providerId: 'anthropic',
-          recommendedMode: null,
-          allowedModes: ['standard', 'xforge'],
-        },
-        warnings: [],
-      })),
-    },
-    settings,
   }
 }
 
 afterEach(() => {
   cleanup()
-  clearBridge()
-  window.localStorage.clear()
 })
 
-describe('provider settings page', () => {
-  it('从 settings bridge 回显 resolved provider/model，并保存 TOML 草稿', async () => {
-    const bridge = createBridge()
-    ;(window as Window & { xnovaStudio?: unknown }).xnovaStudio = bridge
+describe('provider settings dialog', () => {
+  it('模型服务支持添加平台、编辑配置、模型管理、测试连接与保存', async () => {
+    const settingsApi = createSettingsApi()
 
-    render(<App />)
-
-    fireEvent.click(screen.getByRole('button', { name: '设置' }))
-
-    await waitFor(() => {
-      expect(screen.getByLabelText('默认 Provider')).toBeTruthy()
-    })
-
-    expect((screen.getByLabelText('默认 Provider') as HTMLSelectElement).value).toBe('anthropic')
-    expect((screen.getByLabelText('默认模型') as HTMLInputElement).value).toBe('claude-sonnet-4-6')
-    expect(screen.getByText('legacy migration retained')).toBeTruthy()
-
-    fireEvent.change(screen.getByLabelText('默认模型'), {
-      target: { value: 'claude-opus-4-6' },
-    })
-    fireEvent.click(screen.getByRole('button', { name: '保存 Provider 配置' }))
+    render(
+      <StudioSettingsDialog
+        open
+        onClose={vi.fn()}
+        settingsApi={settingsApi}
+        memoryApi={null}
+        workspacePath="D:/workspace/demo"
+      />,
+    )
 
     await waitFor(() => {
-      expect(bridge.settings.saveProviderSettings).toHaveBeenCalledTimes(1)
+      expect(screen.getByRole('heading', { name: '模型服务' })).toBeTruthy()
     })
 
-    expect(bridge.settings.saveProviderSettings).toHaveBeenCalledWith(
+    fireEvent.click(screen.getByRole('button', { name: '添加平台' }))
+
+    await waitFor(() => {
+      expect(screen.getByRole('heading', { name: '添加平台' })).toBeTruthy()
+    })
+
+    const addDialog = screen.getByRole('dialog', { name: '添加平台' })
+    const platformTypeSelect = within(addDialog).getByLabelText('平台类型') as HTMLSelectElement
+    const typeLabels = Array.from(platformTypeSelect.options).map((option) => option.textContent)
+    expect(typeLabels).toEqual(['openai compatible', 'anthropic compatible'])
+
+    fireEvent.change(within(addDialog).getByLabelText('平台名称'), {
+      target: { value: 'openrouter' },
+    })
+    fireEvent.change(platformTypeSelect, {
+      target: { value: 'openai' },
+    })
+    fireEvent.click(screen.getByRole('button', { name: '确认添加' }))
+
+    await waitFor(() => {
+      expect(screen.getByRole('button', { name: /openrouter/ })).toBeTruthy()
+    })
+
+    fireEvent.click(screen.getByRole('button', { name: /openrouter/ }))
+    fireEvent.change(screen.getByLabelText('当前平台名称'), {
+      target: { value: 'openrouter-prod' },
+    })
+    fireEvent.click(screen.getByRole('button', { name: '应用名称' }))
+    fireEvent.change(screen.getByLabelText('API 密钥'), {
+      target: { value: 'sk-openrouter' },
+    })
+    fireEvent.change(screen.getByLabelText('API 地址'), {
+      target: { value: 'https://openrouter.ai/api/v1' },
+    })
+
+    fireEvent.click(screen.getByRole('button', { name: '添加模型' }))
+    fireEvent.change(screen.getByLabelText('模型 #1'), {
+      target: { value: 'openai/gpt-4.1-mini' },
+    })
+
+    fireEvent.click(screen.getByRole('button', { name: '测试连接' }))
+
+    await waitFor(() => {
+      expect(settingsApi.testProviderConnection).toHaveBeenCalledTimes(1)
+    })
+
+    fireEvent.click(screen.getByRole('button', { name: '保存配置' }))
+
+    await waitFor(() => {
+      expect(settingsApi.saveProviderSettings).toHaveBeenCalledTimes(1)
+    })
+
+    expect(settingsApi.saveProviderSettings).toHaveBeenCalledWith(
       expect.objectContaining({
-        defaultProvider: 'anthropic',
-        defaultModel: 'claude-opus-4-6',
+        providers: expect.arrayContaining([
+          expect.objectContaining({
+            id: 'openrouter-prod',
+            protocol: 'openai',
+            apiKey: 'sk-openrouter',
+            baseURL: 'https://openrouter.ai/api/v1',
+            models: ['openai/gpt-4.1-mini'],
+          }),
+        ]),
       }),
     )
-  })
-
-  it('支持新增 provider，并触发测试连接反馈', async () => {
-    const bridge = createBridge()
-    ;(window as Window & { xnovaStudio?: unknown }).xnovaStudio = bridge
-
-    render(<App />)
-
-    fireEvent.click(screen.getByRole('button', { name: '设置' }))
-
-    await waitFor(() => {
-      expect(screen.getByLabelText('新增 Provider ID')).toBeTruthy()
-    })
-
-    fireEvent.change(screen.getByLabelText('新增 Provider ID'), {
-      target: { value: 'deepseek' },
-    })
-    fireEvent.click(screen.getByRole('button', { name: '新增 Provider' }))
-
-    expect(screen.getByRole('heading', { name: 'deepseek' })).toBeTruthy()
-
-    fireEvent.click(screen.getByRole('button', { name: '测试 anthropic' }))
-
-    await waitFor(() => {
-      expect(bridge.settings.testProviderConnection).toHaveBeenCalledTimes(1)
-    })
-
-    expect(screen.getByText('✅ claude-sonnet-4-6 连通成功（12ms）')).toBeTruthy()
   })
 })

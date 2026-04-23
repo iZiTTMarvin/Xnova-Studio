@@ -12,6 +12,7 @@ import type {
   StudioProviderSettingsSaveResult,
   StudioProviderSettingsSnapshot,
   RuntimeInspectRequest,
+  RuntimeSubmitRequest,
   StudioBridgeApi,
   StudioHostState,
   StudioShellSnapshot,
@@ -207,6 +208,9 @@ export function createStudioBridgeApi(
       async inspect(input?: RuntimeInspectRequest) {
         const request = parseStudioRuntimeInspectRequest(input)
         return runtimeGateway.inspect(request)
+      },
+      async submit(input: RuntimeSubmitRequest) {
+        return runtimeGateway.submit(input)
       },
       onEvent(listener: (event: StudioRuntimeEvent) => void) {
         return runtimeGateway.onEvent(listener)

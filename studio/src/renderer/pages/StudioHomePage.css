@@ -1,0 +1,146 @@
+.entry-panel {
+  padding: 20px 22px;
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.entry-panel-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.entry-panel-header h2 {
+  margin: 0;
+  font-size: clamp(24px, 2.6vw, 30px);
+}
+
+.entry-panel-header span {
+  color: var(--text-muted);
+  font-size: 12px;
+}
+
+.entry-search-field {
+  display: grid;
+  gap: 8px;
+}
+
+.entry-search-field span {
+  color: var(--text-faint);
+  font-size: 12px;
+}
+
+.entry-search-field input {
+  width: 100%;
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-md);
+  padding: 10px 12px;
+  background: var(--bg-input);
+  color: var(--text-primary);
+  font-family: inherit;
+  font-size: 13px;
+  outline: none;
+}
+
+.entry-search-field input:focus {
+  border-color: var(--border-strong);
+}
+
+.entry-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 14px;
+}
+
+.entry-section {
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-xl);
+  padding: 14px;
+  background: color-mix(in srgb, var(--bg-panel-strong) 90%, transparent);
+}
+
+.entry-section h3 {
+  margin: 0 0 10px;
+  font-size: 14px;
+}
+
+.entry-list {
+  display: grid;
+  gap: 10px;
+}
+
+.entry-item {
+  width: 100%;
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-lg);
+  background: rgba(8, 13, 22, 0.54);
+  padding: 12px;
+  text-align: left;
+  color: var(--text-secondary);
+  display: grid;
+  gap: 4px;
+  cursor: pointer;
+  font-family: inherit;
+}
+
+.entry-item:hover {
+  border-color: var(--border-hover);
+}
+
+.entry-item strong {
+  color: var(--text-primary);
+  font-size: 13px;
+}
+
+.entry-item span {
+  font-size: 12px;
+}
+
+.entry-empty {
+  margin: 0;
+  color: var(--text-muted);
+  font-size: 13px;
+}
+
+.agent-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(210px, 1fr));
+  gap: 12px;
+}
+
+.agent-card {
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-xl);
+  padding: 14px;
+  background: color-mix(in srgb, var(--bg-panel-strong) 90%, transparent);
+  display: grid;
+  gap: 12px;
+}
+
+.agent-card-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 10px;
+}
+
+.agent-card p {
+  margin: 0;
+  color: var(--text-muted);
+  font-size: 13px;
+  line-height: 1.6;
+}
+
+.composer-feedback {
+  margin-top: 12px;
+  color: var(--warning);
+  font-size: 13px;
+}
+
+@media (max-width: 1024px) {
+  .entry-grid {
+    grid-template-columns: 1fr;
+  }
+}

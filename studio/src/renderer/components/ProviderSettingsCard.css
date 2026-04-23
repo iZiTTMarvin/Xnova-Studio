@@ -1,0 +1,239 @@
+.provider-settings-shell {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  min-height: 0;
+}
+
+.provider-settings-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.provider-settings-header h3 {
+  margin: 0;
+  font-size: 18px;
+}
+
+.provider-settings-header p {
+  margin: 4px 0 0;
+  font-size: 13px;
+  color: var(--text-muted);
+}
+
+.provider-settings-panels {
+  display: grid;
+  grid-template-columns: 220px minmax(0, 1fr);
+  gap: 12px;
+  min-height: 0;
+}
+
+.provider-platform-list {
+  border: 1px solid var(--border-subtle);
+  border-radius: 12px;
+  background: color-mix(in srgb, var(--bg-panel) 92%, transparent);
+  padding: 8px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  overflow: auto;
+  max-height: 520px;
+}
+
+.provider-platform-item {
+  border: 1px solid var(--border-subtle);
+  border-radius: 10px;
+  background: transparent;
+  color: inherit;
+  text-align: left;
+  padding: 10px;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  cursor: pointer;
+}
+
+.provider-platform-item strong {
+  font-size: 14px;
+}
+
+.provider-platform-item span {
+  font-size: 12px;
+  color: var(--text-muted);
+}
+
+.provider-platform-item-active {
+  border-color: color-mix(in srgb, var(--accent-color) 60%, var(--border-subtle));
+  background: color-mix(in srgb, var(--accent-color) 12%, transparent);
+}
+
+.provider-platform-detail {
+  border: 1px solid var(--border-subtle);
+  border-radius: 12px;
+  background: color-mix(in srgb, var(--bg-panel) 92%, transparent);
+  padding: 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  min-height: 0;
+  overflow: auto;
+}
+
+.provider-detail-toolbar {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 8px;
+}
+
+.provider-form-grid {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.provider-field {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.provider-field span {
+  font-size: 12px;
+  color: var(--text-muted);
+}
+
+.provider-field input,
+.provider-field select {
+  width: 100%;
+}
+
+.provider-inline-field {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.provider-inline-field input {
+  width: 100%;
+}
+
+.provider-model-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.provider-model-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.provider-model-list {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.provider-model-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.provider-model-row input {
+  width: 100%;
+}
+
+.provider-add-dialog-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 90;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(10, 14, 24, 0.42);
+}
+
+.provider-add-dialog {
+  width: min(380px, calc(100% - 24px));
+  border: 1px solid var(--border-subtle);
+  border-radius: 12px;
+  background: var(--bg-panel);
+  padding: 14px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.provider-add-dialog h4 {
+  margin: 0;
+  font-size: 16px;
+}
+
+.provider-add-dialog-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+}
+
+.provider-feedback {
+  border-radius: 8px;
+  padding: 8px 10px;
+  font-size: 12px;
+  border: 1px solid transparent;
+}
+
+.provider-feedback strong {
+  display: block;
+}
+
+.provider-feedback-error {
+  border-color: color-mix(in srgb, #ff6b6b 45%, var(--border-subtle));
+  background: color-mix(in srgb, #ff6b6b 12%, transparent);
+}
+
+.provider-feedback-success {
+  border-color: color-mix(in srgb, #22c55e 45%, var(--border-subtle));
+  background: color-mix(in srgb, #22c55e 12%, transparent);
+}
+
+.provider-feedback-warning {
+  border-color: color-mix(in srgb, #f59e0b 45%, var(--border-subtle));
+  background: color-mix(in srgb, #f59e0b 10%, transparent);
+}
+
+.provider-placeholder-text {
+  margin: 0;
+  color: var(--text-muted);
+  font-size: 13px;
+}
+
+.danger-button {
+  align-self: flex-start;
+  border-radius: 8px;
+  border: 1px solid color-mix(in srgb, #ff6b6b 50%, var(--border-subtle));
+  background: color-mix(in srgb, #ff6b6b 10%, transparent);
+  color: inherit;
+  padding: 7px 12px;
+  cursor: pointer;
+}
+
+@media (max-width: 1080px) {
+  .provider-settings-panels {
+    grid-template-columns: 1fr;
+  }
+
+  .provider-platform-list {
+    max-height: 180px;
+  }
+
+  .provider-model-row {
+    flex-direction: column;
+    align-items: stretch;
+  }
+}

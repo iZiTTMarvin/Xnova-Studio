@@ -16,6 +16,8 @@ import {
   type StudioProviderSettingsSnapshot,
   type RuntimeInspectRequest,
   type RuntimeInspectResult,
+  type RuntimeSubmitRequest,
+  type RuntimeSubmitResult,
   type StudioHostState,
   type StudioShellSnapshot,
   type StudioShellSnapshotRequest,
@@ -63,6 +65,65 @@ function parseRuntimeInspectPayload(payload: unknown): RuntimeInspectRequest {
   }
 
   return payload.refresh === undefined ? {} : { refresh: payload.refresh }
+}
+
+function parseRuntimeSubmitPayload(payload: unknown): RuntimeSubmitRequest {
+  if (!isPlainObject(payload)) {
+    throw new Error('studio.runtime.submit 参数必须是对象。')
+  }
+
+  if (
+    Object.keys(payload).some(
+      (key) =>
+        key !== 'text' &&
+        key !== 'projectPath' &&
+        key !== 'agentId' &&
+        key !== 'modelId',
+    )
+  ) {
+    throw new Error(
+      'studio.runtime.submit 只允许 text/projectPath/agentId/modelId 字段。',
+    )
+  }
+
+  if (typeof payload.text !== 'string') {
+    throw new Error('studio.runtime.submit.text 必须是字符串。')
+  }
+  const text = payload.text.trim()
+  if (!text) {
+    throw new Error('studio.runtime.submit.text 不能为空。')
+  }
+
+  const parseNullableField = (
+    value: unknown,
+    subject: string,
+  ): string | null | undefined => {
+    if (value === undefined) {
+      return undefined
+    }
+    if (value === null) {
+      return null
+    }
+    if (typeof value !== 'string') {
+      throw new Error(`${subject} 必须是字符串或 null。`)
+    }
+    const normalized = value.trim()
+    return normalized ? normalized : null
+  }
+
+  const projectPath = parseNullableField(
+    payload.projectPath,
+    'studio.runtime.submit.projectPath',
+  )
+  const agentId = parseNullableField(payload.agentId, 'studio.runtime.submit.agentId')
+  const modelId = parseNullableField(payload.modelId, 'studio.runtime.submit.modelId')
+
+  return {
+    text,
+    ...(projectPath === undefined ? {} : { projectPath }),
+    ...(agentId === undefined ? {} : { agentId }),
+    ...(modelId === undefined ? {} : { modelId }),
+  }
 }
 
 function parseShellSnapshotPayload(
@@ -321,6 +382,11 @@ export interface RegisterStudioMainIpcHandlersOptions {
     request: RuntimeInspectRequest,
     state: StudioHostState,
   ) => Promise<RuntimeInspectResult>
+  submitRuntime?: (
+    request: RuntimeSubmitRequest,
+    state: StudioHostState,
+    emitRuntimeEvent: (event: StudioRuntimeEvent) => void,
+  ) => Promise<RuntimeSubmitResult>
   inspectShell: (
     request: StudioShellSnapshotRequest,
     state: StudioHostState,
@@ -451,6 +517,58 @@ export function registerStudioMainIpcHandlers(
           createRuntimeEvent(result, request),
         )
         options.logger.error('runtime inspect 失败', error)
+        return result
+      }
+    },
+  )
+
+  options.ipcMainLike.handle(
+    STUDIO_BRIDGE_CHANNELS.runtimeSubmit,
+    async (_event, payload): Promise<RuntimeSubmitResult> => {
+      const request = parseRuntimeSubmitPayload(payload)
+
+      if (!options.submitRuntime) {
+        throw new Error('studio.runtime.submit 尚未实现。')
+      }
+
+      try {
+        const result = await options.submitRuntime(
+          request,
+          hostState,
+          (event) => {
+            broadcast(STUDIO_BRIDGE_CHANNELS.runtimeEvent, event)
+          },
+        )
+
+        if (!result.ok) {
+          broadcast(STUDIO_BRIDGE_CHANNELS.runtimeEvent, {
+            type: 'runtime.error',
+            timestamp: new Date().toISOString(),
+            payload: {
+              message: result.error,
+            },
+          })
+        }
+
+        options.logger.info('runtime submit 已完成', {
+          ok: result.ok,
+          workspacePath: hostState.workspacePath,
+        })
+        return result
+      } catch (error) {
+        const message = error instanceof Error ? error.message : String(error)
+        const result: RuntimeSubmitResult = {
+          ok: false,
+          error: `runtime submit 失败: ${message}`,
+        }
+        broadcast(STUDIO_BRIDGE_CHANNELS.runtimeEvent, {
+          type: 'runtime.error',
+          timestamp: new Date().toISOString(),
+          payload: {
+            message: result.error,
+          },
+        })
+        options.logger.error('runtime submit 失败', error)
         return result
       }
     },

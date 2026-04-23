@@ -20,6 +20,7 @@ import type {
 
 const RECENT_PROJECT_LIMIT = 8
 const PROJECT_SESSION_LIMIT = 12
+const SESSION_TITLE_FALLBACK_CHAR_LIMIT = 10
 
 function getProjectName(projectPath: string): string {
   const normalized = projectPath.replace(/[\\/]+$/, '')
@@ -158,6 +159,26 @@ function buildProjectSessions(
     return []
   }
 
+  const extractFallbackTitle = (sessionId: string): string | null => {
+    try {
+      const snapshot = store.loadMessages(sessionId)
+      const firstUserMessage = snapshot.messages.find(
+        (message) => message.role === 'user' && message.content.trim().length > 0,
+      )
+      if (!firstUserMessage) {
+        return null
+      }
+      const chars = Array.from(firstUserMessage.content.trim())
+      const fallbackTitle = chars
+        .slice(0, SESSION_TITLE_FALLBACK_CHAR_LIMIT)
+        .join('')
+        .trim()
+      return fallbackTitle || null
+    } catch {
+      return null
+    }
+  }
+
   return summaries
     .filter((summary) => summary.cwd === projectPath)
     .slice(0, PROJECT_SESSION_LIMIT)
@@ -170,7 +191,10 @@ function buildProjectSessions(
           {
             sessionId: summary.sessionId,
             projectPath,
-            title: summary.firstMessage || `会话 ${summary.sessionId.slice(0, 8)}`,
+            title:
+              summary.firstMessage.trim() ||
+              extractFallbackTitle(summary.sessionId) ||
+              `会话 ${summary.sessionId.slice(0, 8)}`,
             updatedAt: summary.updatedAt,
             gitBranch: summary.gitBranch === 'unknown' ? null : summary.gitBranch,
             messageCount: overview.messageCount,
