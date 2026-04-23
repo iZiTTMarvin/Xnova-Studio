@@ -7,6 +7,21 @@ export interface SkillsPluginsOverviewCardProps {
   error: string | null
 }
 
+function getStatusLabel(status: 'loading' | 'ready' | 'disabled' | 'error' | 'empty'): string {
+  switch (status) {
+    case 'loading':
+      return '加载中'
+    case 'ready':
+      return '已接入'
+    case 'disabled':
+      return '不可用'
+    case 'error':
+      return '错误'
+    case 'empty':
+      return '空态'
+  }
+}
+
 export function SkillsPluginsOverviewCard(props: SkillsPluginsOverviewCardProps) {
   const [showManage, setShowManage] = useState(false)
 
@@ -15,7 +30,7 @@ export function SkillsPluginsOverviewCard(props: SkillsPluginsOverviewCardProps)
       <div className="feature-section-header">
         <h3>Skills / Plugins</h3>
         <span className={`feature-section-status feature-section-status-${props.snapshot?.status === 'empty' ? 'empty' : props.status === 'ready' ? 'ready' : props.status}`}>
-          {props.snapshot?.status ?? props.status}
+          {getStatusLabel(props.snapshot?.status ?? props.status)}
         </span>
       </div>
 

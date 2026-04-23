@@ -45,7 +45,7 @@ describe('project-aware sidebar information architecture', () => {
       .map((button) => button.textContent?.trim())
 
     expect(labels).toEqual([
-      '快速聊天',
+      '新对话',
       '搜索',
       'Agents',
       '项目',

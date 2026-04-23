@@ -24,7 +24,7 @@ interface PrimaryNavItem {
 }
 
 export const PRIMARY_NAV_ITEMS: PrimaryNavItem[] = [
-  { id: 'quick-chat', label: '快速聊天' },
+  { id: 'quick-chat', label: '新对话' },
   { id: 'search', label: '搜索' },
   { id: 'agents', label: 'Agents' },
   { id: 'projects', label: '项目' },
@@ -52,6 +52,14 @@ function renderBlockState(config: SidebarBlockConfig): ReactNode {
   )
 }
 
+/**
+ * 左侧壳 — 安静、原生、低装饰
+ *
+ * - 一级导航固定 7 个入口
+ * - 项目 / 聊天两个 block 独立折叠/展开
+ * - 更安静的品牌区，不做过度品牌展示
+ * - 导航项 hover 有微过渡，激活态明确但不刺眼
+ */
 export function ProjectShellSidebar(props: ProjectShellSidebarProps) {
   const [projectCollapsed, setProjectCollapsed] = useState(false)
   const [chatCollapsed, setChatCollapsed] = useState(false)
@@ -59,8 +67,11 @@ export function ProjectShellSidebar(props: ProjectShellSidebarProps) {
   return (
     <aside className="studio-sidebar">
       <div className="sidebar-brand">
-        <div className="sidebar-brand-title">Xnova Studio</div>
-        <div className="sidebar-brand-subtitle">Project-aware Shell</div>
+        <div className="sidebar-brand-mark" />
+        <div>
+          <h1 className="sidebar-brand-title">Xnova Studio</h1>
+          <div className="sidebar-brand-subtitle">Quiet operational shell</div>
+        </div>
       </div>
 
       <nav className="sidebar-nav" aria-label="Studio 一级导航">
@@ -75,6 +86,7 @@ export function ProjectShellSidebar(props: ProjectShellSidebarProps) {
               props.onNavigate(item.id)
             }}
           >
+            <span className="sidebar-nav-icon" />
             {item.label}
           </button>
         ))}

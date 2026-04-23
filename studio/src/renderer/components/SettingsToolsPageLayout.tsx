@@ -24,15 +24,22 @@ export interface SettingsToolsPageLayoutProps {
   children?: ReactNode
 }
 
+/**
+ * Settings / Tools 页面布局 — 工作面板，不是 dashboard
+ *
+ * - 状态优先：让用户一眼看到"现在是好是坏"
+ * - 紧凑布局：减少不必要的间距和装饰
+ * - 不做 feature card wall
+ */
 export function SettingsToolsPageLayout(props: SettingsToolsPageLayoutProps) {
   const { page } = props
 
   return (
     <section className="feature-page-shell" aria-label={page.title}>
-      <div className="feature-page-card">
+      <div className="feature-page-header">
         <p className="section-eyebrow">{page.eyebrow}</p>
         <h2>{page.title}</h2>
-        <p className="feature-page-copy">{page.description}</p>
+        <p>{page.description}</p>
       </div>
 
       <div className={`feature-page-banner feature-page-banner-${page.status}`}>

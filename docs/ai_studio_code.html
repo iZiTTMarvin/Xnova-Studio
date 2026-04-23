@@ -1,0 +1,322 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Xnova-Code UI Clone</title>
+    <style>
+        :root {
+            --bg-app: #0e0e0e;
+            --bg-sidebar: #151515;
+            --bg-panel: #1e1e1e;
+            --bg-hover: #2a2a2a;
+            --bg-input: #252525;
+            --text-main: #d4d4d4;
+            --text-muted: #858585;
+            --border-color: #2b2b2b;
+            --accent-blue: #3794ff;
+            --accent-green: #4CAF50;
+            --accent-red: #F44336;
+            --accent-orange: #d28e5d;
+        }
+
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+            background-color: var(--bg-app);
+            color: var(--text-main);
+            height: 100vh;
+            display: flex;
+            flex-direction: column;
+            overflow: hidden;
+            font-size: 13px;
+        }
+
+        /* Top Titlebar */
+        .titlebar {
+            height: 35px;
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            padding: 0 10px;
+            border-bottom: 1px solid var(--border-color);
+            background-color: var(--bg-sidebar);
+            user-select: none;
+        }
+        .titlebar-left, .titlebar-right { display: flex; align-items: center; gap: 15px; }
+        .menu-items { display: flex; gap: 12px; color: var(--text-muted); }
+        .git-stats span:first-child { color: var(--accent-green); }
+        .git-stats span:last-child { color: var(--accent-red); margin-left: 5px; }
+        
+        /* Main Application Layout */
+        .app-body {
+            display: flex;
+            flex: 1;
+            overflow: hidden;
+        }
+
+        /* Left Sidebar */
+        .sidebar {
+            width: 260px;
+            background-color: var(--bg-sidebar);
+            border-right: 1px solid var(--border-color);
+            display: flex;
+            flex-direction: column;
+        }
+
+        /* Sidebar Top Navigation */
+        .side-nav { padding: 10px 0; border-bottom: 1px solid transparent; }
+        .nav-item {
+            padding: 8px 20px;
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            cursor: pointer;
+            color: var(--text-muted);
+        }
+        .nav-item:hover { color: var(--text-main); }
+        .nav-item.active { background-color: var(--bg-hover); color: var(--text-main); }
+
+        /* Sidebar Project Tree */
+        .project-section { flex: 1; overflow-y: auto; display: flex; flex-direction: column; }
+        .section-header {
+            padding: 10px 15px;
+            font-size: 11px;
+            color: var(--text-muted);
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+        .tree-folder {
+            padding: 6px 15px;
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            cursor: pointer;
+            color: var(--text-muted);
+        }
+        .tree-item {
+            padding: 6px 15px 6px 35px;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            cursor: pointer;
+            color: var(--text-muted);
+        }
+        .tree-item:hover, .tree-folder:hover { background-color: var(--bg-hover); color: var(--text-main); }
+        .tree-item.active { color: var(--text-main); }
+        .tree-item.active::before {
+            content: ''; position: absolute; left: 15px; width: 6px; height: 6px; border-radius: 50%; background-color: var(--accent-blue);
+        }
+        .time-label { font-size: 11px; opacity: 0.6; }
+
+        /* Settings Bottom */
+        .settings-nav { padding: 10px 0; border-top: 1px solid transparent; }
+
+        /* Main Content Area */
+        .main-content {
+            flex: 1;
+            display: flex;
+            flex-direction: column;
+            background-color: var(--bg-app);
+            position: relative;
+        }
+
+        /* Chat Header */
+        .chat-header {
+            padding: 15px 20px;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            font-weight: 500;
+        }
+        .header-controls { display: flex; gap: 10px; align-items: center; background: var(--bg-input); padding: 4px 8px; border-radius: 4px; border: 1px solid var(--border-color);}
+
+        /* Center Input Stage */
+        .chat-stage {
+            flex: 1;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            padding-bottom: 10vh;
+        }
+        h1 {
+            font-size: 28px;
+            font-weight: normal;
+            margin-bottom: 30px;
+            color: #fff;
+        }
+
+        /* Input Container */
+        .input-wrapper {
+            width: 700px;
+            background-color: var(--bg-panel);
+            border-radius: 12px;
+            border: 1px solid var(--border-color);
+            display: flex;
+            flex-direction: column;
+            padding: 15px;
+            box-shadow: 0 4px 20px rgba(0,0,0,0.5);
+        }
+        .input-placeholder { color: var(--text-muted); margin-bottom: 20px; font-size: 14px;}
+        
+        .input-toolbar {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+        .toolbar-left { display: flex; gap: 10px; align-items: center; }
+        .toolbar-right { display: flex; gap: 8px; align-items: center; }
+        
+        .btn {
+            background: transparent; border: none; color: var(--text-muted); cursor: pointer; display: flex; align-items: center; gap: 5px; font-size: 12px; padding: 4px 8px; border-radius: 4px;
+        }
+        .btn:hover { background: var(--bg-hover); color: var(--text-main); }
+        .btn-warning { color: var(--accent-orange); }
+        
+        .btn-send { background-color: #333; color: white; width: 24px; height: 24px; border-radius: 50%; display: flex; align-items: center; justify-content: center; border: none; cursor: pointer;}
+        .btn-send:hover { background-color: #555; }
+
+        /* Context Pills below input */
+        .context-pills {
+            width: 700px;
+            display: flex;
+            gap: 15px;
+            margin-top: 10px;
+            padding: 0 10px;
+        }
+        .pill { color: var(--text-muted); font-size: 12px; display: flex; align-items: center; gap: 5px; cursor: pointer; }
+        
+        /* Suggestions List */
+        .suggestions {
+            width: 700px;
+            margin-top: 25px;
+            display: flex;
+            flex-direction: column;
+            gap: 15px;
+            padding: 0 10px;
+        }
+        .suggestion-item {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            color: var(--text-muted);
+            cursor: pointer;
+            font-size: 13px;
+        }
+        .suggestion-item:hover { color: var(--text-main); }
+    </style>
+</head>
+<body>
+
+    <!-- Top Titlebar -->
+    <header class="titlebar">
+        <div class="titlebar-left">
+            <span>◰</span>
+            <span>← →</span>
+            <div class="menu-items">
+                <span>文件</span><span>编辑</span><span>查看</span><span>窗口</span><span>帮助</span>
+            </div>
+        </div>
+        <div class="titlebar-right">
+            <span>— □ ✕</span>
+            <span style="opacity: 0.5;">|</span>
+            <span>[ ]</span>
+            <span>◎</span>
+            <div class="git-stats"><span>+4,939</span><span>-179</span></div>
+            <span>⎕</span>
+        </div>
+    </header>
+
+    <div class="app-body">
+        <!-- Left Sidebar -->
+        <aside class="sidebar">
+            <div class="side-nav">
+                <div class="nav-item active">💬 快速对话</div>
+                <div class="nav-item">🔍 搜索</div>
+                <div class="nav-item">🛠️ 技能</div>
+                <div class="nav-item">🧩 插件</div>
+                <div class="nav-item">⏱️ 自动化</div>
+            </div>
+
+            <div class="project-section">
+                <div class="section-header">
+                    <span>项目</span>
+                    <span style="letter-spacing: 2px;">↙ ≡ ⎘</span>
+                </div>
+                
+                <div class="tree-folder">📂 Xnova-Code</div>
+                <div class="tree-item active"><span>规划 Xnova 桌面多 Agent 编排架...</span> <span class="time-label">3 天</span></div>
+                <div class="tree-item"><span>设计 Codex 风格界面</span> <span class="time-label">1 小时</span></div>
+                <div class="tree-item"><span># AGENTS.md instructions for ...</span> <span class="time-label">5 小时</span></div>
+                <div class="tree-item"><span>推进 Phase 6 设置与工具</span> <span class="time-label">8 小时</span></div>
+                <div class="tree-item"><span>请严格按 Trellis 流程完成 Pha...</span> <span class="time-label">19 小时</span></div>
+                <div class="tree-item"><span>实现 Phase 4 Electron 宿主</span> <span class="time-label">1 天</span></div>
+                <div class="tree-item"><span>按 Trellis 拆分 Phase3</span> <span class="time-label">1 天</span></div>
+                <div class="tree-item"><span>创建 Phase 2 Trellis 任务</span> <span class="time-label">2 天</span></div>
+                <div class="tree-item"><span>完成 Phase 1 三项任务</span> <span class="time-label">2 天</span></div>
+                <div class="tree-item"><span>初始化trellis工作流</span> <span class="time-label">2 天</span></div>
+                <div class="tree-item"><span>执行自动计划审查任务概要题目...</span> <span class="time-label">2 天</span></div>
+                <div class="tree-item"><span>$office-hours 对于xnova Cli，我...</span> <span class="time-label">3 天</span></div>
+                <div class="tree-item" style="opacity: 0.5;"><span>折叠显示</span></div>
+
+                <div class="tree-folder" style="margin-top: 10px;">📂 xxjj</div>
+                <div class="tree-folder">📂 electron-app</div>
+                <div class="tree-item"><span>派一个子代理进行项目探索</span> <span class="time-label">2 天</span></div>
+                <div class="tree-item"><span>梳理Xnova主agent方案与方向</span> <span class="time-label">3 天</span></div>
+            </div>
+
+            <div class="settings-nav">
+                <div class="nav-item">⚙️ 设置</div>
+            </div>
+        </aside>
+
+        <!-- Main Content Area -->
+        <main class="main-content">
+            <div class="chat-header">
+                <div>新对话</div>
+                <div class="header-controls">
+                    <span style="color:var(--accent-blue)">⚡ v</span> | <span>— 提交 v</span>
+                </div>
+            </div>
+
+            <div class="chat-stage">
+                <h1>要在 Xnova-Code 中构建什么？</h1>
+                
+                <div class="input-wrapper">
+                    <div class="input-placeholder">向 Codex 提供任何问题。输入 @ 使用插件或文件</div>
+                    
+                    <div class="input-toolbar">
+                        <div class="toolbar-left">
+                            <button class="btn">+</button>
+                            <button class="btn btn-warning">⚠️ 完全访问权限 v</button>
+                        </div>
+                        <div class="toolbar-right">
+                            <span style="font-size:11px;color:var(--text-muted);background:#333;padding:2px 6px;border-radius:4px;">api</span>
+                            <button class="btn">GPT-5.4 v</button>
+                            <button class="btn">超高 v</button>
+                            <button class="btn-send">↑</button>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="context-pills">
+                    <div class="pill">📁 Xnova-Code v</div>
+                    <div class="pill">💻 本地模式 v</div>
+                    <div class="pill">🌿 main v</div>
+                </div>
+
+                <div class="suggestions">
+                    <div class="suggestion-item">☁️ Shape the sidebar information architecture</div>
+                    <div class="suggestion-item">☁️ Build the project session tree</div>
+                    <div class="suggestion-item">☁️ Build the project-aware context bar</div>
+                    <div class="suggestion-item">∷ 将你常用的应用连接到 Codex</div>
+                </div>
+            </div>
+        </main>
+    </div>
+
+</body>
+</html>

@@ -63,7 +63,7 @@ export function ProviderSettingsCard(props: ProviderSettingsCardProps) {
         </span>
       </div>
       <p className="feature-section-summary">
-        读取 resolved config 回显默认值，保存只写 TOML，并通过 bridge 触发连通性测试。
+        在桌面主壳里管理默认 provider、默认模型与连接测试，配置统一落到 TOML。
       </p>
 
       {props.error ? (

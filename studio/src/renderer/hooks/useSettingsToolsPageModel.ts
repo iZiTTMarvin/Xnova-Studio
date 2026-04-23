@@ -34,7 +34,7 @@ export interface UseSettingsToolsPageModelInput {
   shellStatus: 'loading' | 'ready' | 'disabled' | 'error'
   shellSnapshot: StudioShellSnapshot | null
   shellError: string | null
-  runtimeStatus: 'loading' | 'ready' | 'disabled' | 'error'
+  runtimeStatus: 'loading' | 'ready' | 'not-ready' | 'disabled' | 'error'
   runtimeInspectResult: RuntimeInspectResult | null
   runtimeError: string | null
 }
@@ -91,7 +91,7 @@ function getSettingsStatusMessage(
     case 'empty':
       return '尚未绑定 Workspace，当前只展示全局设置骨架。'
     case 'ready':
-      return '桌面设置壳已接入，后续子任务会把 Provider / Memory 详情逐步填充进来。'
+      return '当前全局设置已接入桌面主壳，可继续调整 Provider、模型与 Memory。'
   }
 }
 
@@ -109,7 +109,7 @@ function getToolsStatusMessage(
     case 'empty':
       return '尚未绑定 Workspace，当前只展示工具壳与管理入口。'
     case 'ready':
-      return '桌面工具壳已接入，状态卡片会在后续子任务中逐步补齐。'
+      return '当前工具状态已同步到桌面主壳，可继续查看 MCP 与 Skills 状态。'
   }
 }
 
@@ -151,12 +151,17 @@ function getModelLabel(input: UseSettingsToolsPageModelInput): string | null {
 
 function getRuntimeHealthLabel(input: UseSettingsToolsPageModelInput): string {
   if (input.runtimeInspectResult?.ok) {
+    if (input.runtimeInspectResult.status === 'not-ready') {
+      return '未就绪'
+    }
     return input.runtimeInspectResult.snapshot.isRunning ? '运行中' : '已连接'
   }
 
   switch (input.runtimeStatus) {
     case 'loading':
       return '检查中'
+    case 'not-ready':
+      return '未就绪'
     case 'disabled':
       return '不可用'
     case 'error':
@@ -196,7 +201,7 @@ function createSettingsSections(
               : providerStatus === 'empty'
                 ? '已进入桌面设置壳，等待 Provider / TOML 表单接入。'
                 : `当前默认值：${provider ?? '未配置'} / ${model ?? '未配置'}`,
-      detail: '下一子任务将接入 config.toml / project.toml、默认 Provider / Model 与 test connection。',
+      detail: '在这里管理默认 provider、默认 model，并执行连接测试。',
     },
     {
       id: 'memory',
@@ -211,8 +216,8 @@ function createSettingsSections(
               ? 'Memory 状态读取失败，已阻止静默降级。'
               : status === 'empty'
                 ? '尚未绑定 Workspace，当前仅展示全局 Memory 入口。'
-                : 'Memory 概览、降级提示与 rebuild 入口将在后续子任务接入。',
-      detail: '本子任务只建立骨架，不提前实现概览统计、降级详情或 rebuild 流程。',
+                : 'Memory 状态、降级提示与重建入口都以卡片形式进入主壳。',
+      detail: '关闭 Memory 前需要明确提醒；降级与索引问题必须直接可见。',
     },
   ]
 }
@@ -234,8 +239,8 @@ function createToolsSections(
               ? 'MCP 状态读取失败，错误不会再以 silent failure 方式隐藏。'
               : status === 'empty'
                 ? '尚未绑定 Workspace，当前仅展示管理入口占位。'
-                : 'MCP 状态卡片与管理入口将在后续子任务接入。',
-      detail: '后续只补状态卡片与管理入口，不扩成第二套重型运维后台。',
+                : 'MCP 状态卡片与管理入口已进入主壳，优先呈现连接健康度。',
+      detail: '这里强调状态可见与管理入口，不扩成第二套重型运维后台。',
     },
     {
       id: 'skills-plugins',
@@ -250,8 +255,8 @@ function createToolsSections(
               ? 'Skills / Plugins 状态读取失败，错误已显式暴露。'
               : status === 'empty'
                 ? '尚未绑定 Workspace，当前仅展示分布与管理入口占位。'
-                : 'Skills / Plugins 状态卡片、来源分布与管理入口将在后续子任务接入。',
-      detail: '后续子任务会补来源分布、最近/常用展示与管理入口，不回退成旧 Web 管理壳。',
+                : 'Skills / Plugins 状态卡片会展示来源分布、最近使用与管理入口。',
+      detail: '这里强调可见性和常用能力，不回退成旧 Web 管理壳。',
     },
   ]
 }

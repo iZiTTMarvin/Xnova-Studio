@@ -11,6 +11,24 @@ export interface McpOverviewCardProps {
   onDeleteServer: (name: string) => Promise<void>
 }
 
+function getStatusLabel(status: 'loading' | 'ready' | 'disabled' | 'error' | 'failed' | 'connected' | 'unconfigured'): string {
+  switch (status) {
+    case 'loading':
+      return '加载中'
+    case 'ready':
+      return '已接入'
+    case 'disabled':
+      return '不可用'
+    case 'error':
+    case 'failed':
+      return '异常'
+    case 'connected':
+      return '已连接'
+    case 'unconfigured':
+      return '未配置'
+  }
+}
+
 export function McpOverviewCard(props: McpOverviewCardProps) {
   const [showManage, setShowManage] = useState(false)
   const [name, setName] = useState('')
@@ -34,7 +52,7 @@ export function McpOverviewCard(props: McpOverviewCardProps) {
                   : props.status
           }`}
         >
-          {props.snapshot?.status ?? props.status}
+          {getStatusLabel(props.snapshot?.status ?? props.status)}
         </span>
       </div>
 
@@ -85,7 +103,7 @@ export function McpOverviewCard(props: McpOverviewCardProps) {
                   <h4>{server.name}</h4>
                   <div className="provider-item-actions">
                     <span className={`feature-section-status feature-section-status-${server.status === 'connected' ? 'ready' : 'error'}`}>
-                      {server.status}
+                      {getStatusLabel(server.status)}
                     </span>
                     {server.writable ? (
                       <button

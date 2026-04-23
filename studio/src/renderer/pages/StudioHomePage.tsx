@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react'
+import { Fragment, useEffect, useMemo, useState } from 'react'
 import {
   ProjectShellSidebar,
   type PrimaryNavId,
@@ -14,6 +14,36 @@ import { useSettingsToolsPageModel } from '../hooks/useSettingsToolsPageModel'
 import { resolveMemoryFeedbackPresentation } from '../utils/memory-feedback'
 import { StudioSettingsPage } from './SettingsPage'
 import { StudioToolsPage } from './ToolsPage'
+
+interface SelectedSubagentState {
+  sessionId: string
+  agentId: string
+}
+
+function getSubagentStatusLabel(status: 'running' | 'stopping' | 'stopped' | 'done' | 'error'): string {
+  switch (status) {
+    case 'running':
+      return '运行中'
+    case 'stopping':
+      return '停止中'
+    case 'stopped':
+      return '已停止'
+    case 'done':
+      return '已完成'
+    case 'error':
+      return '异常'
+  }
+}
+
+function getPathLeaf(pathValue: string | null | undefined): string | null {
+  if (!pathValue) {
+    return null
+  }
+
+  const normalized = pathValue.replace(/\\/g, '/').replace(/\/+$/, '')
+  const segments = normalized.split('/')
+  return segments[segments.length - 1] ?? null
+}
 
 export function StudioHomePage() {
   const {
@@ -53,6 +83,7 @@ export function StudioHomePage() {
     lastRuntimeEvent,
   } = useStudioBridge()
   const [activeNavId, setActiveNavId] = useState<PrimaryNavId>('quick-chat')
+  const [selectedSubagent, setSelectedSubagent] = useState<SelectedSubagentState | null>(null)
   const memoryOverview = useMemoryOverview(memoryApi, {
     enabled: shellStatus === 'ready' && activeNavId !== 'settings',
     deferMs: 150,
@@ -73,6 +104,22 @@ export function StudioHomePage() {
   useEffect(() => {
     setActiveNavId(startupRoute.kind === 'restore-session' ? 'projects' : 'quick-chat')
   }, [startupRoute.kind])
+
+  useEffect(() => {
+    if (!selectedSubagent) {
+      return
+    }
+
+    const stillExists = (shellSnapshot?.projectSessions ?? []).some(
+      (session) =>
+        session.sessionId === selectedSubagent.sessionId &&
+        session.subagents.some((subagent) => subagent.agentId === selectedSubagent.agentId),
+    )
+
+    if (!stillExists) {
+      setSelectedSubagent(null)
+    }
+  }, [selectedSubagent, shellSnapshot])
 
   const projectBlockStatus: SidebarBlockStatus = useMemo(() => {
     if (shellStatus === 'loading') {
@@ -102,14 +149,22 @@ export function StudioHomePage() {
       recentProjects={shellSnapshot?.recentProjects ?? []}
       selectedProjectPath={selectedProjectPath}
       onProjectSelect={(projectPath) => {
+        setSelectedSubagent(null)
         setActiveNavId('projects')
         void selectProject(projectPath)
       }}
       sessions={shellSnapshot?.projectSessions ?? []}
       activeSessionId={selectedSessionId}
       onSessionSelect={(sessionId) => {
+        setSelectedSubagent(null)
         setActiveNavId('projects')
         selectSession(sessionId)
+      }}
+      activeSubagentId={selectedSubagent?.agentId ?? null}
+      onSubagentSelect={(sessionId, agentId) => {
+        setActiveNavId('projects')
+        selectSession(sessionId)
+        setSelectedSubagent({ sessionId, agentId })
       }}
     />
   )
@@ -157,6 +212,89 @@ export function StudioHomePage() {
     [activeSession],
   )
 
+  const selectedSubagentEntry = useMemo(() => {
+    if (!selectedSubagent) {
+      return null
+    }
+
+    const session =
+      shellSnapshot?.projectSessions.find(
+        (candidate) => candidate.sessionId === selectedSubagent.sessionId,
+      ) ?? null
+    const subagent =
+      session?.subagents.find((candidate) => candidate.agentId === selectedSubagent.agentId) ?? null
+
+    if (!session || !subagent) {
+      return null
+    }
+
+    return {
+      session,
+      subagent,
+    }
+  }, [selectedSubagent, shellSnapshot])
+
+  const shouldShowWorkSurfaceChrome =
+    activeNavId === 'quick-chat' || activeNavId === 'projects'
+
+  const workspaceHeadingName = useMemo(
+    () =>
+      getPathLeaf(selectedProjectPath) ??
+      getPathLeaf(hostState.workspacePath),
+    [hostState.workspacePath, selectedProjectPath],
+  )
+
+  const blankStageTitle = workspaceHeadingName
+    ? `要在 ${workspaceHeadingName} 中构建什么？`
+    : '要开始什么项目？'
+
+  const pageTitle = useMemo(() => {
+    switch (activeNavId) {
+      case 'quick-chat':
+        return '新对话'
+      case 'search':
+        return '搜索'
+      case 'agents':
+        return 'Agents'
+      case 'projects':
+        return selectedSubagentEntry ? '子代理会话' : activeSession?.title ?? '项目工作区'
+      case 'chat':
+        return '聊天'
+      case 'tools':
+        return '工具'
+      case 'settings':
+        return '设置'
+    }
+  }, [activeNavId, activeSession?.title, selectedSubagentEntry])
+
+  const workContextBar = (
+    <ContextBar
+      workContext={workContext}
+      onFieldSelect={(field) => {
+        switch (field) {
+          case 'project':
+            if (selectedProjectPath ?? hostState.workspacePath) {
+              setActiveNavId('projects')
+            } else {
+              void openWorkspace()
+            }
+            return
+          case 'branch':
+          case 'runningSubagents':
+            setActiveNavId('projects')
+            return
+          case 'agent':
+            setActiveNavId('agents')
+            return
+          case 'model':
+          case 'contextUsage':
+            setActiveNavId('settings')
+            return
+        }
+      }}
+    />
+  )
+
   const shouldShowMemoryFeedback =
     shellStatus === 'ready' &&
     activeNavId !== 'settings' &&
@@ -177,7 +315,7 @@ export function StudioHomePage() {
       <section className="session-card">
         <p className="section-eyebrow">搜索</p>
         <h2>搜索页已预留位置</h2>
-        <p className="session-meta">本子任务只落信息架构，不提前实现搜索能力。</p>
+        <p className="feature-section-detail">本子任务只落信息架构，不提前实现搜索能力。</p>
       </section>
     )
     : activeNavId === 'agents'
@@ -185,80 +323,170 @@ export function StudioHomePage() {
         <section className="session-card">
           <p className="section-eyebrow">Agents</p>
           <h2>Agents 页已接入一级导航</h2>
-          <p className="session-meta">本子任务只保证一级入口与壳结构稳定，不重做 Agent 深内容。</p>
+          <p className="feature-section-detail">本子任务只保证一级入口与壳结构稳定，不重做 Agent 深内容。</p>
         </section>
       )
       : activeNavId === 'tools'
         ? <StudioToolsPage page={toolsPage} mcpApi={mcpApi} skillsPluginsApi={skillsPluginsApi} />
-        : activeNavId === 'settings'
-          ? <StudioSettingsPage page={settingsPage} settingsApi={settingsApi} memoryApi={memoryApi} />
-          : activeNavId === 'chat'
-            ? (
-              <section className="blank-chat-card">
+      : activeNavId === 'settings'
+        ? <StudioSettingsPage page={settingsPage} settingsApi={settingsApi} memoryApi={memoryApi} />
+        : activeNavId === 'chat'
+          ? (
+            <section className="blank-chat-stage">
                 <p className="section-eyebrow">Scratchpad</p>
-                <h2>全局聊天保持 scratchpad 语义。</h2>
-                <p className="session-meta">项目级主工作流仍然归属于项目块，不会在这里复制一套。</p>
+                <h2>全局即时工作区</h2>
+                <p>不替代项目主链路，只做轻量 scratchpad。</p>
               </section>
             )
             : (
               <>
                 {startupRoute.kind === 'restore-session' ? (
-                  <section className="session-card">
-                    <p className="section-eyebrow">已恢复最近工作会话</p>
-                    <h2>{activeSession?.title ?? `会话 ${startupRoute.sessionId.slice(0, 8)}`}</h2>
-                    <p className="session-meta">
-                      {activeSession?.projectPath ?? startupRoute.projectPath}
-                    </p>
-                    <p className="session-meta">
-                      {activeSession?.gitBranch ?? shellSnapshot?.defaults.branch ?? 'unknown'}
-                      {' · '}
-                      {activeSession?.messageCount ?? 0}
-                      {' '}
-                      条消息
-                    </p>
+                  <section className="workspace-surface">
+                    {workContextBar}
+                    <section className="session-card">
+                      <p className="section-eyebrow">已恢复最近工作会话</p>
+                      <h2>{activeSession?.title ?? `会话 ${startupRoute.sessionId.slice(0, 8)}`}</h2>
+                      <div className="detail-row" style={{ marginTop: '12px' }}>
+                        <span>项目</span>
+                        <strong className="mono">{activeSession?.projectPath ?? startupRoute.projectPath}</strong>
+                      </div>
+                      <div className="detail-row">
+                        <span>分支</span>
+                        <strong className="mono">{activeSession?.gitBranch ?? shellSnapshot?.defaults.branch ?? 'unknown'}</strong>
+                      </div>
+                      <div className="detail-row">
+                        <span>消息</span>
+                        <strong>{activeSession?.messageCount ?? 0} 条</strong>
+                      </div>
+                    </section>
+                  </section>
+                ) : activeNavId === 'projects' && selectedSubagentEntry ? (
+                  <section className="workspace-surface" aria-label="子代理会话详情">
+                    {workContextBar}
+                    <section className="conversation-stage">
+                      <div className="conversation-header">
+                        <div>
+                          <p className="section-eyebrow">SubAgent</p>
+                          <h2>{selectedSubagentEntry.subagent.agentId}</h2>
+                        </div>
+                        <span
+                          className={`feature-section-status feature-section-status-${
+                            selectedSubagentEntry.subagent.status === 'error'
+                              ? 'error'
+                              : selectedSubagentEntry.subagent.status === 'done'
+                                ? 'ready'
+                                : selectedSubagentEntry.subagent.status === 'stopped'
+                                  ? 'warning'
+                                  : 'loading'
+                          }`}
+                        >
+                          {selectedSubagentEntry.subagent.stateMessage ??
+                            getSubagentStatusLabel(selectedSubagentEntry.subagent.status)}
+                        </span>
+                      </div>
+
+                      <div className="message-stream">
+                        <article className="message-block">
+                          <p>{selectedSubagentEntry.subagent.description}</p>
+                          <div className="runtime-log">
+                            <div>
+                              主会话：
+                              {' '}
+                              <span className="mono">{selectedSubagentEntry.session.title}</span>
+                            </div>
+                            <div>
+                              分支：
+                              {' '}
+                              <span className="mono">{selectedSubagentEntry.session.gitBranch ?? '未知分支'}</span>
+                            </div>
+                            <div>
+                              状态：
+                              {' '}
+                              {selectedSubagentEntry.subagent.stateMessage ??
+                                getSubagentStatusLabel(selectedSubagentEntry.subagent.status)}
+                            </div>
+                          </div>
+
+                          {selectedSubagentEntry.subagent.partialResult ? (
+                            <div className="inline-subagent">
+                              <strong>部分结果</strong>
+                              <span>{selectedSubagentEntry.subagent.partialResult}</span>
+                            </div>
+                          ) : null}
+                        </article>
+                      </div>
+                    </section>
                   </section>
                 ) : (
-                  <section className="blank-chat-card">
-                    <p className="section-eyebrow">从空白聊天开始</p>
-                    <h2>把项目上下文带进来，然后直接开工。</h2>
-                    <div className="suggestion-grid">
-                      <button
-                        type="button"
-                        className="suggestion-card"
-                        onClick={() => {
-                          void openWorkspace()
-                        }}
-                      >
-                        <strong>开始一个新项目</strong>
-                        <span>先绑定一个 Workspace，再从空白聊天页开始。</span>
-                      </button>
-                      <button
-                        type="button"
-                        className="suggestion-card"
-                        onClick={() => {
-                          void openWorkspace()
-                        }}
-                      >
-                        <strong>继续一个已有项目</strong>
-                        <span>打开已有目录，把当前工作会话带回主壳。</span>
-                      </button>
-                      <button
-                        type="button"
-                        className="suggestion-card"
-                        disabled={!shellSnapshot?.defaults.projectPath}
-                      >
-                        <strong>分析当前项目结构</strong>
-                        <span>基于当前项目上下文，快速理解结构与入口。</span>
-                      </button>
-                    </div>
-                    <div className="composer-shell">
-                      <div className="composer-label">输入框将在后续子任务中接入完整 project-aware 主壳。</div>
+                  <section className="blank-chat-stage blank-chat-stage-codex">
+                    <h2>{blankStageTitle}</h2>
+
+                    <div className="composer-shell composer-shell-codex">
                       <textarea
                         className="composer-input"
-                        rows={4}
-                        placeholder="描述你接下来想做的事，例如：分析当前仓库结构并告诉我主入口在哪里"
+                        rows={3}
+                        placeholder="向 Xnova 提出任何问题。输入 @ 使用工具、文件或技能"
                         readOnly
                       />
+                      <div className="composer-footer">
+                        <div className="composer-tools">
+                          <button type="button" className="ghost-icon-button" aria-label="添加上下文">
+                            +
+                          </button>
+                          <span className="mini-pill mini-pill-warning">完全访问权限</span>
+                          <span className="mini-pill mono">{currentModelId ?? 'openai / gpt-5.4'}</span>
+                        </div>
+                        <button className="composer-send" aria-label="发送" />
+                      </div>
+                    </div>
+
+                    <div className="composer-context-shell">
+                      {workContextBar}
+                    </div>
+
+                    <div className="suggestion-list suggestion-list-minimal">
+                      <button
+                        type="button"
+                        className="suggestion-row suggestion-row-minimal"
+                        onClick={() => {
+                          void openWorkspace()
+                        }}
+                      >
+                        <div className="suggestion-icon" />
+                        <div>
+                          <strong>开始一个新项目</strong>
+                          <span>绑定 workspace 后，让 Xnova 从 0 到 1 推进初始化、编码与测试。</span>
+                        </div>
+                      </button>
+                      <button
+                        type="button"
+                        className="suggestion-row suggestion-row-minimal"
+                        onClick={() => {
+                          void openWorkspace()
+                        }}
+                      >
+                        <div className="suggestion-icon" />
+                        <div>
+                          <strong>打开并继续一个已有项目</strong>
+                          <span>恢复最近会话，把项目、分支、Agent、模型一起带回当前工作面。</span>
+                        </div>
+                      </button>
+                      <button
+                        type="button"
+                        className="suggestion-row suggestion-row-minimal"
+                        disabled={!shellSnapshot?.defaults.projectPath}
+                        onClick={() => {
+                          if (shellSnapshot?.defaults.projectPath) {
+                            setActiveNavId('projects')
+                          }
+                        }}
+                      >
+                        <div className="suggestion-icon" />
+                        <div>
+                          <strong>分析当前项目结构</strong>
+                          <span>基于当前 workspace 事实源，快速理解入口、模块边界与测试面。</span>
+                        </div>
+                      </button>
                     </div>
                   </section>
                 )}
@@ -295,167 +523,127 @@ export function StudioHomePage() {
       />
 
       <main className="project-shell-page">
-        <ModeSwitch
-          currentMode={currentMode}
-          allowedModes={shellSnapshot?.defaults.allowedModes ?? ['standard', 'xforge']}
-          onModeChange={switchMode}
-        />
+        <header className="workspace-header">
+          <div className="workspace-header-start">
+            <p className="workspace-header-title">{pageTitle}</p>
+          </div>
+          <div className="workspace-header-center">
+            {shouldShowWorkSurfaceChrome ? (
+              <ModeSwitch
+                currentMode={currentMode}
+                allowedModes={shellSnapshot?.defaults.allowedModes ?? ['standard', 'xforge']}
+                onModeChange={switchMode}
+              />
+            ) : null}
+          </div>
+          <div className="workspace-header-end">
+            <button
+              type="button"
+              className="secondary-button"
+              onClick={() => {
+                void openWorkspace()
+              }}
+              disabled={isOpeningWorkspace}
+            >
+              {isOpeningWorkspace ? '正在打开…' : '打开 Workspace'}
+            </button>
+          </div>
+        </header>
 
+        {/* 启动通知 */}
         {startupNotice ? (
           <section className="shell-banner">
             <strong>{startupNotice}</strong>
           </section>
         ) : null}
 
+        {/* 状态问题 */}
         {statusIssues.length > 0 ? (
-          <section className="detail-card" aria-label="状态问题卡片">
-            {statusIssues.map((issue) => (
-              <div key={`${issue.code}-${issue.message}`} className="detail-row">
-                <span>{issue.code}</span>
-                <strong>{issue.message}</strong>
-              </div>
-            ))}
+          <section className="warning-list-card" aria-label="状态问题">
+            <strong>状态问题</strong>
+            <ul>
+              {statusIssues.map((issue) => (
+                <li key={`${issue.code}-${issue.message}`}>
+                  <span className="status-issue-code mono">{issue.code}</span>
+                  <span className="status-issue-message">{issue.message}</span>
+                </li>
+              ))}
+            </ul>
           </section>
         ) : null}
 
+        {/* Memory 反馈 */}
         {shouldShowMemoryFeedback ? (
-          <section className="detail-card" aria-label="Memory 主流程反馈">
-            <div className="detail-row">
-              <span>Memory</span>
-              <strong>{memoryFeedback.statusLabel}</strong>
+          <section className="warning-list-card" aria-label="Memory 主流程反馈">
+            <div className="warning-status-line">
+              <strong>Memory 状态</strong>
+              <span className="warning-status-label">{memoryFeedback.statusLabel}</span>
             </div>
-            <div className="detail-row">
-              <span>当前反馈</span>
-              <strong>{memoryFeedback.statusMessage}</strong>
-            </div>
-            {memoryFeedback.actionHint ? (
-              <div className="detail-row">
-                <span>建议动作</span>
-                <strong>{memoryFeedback.actionHint}</strong>
-              </div>
-            ) : null}
+            <ul>
+              <li>{memoryFeedback.statusMessage}</li>
+              {memoryFeedback.actionHint ? (
+                <li>建议动作: {memoryFeedback.actionHint}</li>
+              ) : null}
+            </ul>
           </section>
         ) : null}
 
+        {/* SubAgent 反馈 */}
         {liveSubagentFeedback || sessionSubagentFeedback.length > 0 ? (
-          <section className="detail-card" aria-label="SubAgent 主流程反馈">
-            {liveSubagentFeedback ? (
-              <>
-                <div className="detail-row">
-                  <span>SubAgent 运行反馈</span>
-                  <strong>{liveSubagentFeedback.message}</strong>
-                </div>
-                {liveSubagentFeedback.partialResult ? (
-                  <div className="detail-row">
-                    <span>部分结果</span>
-                    <strong>{liveSubagentFeedback.partialResult}</strong>
-                  </div>
-                ) : null}
-              </>
-            ) : null}
-            {sessionSubagentFeedback.map((subagent) => (
-              <div key={subagent.agentId} className="detail-row">
-                <span>{subagent.agentId}</span>
-                <strong>{subagent.stateMessage ?? subagent.status}</strong>
-              </div>
-            ))}
-            {sessionSubagentFeedback.map((subagent) =>
-              subagent.partialResult ? (
-                <div key={`${subagent.agentId}-partial`} className="detail-row">
-                  <span>部分结果</span>
-                  <strong>{subagent.partialResult}</strong>
-                </div>
-              ) : null,
-            )}
+          <section className="warning-list-card" aria-label="SubAgent 主流程反馈">
+            <strong>SubAgent 状态</strong>
+            <ul>
+              {liveSubagentFeedback ? (
+                <li>{liveSubagentFeedback.message}</li>
+              ) : null}
+              {liveSubagentFeedback?.partialResult ? (
+                <li>{liveSubagentFeedback.partialResult}</li>
+              ) : null}
+              {sessionSubagentFeedback.map((subagent) => (
+                <Fragment key={subagent.agentId}>
+                  <li key={`${subagent.agentId}-status`}>
+                    {subagent.agentId}
+                    {': '}
+                    {subagent.stateMessage ?? getSubagentStatusLabel(subagent.status)}
+                  </li>
+                  {subagent.partialResult ? (
+                    <li key={`${subagent.agentId}-partial`}>{subagent.partialResult}</li>
+                  ) : null}
+                </Fragment>
+              ))}
+            </ul>
           </section>
         ) : null}
 
-        <section className="hero-card">
-          <p className="hero-eyebrow">
-            {activeNavId === 'settings' || activeNavId === 'tools'
-              ? 'Phase 6 Settings and Tools'
-              : 'Phase 5 Project-aware Shell'}
-          </p>
-          <h1>Xnova Studio</h1>
-          <p className="hero-copy">
-            {activeNavId === 'settings'
-              ? '把全局设置与项目默认值收进桌面主壳，后续子任务会逐步填充 Provider 与 Memory。'
-              : activeNavId === 'tools'
-                ? 'MCP、Skills、Plugins 以状态卡片进入主壳，不再另起一套桌面运维后台。'
-                : shellStatus === 'loading'
-              ? '正在恢复最近的项目上下文与工作会话。'
-              : startupRoute.kind === 'restore-session'
-                ? '冷启动已从最近项目恢复到上一次工作会话，Overview 不再承担默认首页职责。'
-                : '冷启动默认进入空白聊天页，让你从当前工作上下文直接开工。'}
-          </p>
-        </section>
-
-        <section className="workspace-card">
-          <div className="workspace-row">
-            <span>当前 Workspace</span>
-            <strong>{hostState.workspacePath ?? '尚未绑定'}</strong>
-          </div>
-          <button
-            type="button"
-            className="secondary-button"
-            onClick={() => {
-              void openWorkspace()
-            }}
-            disabled={isOpeningWorkspace}
-          >
-            {isOpeningWorkspace ? '正在打开…' : '打开 Workspace'}
-          </button>
-        </section>
-
-        <ContextBar workContext={workContext} />
-
-        <section className="detail-card" aria-label="恢复状态卡片">
-          <div className="detail-row">
-            <span>恢复状态</span>
-            <strong>{recoveryStatus.message}</strong>
-          </div>
-          <div className="detail-row">
-            <span>会话来源</span>
-            <strong>{recoverySources.session}</strong>
-          </div>
-          <div className="detail-row">
-            <span>Mode 来源</span>
-            <strong>{recoverySources.mode}</strong>
-          </div>
-          <div className="detail-row">
-            <span>Agent 来源</span>
-            <strong>{recoverySources.agent}</strong>
-          </div>
-          <div className="detail-row">
-            <span>模型来源</span>
-            <strong>{recoverySources.model}</strong>
-          </div>
-          <button
-            type="button"
-            className="secondary-button"
-            onClick={restoreProjectDefaults}
-            disabled={!canRestoreProjectDefaults}
-          >
-            回到项目推荐值
-          </button>
-        </section>
-
+        {/* 主内容区 */}
         {content}
 
-        <section className="detail-card">
-          <div className="detail-row">
-            <span>最近项目数</span>
-            <strong>{shellSnapshot?.recentProjects.length ?? 0}</strong>
-          </div>
-          <div className="detail-row">
-            <span>当前 Agent</span>
-            <strong>{currentAgentId ?? '未解析'}</strong>
-          </div>
-          <div className="detail-row">
-            <span>当前模型</span>
-            <strong>{currentModelId ?? '未解析'}</strong>
-          </div>
-        </section>
+        {/* 恢复状态 — 仅在设置页外、且有需要时显示 */}
+        {activeNavId !== 'settings' && activeNavId !== 'tools' && recoveryStatus.kind !== 'empty' ? (
+          <section className="inline-card" style={{ padding: '14px 18px' }}>
+            <div className="detail-row" style={{ padding: '6px 0' }}>
+              <span>恢复状态</span>
+              <strong>{recoveryStatus.message}</strong>
+            </div>
+            <div className="detail-row" style={{ padding: '6px 0' }}>
+              <span>来源</span>
+              <span className="mono">
+                会话:{recoverySources.session} · 模式:{recoverySources.mode} · Agent:{recoverySources.agent}
+              </span>
+            </div>
+            {canRestoreProjectDefaults ? (
+              <div style={{ marginTop: '8px' }}>
+                <button
+                  type="button"
+                  className="secondary-button"
+                  onClick={restoreProjectDefaults}
+                >
+                  回到项目推荐值
+                </button>
+              </div>
+            ) : null}
+          </section>
+        ) : null}
       </main>
     </div>
   )

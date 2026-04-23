@@ -92,13 +92,54 @@ afterEach(() => {
 })
 
 describe('settings and tools shell integration', () => {
+  it('bridge 可用但 runtime 仅 not-ready 时，设置页显示全局空态而不是宿主桥接不可用', async () => {
+    ;(window as Window & { xnovaStudio?: unknown }).xnovaStudio = createBridge({
+      runtimeInspectResult: {
+        ok: true,
+        status: 'not-ready',
+        snapshot: {
+          sessionId: null,
+          isRunning: false,
+          provider: 'anthropic',
+          model: 'claude-sonnet-4-6',
+          warnings: [],
+        },
+        workspacePath: null,
+        configWarnings: [],
+        issues: [
+          {
+            code: 'runtime-not-ready',
+            severity: 'warning',
+            message: '当前尚未绑定 Workspace，runtime 未就绪。',
+          },
+        ],
+      },
+    })
+
+    render(<App />)
+
+    await waitFor(() => {
+      expect(screen.getByText('要开始什么项目？')).toBeTruthy()
+    })
+
+    fireEvent.click(screen.getByRole('button', { name: '设置' }))
+
+    await waitFor(() => {
+      expect(screen.getByText('尚未绑定 Workspace，当前只展示全局设置骨架。')).toBeTruthy()
+    })
+
+    expect(
+      screen.queryByText('当前宿主桥接不可用，设置能力暂时不可读取。'),
+    ).toBeNull()
+  })
+
   it('在主壳中进入设置页骨架，并显示全局空态与后续 section 容器', async () => {
     ;(window as Window & { xnovaStudio?: unknown }).xnovaStudio = createBridge()
 
     render(<App />)
 
     await waitFor(() => {
-      expect(screen.getByText('从空白聊天开始')).toBeTruthy()
+      expect(screen.getByText('要开始什么项目？')).toBeTruthy()
     })
 
     fireEvent.click(screen.getByRole('button', { name: '设置' }))
@@ -107,9 +148,11 @@ describe('settings and tools shell integration', () => {
     expect(screen.getByText('尚未绑定 Workspace，当前只展示全局设置骨架。')).toBeTruthy()
     expect(screen.getByText('Provider 与模型')).toBeTruthy()
     expect(screen.getByText('Memory')).toBeTruthy()
+    expect(screen.queryByRole('button', { name: '标准模式' })).toBeNull()
+    expect(screen.queryByRole('button', { name: 'XForge' })).toBeNull()
   })
 
-  it('宿主缺失时工具页显示 disabled 状态，不新增第二个 mode 入口', () => {
+  it('宿主缺失时工具页显示 disabled 状态，且不渲染项目工作页专属 mode 入口', () => {
     clearBridge()
 
     render(<App />)
@@ -120,8 +163,8 @@ describe('settings and tools shell integration', () => {
     expect(screen.getByText('当前宿主桥接不可用，工具状态暂时不可读取。')).toBeTruthy()
     expect(screen.getByText('MCP 状态')).toBeTruthy()
     expect(screen.getByText('Skills / Plugins')).toBeTruthy()
-    expect(screen.getAllByRole('button', { name: 'Standard' })).toHaveLength(1)
-    expect(screen.getAllByRole('button', { name: 'XForge' })).toHaveLength(1)
+    expect(screen.queryByRole('button', { name: '标准模式' })).toBeNull()
+    expect(screen.queryByRole('button', { name: 'XForge' })).toBeNull()
   })
 
   it('运行时读取失败时工具页给出可见错误，而不是静默失败', async () => {

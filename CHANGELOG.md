@@ -1,4 +1,14 @@
 ## 2026-04-23
+- **Studio Shell · Codex Layout 收口**：新对话页、模式入口与设置状态按最新视觉/语义要求重新对齐
+  - `studio/src/renderer/**` 将左侧首项调整为“新对话”，并把空白主工作面改成更接近 Codex App 的项目层布局，保留玻璃感、阴影与大圆角
+  - `Standard / XForge` 仅在主工作页显示；设置/工具等非编码页不再重复出现模式切换
+  - 修正 `runtime not-ready` 被误判为 `disabled` 的状态映射，移除设置页“宿主桥接不可用”的误报，并补齐动态项目标题与回归测试
+
+- **Studio Shell**：`Xnova Studio` 主壳交互与文档契约重新对齐
+  - `ContextBar` 恢复完整 placeholder 文案，并补齐可点击的项目 / Agent / 模型 / SubAgent 管理入口
+  - 空白聊天页、顶部模式切换、SubAgent 树与主流程反馈同步收口，补上子代理详情视图与部分结果展示
+  - `studio` 侧 `vitest`、`typecheck`、`build` 全部通过，锁住当前 project-aware 主壳行为
+
 - **Design System · Xnova Studio**：补齐桌面主壳的前端视觉系统与预览基线
   - 新增 `DESIGN.md`，锁定 `Xnova Studio` 的整体气质、字体、配色、布局、动效和 project-aware 主壳规则
   - 新增 `docs/xnova-studio-design-preview.html`，用静态预览页展示空白聊天页、Tools / Settings 状态页和 Agents / 会话层级的目标观感

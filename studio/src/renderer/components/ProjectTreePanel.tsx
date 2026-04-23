@@ -11,6 +11,25 @@ export interface ProjectTreePanelProps {
   sessions: StudioProjectSessionSummary[]
   activeSessionId: string | null
   onSessionSelect: (sessionId: string) => void
+  activeSubagentId: string | null
+  onSubagentSelect: (sessionId: string, agentId: string) => void
+}
+
+function getSubagentStatusLabel(
+  status: StudioProjectSessionSummary['subagents'][number]['status'],
+): string {
+  switch (status) {
+    case 'running':
+      return '运行中'
+    case 'stopping':
+      return '停止中'
+    case 'stopped':
+      return '已停止'
+    case 'done':
+      return '已完成'
+    case 'error':
+      return '异常'
+  }
 }
 
 export function ProjectTreePanel(props: ProjectTreePanelProps) {
@@ -85,13 +104,30 @@ export function ProjectTreePanel(props: ProjectTreePanelProps) {
                     {isExpanded ? (
                       <div className="subagent-list">
                         {session.subagents.map((subagent) => (
-                    <div key={subagent.agentId} className="subagent-item">
-                      <strong>{subagent.agentId}</strong>
-                      <span>{subagent.description}</span>
-                      <span>{subagent.stateMessage ?? subagent.status}</span>
-                    </div>
-                  ))}
-                </div>
+                          <button
+                            key={subagent.agentId}
+                            type="button"
+                            className={`subagent-item ${
+                              props.activeSubagentId === subagent.agentId
+                                ? 'subagent-item-active'
+                                : ''
+                            }`}
+                            aria-label={`子代理 ${subagent.agentId} ${
+                              subagent.stateMessage ?? getSubagentStatusLabel(subagent.status)
+                            }`}
+                            onClick={() => {
+                              props.onSubagentSelect(session.sessionId, subagent.agentId)
+                            }}
+                          >
+                            <strong>{subagent.agentId}</strong>
+                            <span>{subagent.description}</span>
+                            <span>{subagent.stateMessage ?? getSubagentStatusLabel(subagent.status)}</span>
+                            {subagent.partialResult ? (
+                              <span>{subagent.partialResult}</span>
+                            ) : null}
+                          </button>
+                        ))}
+                      </div>
                     ) : null}
                   </div>
                 ) : null}

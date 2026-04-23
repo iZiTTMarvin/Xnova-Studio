@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 
-import { cleanup, render, screen, within } from '@testing-library/react'
-import { afterEach, describe, expect, it } from 'vitest'
+import { cleanup, fireEvent, render, screen, within } from '@testing-library/react'
+import { afterEach, describe, expect, it, vi } from 'vitest'
 import {
   ContextBar,
   CONTEXT_BAR_FIELDS,
@@ -77,7 +77,7 @@ describe('work context and context bar', () => {
       .map((node) => node.getAttribute('data-field-key'))
 
     expect(items).toEqual(CONTEXT_BAR_FIELDS.map((field) => field.key))
-    expect(screen.queryByRole('button', { name: 'Standard' })).toBeNull()
+    expect(screen.queryByRole('button', { name: '标准模式' })).toBeNull()
     expect(screen.queryByRole('button', { name: 'XForge' })).toBeNull()
   })
 
@@ -111,5 +111,24 @@ describe('work context and context bar', () => {
     expect(screen.getByText('未选择模型')).toBeTruthy()
     expect(screen.getByText('Context 未连接')).toBeTruthy()
     expect(screen.getByText('0 个运行中')).toBeTruthy()
+  })
+
+  it('在主壳传入操作回调时，每个上下文字段都可点击触发对应动作', () => {
+    const handleFieldSelect = vi.fn()
+
+    render(
+      <ContextBar
+        workContext={resolveWorkContext(createInput())}
+        onFieldSelect={handleFieldSelect}
+      />,
+    )
+
+    fireEvent.click(screen.getByRole('button', { name: '当前项目 D:/workspace/demo' }))
+    fireEvent.click(screen.getByRole('button', { name: '当前 Agent general' }))
+    fireEvent.click(screen.getByRole('button', { name: '运行中的 SubAgent 1 个运行中' }))
+
+    expect(handleFieldSelect).toHaveBeenNthCalledWith(1, 'project')
+    expect(handleFieldSelect).toHaveBeenNthCalledWith(2, 'agent')
+    expect(handleFieldSelect).toHaveBeenNthCalledWith(3, 'runningSubagents')
   })
 })

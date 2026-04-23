@@ -35,6 +35,7 @@ function createBridge() {
     runtime: {
       inspect: async () => ({
         ok: true as const,
+        status: 'ready' as const,
         snapshot: {
           sessionId: null,
           isRunning: false,
@@ -44,6 +45,7 @@ function createBridge() {
         },
         workspacePath: 'D:/workspace/demo',
         configWarnings: [],
+        issues: [],
       }),
       onEvent: () => () => {},
     },
@@ -128,7 +130,7 @@ describe('mode switch and recovery', () => {
     ).toBe('standard')
   })
 
-  it('顶部存在唯一的 Standard / XForge 切换入口，且切换 mode 不清空项目 / 会话', async () => {
+  it('顶部存在唯一的 标准模式 / XForge 切换入口，且切换 mode 不清空项目 / 会话', async () => {
     writeProjectWorkPreference('D:/workspace/demo', {
       mode: 'xforge',
     })
@@ -141,12 +143,12 @@ describe('mode switch and recovery', () => {
       expect(screen.getByText('已恢复最近工作会话')).toBeTruthy()
     })
 
-    expect(screen.getAllByRole('button', { name: 'Standard' })).toHaveLength(1)
+    expect(screen.getAllByRole('button', { name: '标准模式' })).toHaveLength(1)
     expect(screen.getAllByRole('button', { name: 'XForge' })).toHaveLength(1)
     expect(screen.getByRole('heading', { name: '继续实现 project-aware shell' })).toBeTruthy()
     expect(screen.getAllByText('D:/workspace/demo').length).toBeGreaterThan(0)
 
-    fireEvent.click(screen.getByRole('button', { name: 'Standard' }))
+    fireEvent.click(screen.getByRole('button', { name: '标准模式' }))
 
     expect(screen.getByRole('heading', { name: '继续实现 project-aware shell' })).toBeTruthy()
     expect(screen.getAllByText('D:/workspace/demo').length).toBeGreaterThan(0)
@@ -174,7 +176,7 @@ describe('mode switch and recovery', () => {
       screen.getByRole('button', { name: '回到项目推荐值' }).hasAttribute('disabled'),
     ).toBe(false)
     expect(
-      screen.getByRole('button', { name: 'Standard' }).getAttribute('aria-pressed'),
+      screen.getByRole('button', { name: '标准模式' }).getAttribute('aria-pressed'),
     ).toBe('true')
 
     fireEvent.click(screen.getByRole('button', { name: '回到项目推荐值' }))

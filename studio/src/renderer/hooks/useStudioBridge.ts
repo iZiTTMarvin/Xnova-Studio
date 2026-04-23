@@ -93,9 +93,9 @@ export function useStudioBridge() {
   )
   const [shellSnapshot, setShellSnapshot] = useState<StudioShellSnapshot | null>(null)
   const [shellError, setShellError] = useState<string | null>(null)
-  const [runtimeStatus, setRuntimeStatus] = useState<'loading' | 'ready' | 'disabled' | 'error'>(
-    bridge ? 'loading' : 'disabled',
-  )
+  const [runtimeStatus, setRuntimeStatus] = useState<
+    'loading' | 'ready' | 'not-ready' | 'disabled' | 'error'
+  >(bridge ? 'loading' : 'disabled')
   const [runtimeInspectResult, setRuntimeInspectResult] = useState<RuntimeInspectResult | null>(null)
   const [runtimeError, setRuntimeError] = useState<string | null>(null)
   const [lastRuntimeEvent, setLastRuntimeEvent] = useState<StudioRuntimeEvent | null>(null)
@@ -214,12 +214,8 @@ export function useStudioBridge() {
       setRuntimeInspectResult(result)
 
       if (result.ok) {
-        setRuntimeStatus(result.status === 'ready' ? 'ready' : 'disabled')
-        setRuntimeError(
-          result.status === 'ready'
-            ? null
-            : (result.issues[0]?.message ?? 'runtime 未就绪。'),
-        )
+        setRuntimeStatus(result.status === 'ready' ? 'ready' : 'not-ready')
+        setRuntimeError(null)
         return
       }
 

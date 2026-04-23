@@ -54,6 +54,8 @@ describe('project session trees', () => {
         sessions={projectSessions}
         activeSessionId="session-1"
         onSessionSelect={vi.fn()}
+        activeSubagentId={null}
+        onSubagentSelect={vi.fn()}
       />,
     )
 
@@ -72,6 +74,8 @@ describe('project session trees', () => {
         sessions={projectSessions}
         activeSessionId="session-1"
         onSessionSelect={vi.fn()}
+        activeSubagentId={null}
+        onSubagentSelect={vi.fn()}
       />,
     )
 
@@ -91,6 +95,8 @@ describe('project session trees', () => {
           sessions={projectSessions}
           activeSessionId="session-1"
           onSessionSelect={vi.fn()}
+          activeSubagentId={null}
+          onSubagentSelect={vi.fn()}
         />
         <ScratchpadList
           entries={[
@@ -107,5 +113,27 @@ describe('project session trees', () => {
     const chatList = screen.getByLabelText('Scratchpad 聊天列表')
     expect(within(chatList).getByText('全局 Scratchpad')).toBeTruthy()
     expect(within(chatList).queryByText('实现 Phase 5 主壳')).toBeNull()
+  })
+
+  it('展开后的子代理条目可点击，供主壳进入子代理会话视图', () => {
+    const handleSubagentSelect = vi.fn()
+
+    render(
+      <ProjectTreePanel
+        recentProjects={recentProjects}
+        selectedProjectPath="D:/workspace/demo"
+        onProjectSelect={vi.fn()}
+        sessions={projectSessions}
+        activeSessionId="session-1"
+        onSessionSelect={vi.fn()}
+        activeSubagentId={null}
+        onSubagentSelect={handleSubagentSelect}
+      />,
+    )
+
+    fireEvent.click(screen.getByRole('button', { name: '展开子代理 explorer-1' }))
+    fireEvent.click(screen.getByRole('button', { name: '子代理 explorer-1 运行中' }))
+
+    expect(handleSubagentSelect).toHaveBeenCalledWith('session-1', 'explorer-1')
   })
 })

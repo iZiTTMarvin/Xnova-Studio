@@ -231,20 +231,19 @@
 - 不要用营销文案语言覆盖真实技术状态。
 
 ## Implementation Notes
-- 当前 `studio/src/renderer/styles.css` 的深色基底和蓝色强调方向可保留，但要继续收紧：
-  - 减少“同一种卡片语言”占满全页的感觉
-  - 提升 Sidebar、主区、Context Bar 的层级差
-  - 让首页从“占位页面”升级为“安静但完成度高的工作入口”
-- 优先先做 token 化：
-  - 颜色变量
-  - 阴影变量
-  - 圆角变量
-  - 字号与 spacing 变量
-- 视觉实现顺序建议：
-  1. 统一 token
-  2. 重做 Sidebar / Mode Switch / Context Bar
-  3. 重做 Blank Chat / Restore Session 主区
-  4. 收拢 Tools / Settings 状态页样式
+- 当前 `studio/src/renderer/styles.css` 已完成 v1.1 视觉收敛：
+  - 统一了完整的设计 token 体系（颜色、阴影、圆角、字号、间距）
+  - Context Bar 已改为紧凑 HUD strip，不再是六张并排卡片
+  - Mode Switch 已改为精致 pill segmented control
+  - Sidebar 品牌区更安静，导航项更原生
+  - 首页建议动作已改为轻量列表行项，不再是 feature card grid
+  - Tools / Settings 页已收紧为工作面板，减少 dashboard 感
+  - 保留渐变、玻璃感、阴影、大圆角，但整体更像 Codex App 工作台气质
+- 视觉实现顺序已完成：
+  1. ✅ 统一 token
+  2. ✅ 重做 Sidebar / Mode Switch / Context Bar
+  3. ✅ 重做 Blank Chat / Restore Session 主区
+  4. ✅ 收拢 Tools / Settings 状态页样式
 
 ## Decisions Log
 | Date | Decision | Rationale |

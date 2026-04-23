@@ -160,19 +160,58 @@ describe('renderer project-aware shell', () => {
     })
   })
 
-  it('没有最近项目时默认进入空白聊天页，而不是 Overview', async () => {
+  it('没有最近项目且未绑定 workspace 时，默认进入项目层的新对话页，而不是 Overview', async () => {
     ;(window as Window & { xnovaStudio?: unknown }).xnovaStudio = createBridge()
 
     render(<App />)
 
     await waitFor(() => {
-      expect(screen.getByText('从空白聊天开始')).toBeTruthy()
+      expect(screen.getByText('要开始什么项目？')).toBeTruthy()
     })
 
-    expect(screen.getByText('当前没有可恢复的最近工作状态，已使用项目推荐值。')).toBeTruthy()
-    expect(screen.getByText('继续一个已有项目')).toBeTruthy()
+    expect(screen.getByRole('button', { name: '新对话' })).toBeTruthy()
+    expect(screen.getByText('打开并继续一个已有项目')).toBeTruthy()
     expect(screen.getByText('分析当前项目结构')).toBeTruthy()
+    expect(screen.getByRole('button', { name: '标准模式' })).toBeTruthy()
+    expect(screen.getByRole('button', { name: 'XForge' })).toBeTruthy()
+    expect(screen.queryByText('快速聊天')).toBeNull()
+    expect(screen.queryByText('从空白聊天开始')).toBeNull()
     expect(screen.queryByText('Overview')).toBeNull()
+  })
+
+  it('已绑定 workspace 时，新对话标题会跟随当前项目名动态变化', async () => {
+    ;(window as Window & { xnovaStudio?: unknown }).xnovaStudio = createBridge({
+      hostState: {
+        workspacePath: 'D:/workspace/codex',
+        lastSelection: null,
+      },
+      shellSnapshot: {
+        startup: {
+          recentProject: null,
+          recentSession: null,
+        },
+        recentProjects: [],
+        projectSessions: [],
+        scratchpadEntries: [],
+        defaults: {
+          projectPath: 'D:/workspace/codex',
+          branch: 'main',
+          agentId: 'general',
+          modelId: 'claude-sonnet-4-6',
+          providerId: 'anthropic',
+          recommendedMode: null,
+          allowedModes: ['standard', 'xforge'],
+        },
+        issues: [],
+        warnings: [],
+      },
+    })
+
+    render(<App />)
+
+    await waitFor(() => {
+      expect(screen.getByText('要在 codex 中构建什么？')).toBeTruthy()
+    })
   })
 
   it('有最近项目和最近会话时恢复最近工作会话', async () => {
@@ -279,7 +318,7 @@ describe('renderer project-aware shell', () => {
     })
 
     expect(screen.getByText('最近工作偏好存在不可恢复项，已回退到项目推荐值。')).toBeTruthy()
-    expect(screen.getByText('从空白聊天开始')).toBeTruthy()
+    expect(screen.getByText('要开始什么项目？')).toBeTruthy()
   })
 
   it('project config 损坏时显示明确提示，不会静默吞掉 warning', async () => {
@@ -405,7 +444,9 @@ describe('renderer project-aware shell', () => {
     vi.useRealTimers()
 
     expect(screen.getByText('索引待恢复')).toBeTruthy()
-    expect(screen.getByText('建议尽快进入设置页重建 Memory 索引，恢复向量检索。')).toBeTruthy()
+    expect(
+      screen.getByText('建议动作: 建议尽快进入设置页重建 Memory 索引，恢复向量检索。'),
+    ).toBeTruthy()
   })
 
   it('subagent 停止并带有 partial result 时在主工作流中有明确反馈', async () => {
