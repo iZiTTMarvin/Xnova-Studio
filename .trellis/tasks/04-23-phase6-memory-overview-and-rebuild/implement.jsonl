@@ -1,0 +1,20 @@
+{"file": ".trellis/workflow.md", "reason": "Project workflow and conventions"}
+{"file": ".trellis/spec/backend/index.md", "reason": "Backend development guide"}
+{"file": ".trellis/spec/frontend/index.md", "reason": "Frontend development guide"}
+{"file": "docs/implement/phase6-settings-and-tools.md", "reason": "Phase 6 Memory 任务来源"}
+{"file": "docs/implement/phase2-config-migration.md", "reason": "Memory 配置同样受 TOML 迁移规则约束"}
+{"file": ".trellis/spec/backend/database-guidelines.md", "reason": "Memory / 向量与持久化约束"}
+{"file": ".trellis/spec/backend/error-handling.md", "reason": "降级提示和失败路径必须可见"}
+{"file": ".trellis/spec/backend/logging-guidelines.md", "reason": "Memory 状态与 rebuild 需要可观察日志"}
+{"file": ".trellis/spec/backend/quality-guidelines.md", "reason": "Memory 改动必须补失败路径与回归测试"}
+{"file": ".trellis/spec/backend/runtime-boundary.md", "reason": "renderer 不可直接碰持久化底层"}
+{"file": ".trellis/spec/frontend/state-management.md", "reason": "Memory 状态和当前会话临时状态必须分层"}
+{"file": ".trellis/spec/frontend/type-safety.md", "reason": "外部返回数据与恢复数据必须先校验"}
+{"file": ".trellis/spec/frontend/quality-guidelines.md", "reason": "Memory 卡片属于高风险设置页，需要 TDD"}
+{"file": "cli/web/src/components/MemoryPanel.tsx", "reason": "旧 Memory 面板仅作状态呈现参考"}
+{"file": "cli/src/config/config-manager.ts", "reason": "Memory 配置主入口之一"}
+{"file": "cli/src/config/legacy-migration.ts", "reason": "旧配置迁移与回退路径"}
+{"file": "cli/src/config/toml/types.ts", "reason": "Memory TOML 数据结构"}
+{"file": "studio/src/shared/studio-bridge-contract.ts", "reason": "Memory 概览需要通过 bridge 拉取"}
+{"file": "studio/src/main/studio-ipc.ts", "reason": "Memory 状态与 rebuild 的 IPC 入口"}
+{"file": "studio/src/preload/studio-bridge-api.ts", "reason": "renderer 唯一宿主能力入口"}

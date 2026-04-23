@@ -1,0 +1,25 @@
+{"file": ".trellis/workflow.md", "reason": "Project workflow and conventions"}
+{"file": ".trellis/spec/backend/index.md", "reason": "Backend development guide"}
+{"file": ".trellis/spec/frontend/index.md", "reason": "Frontend development guide"}
+{"file": "docs/implement/phase6-settings-and-tools.md", "reason": "Settings / Tools 主壳整合的需求来源"}
+{"file": "docs/implement/phase4-electron-host.md", "reason": "必须延续 Phase 4 的 Electron Host 边界"}
+{"file": "docs/implement/phase5-project-aware-shell.md", "reason": "必须建立在 Phase 5 project-aware 主壳之上"}
+{"file": ".trellis/spec/frontend/project-shell-v1.md", "reason": "Settings 入口和主壳导航必须遵守 project-shell 约束"}
+{"file": ".trellis/spec/frontend/directory-structure.md", "reason": "页面、组件、hook 的落点必须符合前端目录边界"}
+{"file": ".trellis/spec/frontend/component-guidelines.md", "reason": "Settings 页面需要清晰的容器 / 展示分层"}
+{"file": ".trellis/spec/frontend/hook-guidelines.md", "reason": "bridge 订阅与状态拉取必须正确清理"}
+{"file": ".trellis/spec/frontend/state-management.md", "reason": "Settings 页状态必须遵守单一事实源与分层"}
+{"file": ".trellis/spec/frontend/type-safety.md", "reason": "外部输入和 bridge payload 必须先校验再收窄"}
+{"file": ".trellis/spec/frontend/quality-guidelines.md", "reason": "页面状态与 TDD 基线必须先满足"}
+{"file": ".trellis/spec/backend/runtime-boundary.md", "reason": "Renderer 只能通过 host / preload 触达能力"}
+{"file": "studio/src/renderer/App.tsx", "reason": "桌面 renderer 入口与主壳组合点"}
+{"file": "studio/src/renderer/pages/StudioHomePage.tsx", "reason": "主壳页面容器，Settings / Tools 会落在这里"}
+{"file": "studio/src/renderer/components/ProjectShellSidebar.tsx", "reason": "侧栏入口与信息架构参考"}
+{"file": "studio/src/renderer/components/ModeSwitch.tsx", "reason": "避免新增第二个 mode 真入口"}
+{"file": "studio/src/renderer/components/ContextBar.tsx", "reason": "Settings 页要继承主壳上下文语义"}
+{"file": "studio/src/renderer/hooks/useStudioBridge.ts", "reason": "页面必须通过 bridge 获取宿主状态"}
+{"file": "studio/src/shared/studio-bridge-contract.ts", "reason": "Settings 页需要遵守 bridge 契约"}
+{"file": "studio/src/main/studio-ipc.ts", "reason": "宿主只提供必要 IPC，不把复杂业务塞回 main process"}
+{"file": "studio/src/preload/studio-bridge-api.ts", "reason": "renderer 的唯一宿主能力入口"}
+{"file": "cli/web/src/pages/SettingsPage.tsx", "reason": "旧 Web Settings 页仅作信息架构参考，不作为最终落点"}
+{"file": "cli/web/src/components/Sidebar.tsx", "reason": "参考旧侧栏信息架构，但不回退到 web 壳"}

@@ -1,0 +1,9 @@
+{"file": ".claude/commands/trellis/finish-work.md", "reason": "Finish work checklist"}
+{"file": ".agents/skills/trellis-check/SKILL.md", "reason": "Code quality check spec"}
+{"file": "docs/implement/phase6-settings-and-tools.md", "reason": "对照 Phase 6 Memory 完成标准"}
+{"file": ".trellis/spec/backend/database-guidelines.md", "reason": "检查向量与持久化边界"}
+{"file": ".trellis/spec/backend/error-handling.md", "reason": "检查失败和降级提示"}
+{"file": ".trellis/spec/backend/logging-guidelines.md", "reason": "检查可观察性"}
+{"file": ".trellis/spec/backend/quality-guidelines.md", "reason": "检查测试覆盖"}
+{"file": ".trellis/spec/frontend/quality-guidelines.md", "reason": "检查 UI 状态与 TDD"}
+{"file": ".trellis/spec/frontend/state-management.md", "reason": "检查状态分层与单一事实源"}

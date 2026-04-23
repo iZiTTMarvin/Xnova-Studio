@@ -1,0 +1,10 @@
+{"file": ".claude/commands/trellis/finish-work.md", "reason": "Finish work checklist"}
+{"file": ".agents/skills/trellis-check/SKILL.md", "reason": "Code quality check spec"}
+{"file": "docs/implement/phase6-settings-and-tools.md", "reason": "检查必须逐条对照 Phase 6 完成标准"}
+{"file": "docs/implement/phase4-electron-host.md", "reason": "检查不回退 Phase 4 边界"}
+{"file": "docs/implement/phase5-project-aware-shell.md", "reason": "检查不破坏 Phase 5 主壳"}
+{"file": ".trellis/spec/frontend/project-shell-v1.md", "reason": "检查主壳入口、上下文条与 mode 入口边界"}
+{"file": ".trellis/spec/frontend/quality-guidelines.md", "reason": "检查 loading / empty / error / disabled 状态"}
+{"file": ".trellis/spec/backend/runtime-boundary.md", "reason": "检查 bridge / IPC / renderer 边界不回退"}
+{"file": ".trellis/spec/frontend/component-guidelines.md", "reason": "检查页面容器与展示组件分层"}
+{"file": ".trellis/spec/frontend/state-management.md", "reason": "检查 Settings 状态分层与单一事实源"}

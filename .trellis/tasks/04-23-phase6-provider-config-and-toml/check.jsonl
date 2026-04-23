@@ -1,0 +1,10 @@
+{"file": ".claude/commands/trellis/finish-work.md", "reason": "Finish work checklist"}
+{"file": ".agents/skills/trellis-check/SKILL.md", "reason": "Code quality check spec"}
+{"file": "docs/implement/phase6-settings-and-tools.md", "reason": "对照 Phase 6 Providers 完成标准"}
+{"file": "docs/implement/phase2-config-migration.md", "reason": "检查 TOML 迁移与优先级不偏离 Phase 2"}
+{"file": ".trellis/spec/backend/config-toml-migration.md", "reason": "检查 project > user > builtin 优先级"}
+{"file": ".trellis/spec/backend/error-handling.md", "reason": "检查配置损坏与测试失败路径"}
+{"file": ".trellis/spec/backend/quality-guidelines.md", "reason": "检查测试覆盖与失败路径"}
+{"file": ".trellis/spec/frontend/quality-guidelines.md", "reason": "检查 Provider 页状态与 TDD"}
+{"file": ".trellis/spec/frontend/type-safety.md", "reason": "检查外部输入校验与类型收窄"}
+{"file": ".trellis/spec/backend/runtime-boundary.md", "reason": "检查 bridge / IPC 边界"}

@@ -1,0 +1,9 @@
+{"file": ".claude/commands/trellis/finish-work.md", "reason": "Finish work checklist"}
+{"file": ".agents/skills/trellis-check/SKILL.md", "reason": "Code quality check spec"}
+{"file": "docs/implement/phase6-settings-and-tools.md", "reason": "对照 Phase 6 MCP 完成标准"}
+{"file": ".trellis/spec/backend/runtime-boundary.md", "reason": "检查 bridge / IPC 边界"}
+{"file": ".trellis/spec/backend/error-handling.md", "reason": "检查失败态和未配置态"}
+{"file": ".trellis/spec/backend/logging-guidelines.md", "reason": "检查状态变化可观察"}
+{"file": ".trellis/spec/backend/quality-guidelines.md", "reason": "检查测试覆盖"}
+{"file": ".trellis/spec/frontend/component-guidelines.md", "reason": "检查状态卡片与展示组件拆分"}
+{"file": ".trellis/spec/frontend/type-safety.md", "reason": "检查输入校验与类型收窄"}

@@ -1,0 +1,46 @@
+{"file": ".trellis/workflow.md", "reason": "Project workflow and conventions"}
+{"file": ".trellis/spec/backend/index.md", "reason": "Backend development guide"}
+{"file": ".trellis/spec/frontend/index.md", "reason": "Frontend development guide"}
+{"file": "docs/implement/phase6-settings-and-tools.md", "reason": "Phase 6 验证任务的最终验收标准来源"}
+{"file": "docs/implement/phase4-electron-host.md", "reason": "必须确认 Phase 4 Electron Host 边界没有回退"}
+{"file": "docs/implement/phase5-project-aware-shell.md", "reason": "必须确认 Phase 5 project-aware 主壳没有被破坏"}
+{"file": "docs/implement/phase7-polish-and-release.md", "reason": "验证阶段必须明确止步，不越到 Phase 7"}
+{"file": ".trellis/spec/frontend/project-shell-v1.md", "reason": "检查主壳入口、上下文条和模式切换约束"}
+{"file": ".trellis/spec/frontend/state-management.md", "reason": "检查分层状态、单一事实源和恢复优先级"}
+{"file": ".trellis/spec/frontend/quality-guidelines.md", "reason": "检查高风险设置页的测试、空态和错误态"}
+{"file": ".trellis/spec/backend/runtime-boundary.md", "reason": "检查 renderer / preload / main 的能力边界"}
+{"file": ".trellis/spec/backend/config-toml-migration.md", "reason": "检查 Provider / TOML 的恢复优先级与写回规则"}
+{"file": ".trellis/spec/backend/agent-schema-v1.md", "reason": "检查技能与插件相关状态是否符合 schema 约束"}
+{"file": ".trellis/spec/backend/quality-guidelines.md", "reason": "检查测试补齐、lint 和回归门禁"}
+{"file": ".trellis/spec/backend/error-handling.md", "reason": "检查失败态、降级态和恢复态都可见"}
+{"file": ".trellis/spec/backend/logging-guidelines.md", "reason": "检查关键链路的日志与可观察性"}
+{"file": ".trellis/spec/backend/database-guidelines.md", "reason": "检查 Memory / 持久化链路的底层边界"}
+{"file": ".trellis/spec/guides/cross-layer-thinking-guide.md", "reason": "检查跨层一致性与边界没有错位"}
+{"file": "cli/package.json", "reason": "验证 CLI 的 typecheck / test / build 脚本"}
+{"file": "studio/package.json", "reason": "验证 Studio 的 typecheck / build / test 脚本"}
+{"file": "cli/src/config/__tests__/resolver.effective-merge.test.ts", "reason": "验证 Provider 配置优先级与合并规则"}
+{"file": "cli/src/config/__tests__/config-manager.toml.test.ts", "reason": "验证 TOML 读写与回归路径"}
+{"file": "cli/src/config/__tests__/main-chain.resolved-config.test.ts", "reason": "验证主链路消费 resolved config"}
+{"file": "cli/src/config/__tests__/settings-contract.test.ts", "reason": "验证设置契约没有漂移"}
+{"file": "cli/src/config/__tests__/config-migration.integration.test.ts", "reason": "验证配置迁移与兼容路径"}
+{"file": "cli/src/config/config-manager.ts", "reason": "验证配置主入口是否仍然一致"}
+{"file": "cli/src/config/resolver.ts", "reason": "验证 resolved config 的唯一消费点"}
+{"file": "cli/src/config/settings-contract.ts", "reason": "验证 Provider / model 设置契约"}
+{"file": "cli/src/config/toml/index.ts", "reason": "验证 TOML 配置主入口"}
+{"file": "cli/src/config/toml/parser.ts", "reason": "验证 TOML 解析路径"}
+{"file": "cli/src/config/toml/serializer.ts", "reason": "验证 TOML 写回路径"}
+{"file": "cli/src/config/toml/field-mapping.ts", "reason": "验证字段映射没有错位"}
+{"file": "cli/src/memory/core/memory-manager.ts", "reason": "验证 Memory 概览与 rebuild 入口"}
+{"file": "cli/src/mcp/mcp-manager.ts", "reason": "验证 MCP 状态与管理入口"}
+{"file": "cli/src/plugin/registry.ts", "reason": "验证插件来源与注册表事实源"}
+{"file": "cli/src/plugin/storage.ts", "reason": "验证插件持久化与读取路径"}
+{"file": "cli/src/skills/engine/skill-tool.ts", "reason": "验证技能展示与工具逻辑"}
+{"file": "cli/src/server/dashboard/mcp-api.ts", "reason": "验证 MCP 状态 API"}
+{"file": "cli/src/server/dashboard/plugins-api.ts", "reason": "验证插件状态 API"}
+{"file": "studio/src/main/studio-ipc.ts", "reason": "验证主进程 IPC 仍只负责宿主职责"}
+{"file": "studio/src/preload/studio-bridge-api.ts", "reason": "验证 renderer 的唯一宿主能力入口"}
+{"file": "studio/src/shared/studio-bridge-contract.ts", "reason": "验证 bridge 契约没有越界"}
+{"file": "studio/src/renderer/pages/StudioHomePage.tsx", "reason": "验证 Settings / Tools 主壳落点"}
+{"file": "studio/src/renderer/components/ContextBar.tsx", "reason": "验证上下文条展示位置与顺序"}
+{"file": "studio/src/renderer/components/ProjectShellSidebar.tsx", "reason": "验证侧栏信息架构没有回退"}
+{"file": "cli/web/src/pages/SettingsPage.tsx", "reason": "旧 Web Settings 页仅作对照参考"}

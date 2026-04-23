@@ -1,0 +1,12 @@
+{"file": ".claude/commands/trellis/finish-work.md", "reason": "Finish work checklist"}
+{"file": ".agents/skills/trellis-check/SKILL.md", "reason": "Code quality check spec"}
+{"file": "docs/implement/phase6-settings-and-tools.md", "reason": "对照 Phase 6 Skills / Plugins 完成标准"}
+{"file": "docs/implement/phase4-electron-host.md", "reason": "检查不回退 Phase 4 Electron Host 边界"}
+{"file": ".trellis/spec/backend/runtime-boundary.md", "reason": "检查 bridge / IPC / renderer 边界"}
+{"file": ".trellis/spec/backend/error-handling.md", "reason": "检查空态、错误态和未配置态"}
+{"file": ".trellis/spec/backend/logging-guidelines.md", "reason": "检查状态变化与来源分布的可观察性"}
+{"file": ".trellis/spec/backend/quality-guidelines.md", "reason": "检查 TDD、回归测试和失败路径覆盖"}
+{"file": ".trellis/spec/backend/agent-schema-v1.md", "reason": "检查技能和插件状态是否符合 agent schema 约束"}
+{"file": ".trellis/spec/frontend/component-guidelines.md", "reason": "检查状态卡片和管理入口的组件拆分"}
+{"file": ".trellis/spec/frontend/type-safety.md", "reason": "检查外部输入与状态 payload 的校验"}
+{"file": ".trellis/spec/frontend/quality-guidelines.md", "reason": "检查页面状态和交互是否满足高风险设置页要求"}

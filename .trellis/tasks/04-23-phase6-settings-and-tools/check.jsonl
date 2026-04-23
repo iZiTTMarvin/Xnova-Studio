@@ -1,0 +1,9 @@
+{"file": ".claude/commands/trellis/finish-work.md", "reason": "Finish work checklist"}
+{"file": ".agents/skills/trellis-check/SKILL.md", "reason": "Code quality check spec"}
+{"file": "docs/implement/phase6-settings-and-tools.md", "reason": "检查必须逐条对照 Phase 6 完成标准"}
+{"file": "docs/implement/phase4-electron-host.md", "reason": "检查不能破坏 Phase 4 边界"}
+{"file": "docs/implement/phase7-polish-and-release.md", "reason": "检查时明确不越界到 Phase 7"}
+{"file": ".trellis/spec/frontend/project-shell-v1.md", "reason": "检查默认壳、入口与上下文条边界"}
+{"file": ".trellis/spec/frontend/quality-guidelines.md", "reason": "检查 UI 状态、TDD 与失败态覆盖"}
+{"file": ".trellis/spec/backend/runtime-boundary.md", "reason": "检查 bridge / IPC / host 边界不回退"}
+{"file": ".trellis/spec/guides/cross-layer-thinking-guide.md", "reason": "检查时需要跨层核对配置、状态与宿主边界"}

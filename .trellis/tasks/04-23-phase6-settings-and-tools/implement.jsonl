@@ -1,0 +1,16 @@
+{"file": ".trellis/workflow.md", "reason": "Project workflow and conventions"}
+{"file": ".trellis/spec/backend/index.md", "reason": "Backend development guide"}
+{"file": ".trellis/spec/frontend/index.md", "reason": "Frontend development guide"}
+{"file": "docs/implement/phase6-settings-and-tools.md", "reason": "Phase 6 的主需求文档与任务拆分来源"}
+{"file": "docs/implement/phase4-electron-host.md", "reason": "继承 Phase 4 的 Electron 宿主边界，不能回退"}
+{"file": "docs/implement/phase5-project-aware-shell.md", "reason": "Settings / Tools 必须建立在 Phase 5 主壳之上"}
+{"file": "docs/implement/phase7-polish-and-release.md", "reason": "明确 Phase 7 禁区，避免提前扩 scope"}
+{"file": ".trellis/spec/frontend/project-shell-v1.md", "reason": "桌面主壳与 Settings 入口的前端硬约束"}
+{"file": ".trellis/spec/frontend/state-management.md", "reason": "设置页与配置状态的分层约束"}
+{"file": ".trellis/spec/frontend/quality-guidelines.md", "reason": "Phase 6 前端质量门与 TDD 要求"}
+{"file": ".trellis/spec/backend/runtime-boundary.md", "reason": "确保 Settings / Tools 仍通过 host / preload 边界暴露能力"}
+{"file": ".trellis/spec/backend/config-toml-migration.md", "reason": "Providers / Memory 的配置写回必须走 TOML 优先级"}
+{"file": ".trellis/spec/backend/agent-schema-v1.md", "reason": "Skills / Plugins 相关能力必须服从 agent schema 契约"}
+{"file": ".trellis/spec/backend/error-handling.md", "reason": "配置与状态错误必须可见，不允许 silent failure"}
+{"file": ".trellis/spec/backend/logging-guidelines.md", "reason": "Settings / Tools 的状态与失败需要可观察日志"}
+{"file": ".trellis/spec/guides/cross-layer-thinking-guide.md", "reason": "Phase 6 是典型跨层任务，需统一思考边界"}

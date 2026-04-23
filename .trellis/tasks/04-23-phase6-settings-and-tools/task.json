@@ -1,0 +1,33 @@
+{
+  "id": "phase6-settings-and-tools",
+  "name": "phase6-settings-and-tools",
+  "title": "Phase 6 Settings and Tools",
+  "description": "把 Providers / Memory / MCP / Skills 功能整合进桌面主体验",
+  "status": "planning",
+  "dev_type": "fullstack",
+  "scope": null,
+  "package": null,
+  "priority": "P0",
+  "creator": "xuhaochen",
+  "assignee": "xuhaochen",
+  "createdAt": "2026-04-23",
+  "completedAt": null,
+  "branch": null,
+  "base_branch": "main",
+  "worktree_path": null,
+  "commit": null,
+  "pr_url": null,
+  "subtasks": [],
+  "children": [
+    "04-23-phase6-settings-shell-integration",
+    "04-23-phase6-provider-config-and-toml",
+    "04-23-phase6-memory-overview-and-rebuild",
+    "04-23-phase6-mcp-status-and-management",
+    "04-23-phase6-skills-and-plugins-status",
+    "04-23-phase6-settings-and-tools-verification"
+  ],
+  "parent": null,
+  "relatedFiles": [],
+  "notes": "",
+  "meta": {}
+}

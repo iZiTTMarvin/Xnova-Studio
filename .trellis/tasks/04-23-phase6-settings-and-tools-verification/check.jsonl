@@ -1,0 +1,19 @@
+{"file": ".claude/commands/trellis/finish-work.md", "reason": "Finish work checklist"}
+{"file": ".agents/skills/trellis-check/SKILL.md", "reason": "Code quality check spec"}
+{"file": "docs/implement/phase6-settings-and-tools.md", "reason": "对照 Phase 6 验收标准逐条核对"}
+{"file": "docs/implement/phase4-electron-host.md", "reason": "检查不回退 Phase 4 Electron Host 边界"}
+{"file": "docs/implement/phase5-project-aware-shell.md", "reason": "检查不破坏 Phase 5 project-aware 主壳"}
+{"file": "docs/implement/phase7-polish-and-release.md", "reason": "检查验证范围没有溢出到 Phase 7"}
+{"file": ".trellis/spec/frontend/project-shell-v1.md", "reason": "检查主壳入口、上下文条和模式切换边界"}
+{"file": ".trellis/spec/frontend/state-management.md", "reason": "检查状态分层、恢复优先级和单一事实源"}
+{"file": ".trellis/spec/frontend/quality-guidelines.md", "reason": "检查高风险设置页的空态、错误态与测试门禁"}
+{"file": ".trellis/spec/backend/runtime-boundary.md", "reason": "检查 renderer / preload / main 边界"}
+{"file": ".trellis/spec/backend/config-toml-migration.md", "reason": "检查 Provider / TOML 优先级与写回规则"}
+{"file": ".trellis/spec/backend/agent-schema-v1.md", "reason": "检查 Skills / Plugins 状态是否符合 schema 约束"}
+{"file": ".trellis/spec/backend/quality-guidelines.md", "reason": "检查测试、lint、回归和质量门禁"}
+{"file": ".trellis/spec/backend/error-handling.md", "reason": "检查失败态与降级态可见"}
+{"file": ".trellis/spec/backend/logging-guidelines.md", "reason": "检查关键链路可观察"}
+{"file": ".trellis/spec/backend/database-guidelines.md", "reason": "检查 Memory / 持久化链路边界"}
+{"file": ".trellis/spec/guides/cross-layer-thinking-guide.md", "reason": "检查跨层一致性"}
+{"file": "cli/package.json", "reason": "检查 CLI typecheck / test / build 脚本"}
+{"file": "studio/package.json", "reason": "检查 Studio typecheck / build / test 脚本"}

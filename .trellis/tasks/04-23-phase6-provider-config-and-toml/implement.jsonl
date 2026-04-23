@@ -1,0 +1,27 @@
+{"file": ".trellis/workflow.md", "reason": "Project workflow and conventions"}
+{"file": ".trellis/spec/backend/index.md", "reason": "Backend development guide"}
+{"file": ".trellis/spec/frontend/index.md", "reason": "Frontend development guide"}
+{"file": "docs/implement/phase6-settings-and-tools.md", "reason": "Phase 6 Providers 任务来源"}
+{"file": "docs/implement/phase2-config-migration.md", "reason": "Provider 写回必须遵守 Phase 2 的 TOML 迁移契约"}
+{"file": ".trellis/spec/backend/config-toml-migration.md", "reason": "`project > user > builtin` 优先级与 TOML 读写规则"}
+{"file": ".trellis/spec/backend/directory-structure.md", "reason": "配置模块与测试模块的目录边界"}
+{"file": ".trellis/spec/backend/error-handling.md", "reason": "配置损坏、测试失败、回退都必须可见"}
+{"file": ".trellis/spec/backend/quality-guidelines.md", "reason": "配置变更必须补测试，不能只做成功路径"}
+{"file": ".trellis/spec/backend/runtime-boundary.md", "reason": "Settings 页只能通过 host / preload 访问配置能力"}
+{"file": ".trellis/spec/frontend/state-management.md", "reason": "默认 provider / model 必须和会话状态分层"}
+{"file": ".trellis/spec/frontend/type-safety.md", "reason": "配置输入必须先校验再收窄"}
+{"file": ".trellis/spec/frontend/quality-guidelines.md", "reason": "Provider 表单属于高风险设置页，必须先补失败测试"}
+{"file": "cli/src/config/config-manager.ts", "reason": "用户级配置主入口"}
+{"file": "cli/src/config/resolver.ts", "reason": "resolved config 的唯一消费点"}
+{"file": "cli/src/config/settings-contract.ts", "reason": "Provider / model 设置契约"}
+{"file": "cli/src/config/toml/index.ts", "reason": "TOML 配置主入口"}
+{"file": "cli/src/config/toml/parser.ts", "reason": "TOML 解析路径"}
+{"file": "cli/src/config/toml/serializer.ts", "reason": "TOML 写回路径"}
+{"file": "cli/src/config/toml/field-mapping.ts", "reason": "snake_case / camelCase 映射"}
+{"file": "cli/src/config/__tests__/resolver.effective-merge.test.ts", "reason": "优先级合并回归测试"}
+{"file": "cli/src/config/__tests__/config-manager.toml.test.ts", "reason": "TOML 读写回归测试"}
+{"file": "cli/src/config/__tests__/main-chain.resolved-config.test.ts", "reason": "主链路必须消费 resolved config"}
+{"file": "cli/web/src/pages/SettingsPage.tsx", "reason": "旧 Settings 页只作 provider UI 参考"}
+{"file": "studio/src/shared/studio-bridge-contract.ts", "reason": "Provider 写回要经过 bridge 契约"}
+{"file": "studio/src/main/studio-ipc.ts", "reason": "配置写回的 IPC 入口"}
+{"file": "studio/src/preload/studio-bridge-api.ts", "reason": "renderer 唯一宿主能力入口"}

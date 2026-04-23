@@ -1,0 +1,30 @@
+{"file": ".trellis/workflow.md", "reason": "Project workflow and conventions"}
+{"file": ".trellis/spec/backend/index.md", "reason": "Backend development guide"}
+{"file": ".trellis/spec/frontend/index.md", "reason": "Frontend development guide"}
+{"file": "docs/implement/phase6-settings-and-tools.md", "reason": "Phase 6 Skills / Plugins 状态任务的需求来源"}
+{"file": "docs/implement/phase4-electron-host.md", "reason": "必须继续遵守 Phase 4 Electron Host 边界"}
+{"file": ".trellis/spec/backend/runtime-boundary.md", "reason": "Skills / Plugins 状态只能通过 host / preload 访问宿主能力"}
+{"file": ".trellis/spec/backend/error-handling.md", "reason": "状态卡片的空态、错误态和未配置态必须可见"}
+{"file": ".trellis/spec/backend/logging-guidelines.md", "reason": "来源分布与管理入口涉及的状态变化需要可观察"}
+{"file": ".trellis/spec/backend/quality-guidelines.md", "reason": "Skills / Plugins 改动必须先补失败测试，再实现"}
+{"file": ".trellis/spec/backend/agent-schema-v1.md", "reason": "技能与插件状态必须与 agent schema 的约束对齐"}
+{"file": ".trellis/spec/frontend/component-guidelines.md", "reason": "状态卡片与管理入口需要清晰的组件分层"}
+{"file": ".trellis/spec/frontend/state-management.md", "reason": "Skills / Plugins 状态必须遵守单一事实源与分层"}
+{"file": ".trellis/spec/frontend/type-safety.md", "reason": "外部输入与状态 payload 必须先校验再收窄"}
+{"file": ".trellis/spec/frontend/quality-guidelines.md", "reason": "Skills / Plugins 页面属于高风险设置页，必须遵守 TDD"}
+{"file": "cli/web/src/components/PluginsTab.tsx", "reason": "旧 Web Plugins 视图仅作信息架构和状态呈现参考"}
+{"file": "cli/src/commands/skills.ts", "reason": "技能状态与管理入口的 CLI 主入口参考"}
+{"file": "cli/src/commands/plugins.ts", "reason": "插件状态与管理入口的 CLI 主入口参考"}
+{"file": "cli/src/plugin/index.ts", "reason": "插件能力主入口"}
+{"file": "cli/src/plugin/registry.ts", "reason": "插件来源与注册表事实源"}
+{"file": "cli/src/plugin/storage.ts", "reason": "插件持久化与读取路径"}
+{"file": "cli/src/plugin/types.ts", "reason": "插件数据结构与类型定义"}
+{"file": "cli/src/skills/index.ts", "reason": "技能能力主入口"}
+{"file": "cli/src/skills/engine/index.ts", "reason": "技能引擎总入口"}
+{"file": "cli/src/skills/engine/parser.ts", "reason": "技能定义解析逻辑"}
+{"file": "cli/src/skills/engine/skill-tool.ts", "reason": "技能工具执行与展示逻辑"}
+{"file": "cli/src/skills/engine/store.ts", "reason": "技能状态存储与读取逻辑"}
+{"file": "cli/src/server/dashboard/plugins-api.ts", "reason": "现有插件状态 API 可作为管理入口参考"}
+{"file": "studio/src/shared/studio-bridge-contract.ts", "reason": "桌面壳与 renderer 的桥接契约"}
+{"file": "studio/src/main/studio-ipc.ts", "reason": "Skills / Plugins 管理能力必须走 IPC"}
+{"file": "studio/src/preload/studio-bridge-api.ts", "reason": "renderer 的唯一宿主能力入口"}
