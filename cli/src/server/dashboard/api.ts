@@ -30,6 +30,7 @@ import {
   buildSettingsReadResponse,
   buildSettingsSaveResponse,
 } from '@config/settings-contract.js'
+import { testProviderConnection } from '@config/provider-settings.js'
 import { TokenMeter } from '@observability/token-meter.js'
 import { createPluginsRoutes } from './plugins-api.js'
 import { createMcpRoutes } from './mcp-api.js'
@@ -41,9 +42,6 @@ import { homedir } from 'node:os'
 import { join } from 'node:path'
 import { writeImage, readImageBase64 } from '@core/image-store.js'
 import { eventBus } from '@core/event-bus.js'
-import { AnthropicProvider } from '@providers/anthropic.js'
-import { OpenAICompatProvider } from '@providers/openai-compat.js'
-import { ProviderWrapper } from '@providers/wrapper.js'
 
 export function createApiRoutes(): Hono {
   const api = new Hono()
@@ -349,65 +347,30 @@ export function createApiRoutes(): Hono {
     try {
       const body = await c.req.json() as {
         provider: string
-        config: { apiKey: string; baseURL?: string; protocol?: string; models: string[] }
+        config: {
+          apiKey: string
+          baseURL?: string
+          protocol?: string
+          models: string[]
+          visionModels?: string[]
+        }
         model?: string  // 可选：指定测试哪个模型，不传则用 models[0]
       }
-      const { provider: providerName, config: provCfg } = body
+      const result = await testProviderConnection({
+        providerId: body.provider,
+        config: {
+          id: body.provider,
+          apiKey: body.config.apiKey,
+          baseURL: body.config.baseURL ?? null,
+          protocol:
+            body.config.protocol === 'anthropic' ? 'anthropic' : 'openai',
+          models: body.config.models,
+          visionModels: body.config.visionModels ?? [],
+        },
+        model: body.model ?? null,
+      })
 
-      if (!provCfg.apiKey || !provCfg.models?.length) {
-        return c.json({ success: false, error: '需要填写 API Key 和至少一个模型' }, 400)
-      }
-
-      // 根据协议创建临时 provider
-      const protocol = provCfg.protocol === 'anthropic' || (!provCfg.protocol && providerName === 'anthropic')
-        ? 'anthropic' : 'openai'
-      const cfg = {
-        apiKey: provCfg.apiKey,
-        models: provCfg.models,
-        ...(provCfg.baseURL ? { baseURL: provCfg.baseURL } : {}),
-      }
-      const raw = protocol === 'anthropic'
-        ? new AnthropicProvider(providerName, cfg)
-        : new OpenAICompatProvider(providerName, cfg)
-      const llm = new ProviderWrapper(raw)
-
-      // 优先使用前端指定的模型，否则用列表第一个
-      const model = body.model && provCfg.models.includes(body.model) ? body.model : provCfg.models[0]!
-      const startTime = Date.now()
-
-      // 发一条简单消息测试，完整消费流
-      const controller = new AbortController()
-      const timeout = setTimeout(() => controller.abort(), 15000)
-
-      let gotText = false
-      let gotDone = false
-      let streamError = ''
-      try {
-        // 必须完整消费流，不能提前 break——Anthropic SDK 的 stream
-        // 需要在 for-await 结束后调用 finalMessage()，提前退出会导致错误
-        for await (const chunk of llm.chat({
-          model,
-          messages: [{ role: 'user', content: 'hi' }],
-          maxTokens: 32,
-          signal: controller.signal,
-        })) {
-          if (chunk.type === 'text' && chunk.text) gotText = true
-          if (chunk.type === 'error') streamError = chunk.error ?? '未知流错误'
-          if (chunk.type === 'done') gotDone = true
-        }
-      } finally {
-        clearTimeout(timeout)
-      }
-
-      const durationMs = Date.now() - startTime
-
-      if (streamError) {
-        return c.json({ success: false, error: streamError })
-      }
-      if (gotText || gotDone) {
-        return c.json({ success: true, model, durationMs })
-      }
-      return c.json({ success: false, error: '未收到有效响应' })
+      return c.json(result, result.success ? 200 : 400)
     } catch (err) {
       const msg = err instanceof Error ? err.message : String(err)
       return c.json({ success: false, error: msg })

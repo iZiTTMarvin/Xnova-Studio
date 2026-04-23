@@ -1,3 +1,9 @@
+## 2026-04-23
+- **Phase 6 · Settings and Tools**：桌面主壳完成 Providers、Memory、MCP、Skills / Plugins 的 Phase 6 整合
+  - `studio/src/renderer/**` 新增 Settings / Tools 页面骨架、Provider 表单、Memory 状态卡片、MCP 状态卡片和 Skills / Plugins 状态卡片，统一走 preload bridge，不回退到旧 Web 壳
+  - `cli/` 新增 Provider / Memory / MCP / Skills / Plugins 纯服务，打通 TOML、概览、管理入口与状态判定，并让旧 dashboard API 复用同一条服务逻辑
+  - 补齐 CLI / Studio 的 Phase 6 回归测试、typecheck、build 与真实 Electron smoke；任务详情已归档至 `.trellis/tasks/04-23-phase6-settings-and-tools-verification/`
+
 ## 2026-04-22
 - **Phase 5 · Project-aware Shell**：桌面主壳从 Phase 4 最小状态页升级为 project-aware 入口
   - 冷启动默认进入空白聊天页或恢复最近工作会话，`Overview` 退出默认首页职责，并补齐路径失效/会话损坏降级反馈

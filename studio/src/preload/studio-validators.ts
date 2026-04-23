@@ -1,5 +1,17 @@
 import type {
+  StudioSkillsPluginsOverviewSnapshot,
+  StudioMcpMutationResult,
+  StudioMcpOverviewSnapshot,
+  StudioMcpServerMutationInput,
   OpenWorkspaceResponse,
+  StudioMemoryOverviewSnapshot,
+  StudioMemoryRebuildResult,
+  StudioProviderConnectionTestRequest,
+  StudioProviderConnectionTestResult,
+  StudioProviderSettingsEntry,
+  StudioProviderSettingsSaveInput,
+  StudioProviderSettingsSaveResult,
+  StudioProviderSettingsSnapshot,
   RuntimeInspectRequest,
   RuntimeInspectResult,
   RuntimeSnapshotView,
@@ -109,6 +121,635 @@ export function parseStudioShellSnapshotRequest(
   }
 
   return value.projectPath === undefined ? {} : { projectPath: value.projectPath as string | null }
+}
+
+function parseProviderSettingsEntry(
+  payload: unknown,
+  subject: string,
+): StudioProviderSettingsEntry {
+  const value = assertPlainObject(payload, subject)
+  if (typeof value.id !== 'string') {
+    throw new StudioBridgeValidationError(`${subject}.id 必须是字符串。`)
+  }
+  if (typeof value.apiKey !== 'string') {
+    throw new StudioBridgeValidationError(`${subject}.apiKey 必须是字符串。`)
+  }
+  if (
+    value.baseURL !== null &&
+    value.baseURL !== undefined &&
+    typeof value.baseURL !== 'string'
+  ) {
+    throw new StudioBridgeValidationError(`${subject}.baseURL 必须是字符串或 null。`)
+  }
+  if (value.protocol !== 'anthropic' && value.protocol !== 'openai') {
+    throw new StudioBridgeValidationError(`${subject}.protocol 必须是 anthropic 或 openai。`)
+  }
+
+  return {
+    id: value.id,
+    apiKey: value.apiKey,
+    baseURL: value.baseURL === undefined ? null : (value.baseURL as string | null),
+    protocol: value.protocol,
+    models: parseStringArray(value.models, `${subject}.models`),
+    visionModels:
+      value.visionModels === undefined
+        ? []
+        : parseStringArray(value.visionModels, `${subject}.visionModels`),
+  }
+}
+
+export function parseStudioProviderSettingsSaveInput(
+  payload: unknown,
+): StudioProviderSettingsSaveInput {
+  const value = assertPlainObject(payload, 'settings.saveProviderSettings')
+  if (typeof value.defaultProvider !== 'string') {
+    throw new StudioBridgeValidationError('settings.saveProviderSettings.defaultProvider 必须是字符串。')
+  }
+  if (typeof value.defaultModel !== 'string') {
+    throw new StudioBridgeValidationError('settings.saveProviderSettings.defaultModel 必须是字符串。')
+  }
+  if (
+    value.subAgentModel !== undefined &&
+    value.subAgentModel !== null &&
+    typeof value.subAgentModel !== 'string'
+  ) {
+    throw new StudioBridgeValidationError('settings.saveProviderSettings.subAgentModel 必须是字符串或 null。')
+  }
+  if (!Array.isArray(value.providers)) {
+    throw new StudioBridgeValidationError('settings.saveProviderSettings.providers 必须是数组。')
+  }
+
+  return {
+    defaultProvider: value.defaultProvider,
+    defaultModel: value.defaultModel,
+    subAgentModel:
+      value.subAgentModel === undefined
+        ? null
+        : (value.subAgentModel as string | null),
+    providers: value.providers.map((item, index) =>
+      parseProviderSettingsEntry(item, `settings.saveProviderSettings.providers[${index}]`),
+    ),
+  }
+}
+
+function parseProviderSettingsSource(
+  payload: unknown,
+): StudioProviderSettingsSnapshot['source'] {
+  const value = assertPlainObject(payload, 'settings.source')
+  return {
+    ...(parseOptionalString(value.userToml, 'settings.source.userToml')
+      ? { userToml: value.userToml as string }
+      : {}),
+    ...(parseOptionalString(value.projectToml, 'settings.source.projectToml')
+      ? { projectToml: value.projectToml as string }
+      : {}),
+    ...(parseOptionalString(value.legacyJson, 'settings.source.legacyJson')
+      ? { legacyJson: value.legacyJson as string }
+      : {}),
+  }
+}
+
+export function parseStudioProviderSettingsSnapshot(
+  payload: unknown,
+): StudioProviderSettingsSnapshot {
+  const value = assertPlainObject(payload, 'settings.getProviderSettings 响应')
+  const editableConfig = assertPlainObject(
+    value.editableConfig,
+    'settings.editableConfig',
+  )
+  const effectiveDefaults = assertPlainObject(
+    value.effectiveDefaults,
+    'settings.effectiveDefaults',
+  )
+
+  if (typeof editableConfig.defaultProvider !== 'string') {
+    throw new StudioBridgeValidationError('settings.editableConfig.defaultProvider 必须是字符串。')
+  }
+  if (typeof editableConfig.defaultModel !== 'string') {
+    throw new StudioBridgeValidationError('settings.editableConfig.defaultModel 必须是字符串。')
+  }
+  if (
+    editableConfig.subAgentModel !== null &&
+    editableConfig.subAgentModel !== undefined &&
+    typeof editableConfig.subAgentModel !== 'string'
+  ) {
+    throw new StudioBridgeValidationError('settings.editableConfig.subAgentModel 必须是字符串或 null。')
+  }
+  if (!Array.isArray(editableConfig.providers)) {
+    throw new StudioBridgeValidationError('settings.editableConfig.providers 必须是数组。')
+  }
+  if (typeof effectiveDefaults.defaultProvider !== 'string') {
+    throw new StudioBridgeValidationError('settings.effectiveDefaults.defaultProvider 必须是字符串。')
+  }
+  if (typeof effectiveDefaults.defaultModel !== 'string') {
+    throw new StudioBridgeValidationError('settings.effectiveDefaults.defaultModel 必须是字符串。')
+  }
+
+  return {
+    editableConfig: {
+      defaultProvider: editableConfig.defaultProvider,
+      defaultModel: editableConfig.defaultModel,
+      subAgentModel:
+        editableConfig.subAgentModel === undefined
+          ? null
+          : (editableConfig.subAgentModel as string | null),
+      providers: editableConfig.providers.map((item, index) =>
+        parseProviderSettingsEntry(item, `settings.editableConfig.providers[${index}]`),
+      ),
+    },
+    effectiveDefaults: {
+      defaultProvider: effectiveDefaults.defaultProvider,
+      defaultModel: effectiveDefaults.defaultModel,
+    },
+    source: parseProviderSettingsSource(value.source),
+    warnings:
+      value.warnings === undefined
+        ? []
+        : parseStringArray(value.warnings, 'settings.warnings'),
+  }
+}
+
+export function parseStudioProviderSettingsSaveResult(
+  payload: unknown,
+): StudioProviderSettingsSaveResult {
+  const value = assertPlainObject(payload, 'settings.saveProviderSettings 响应')
+  if (typeof value.success !== 'boolean') {
+    throw new StudioBridgeValidationError('settings.saveProviderSettings.success 必须是布尔值。')
+  }
+
+  if (value.success) {
+    return {
+      success: true,
+      snapshot: parseStudioProviderSettingsSnapshot(value.snapshot),
+    }
+  }
+
+  if (typeof value.error !== 'string') {
+    throw new StudioBridgeValidationError('settings.saveProviderSettings.error 必须是字符串。')
+  }
+
+  return {
+    success: false,
+    error: value.error,
+  }
+}
+
+export function parseStudioProviderConnectionTestRequest(
+  payload: unknown,
+): StudioProviderConnectionTestRequest {
+  const value = assertPlainObject(payload, 'settings.testProviderConnection')
+  if (typeof value.providerId !== 'string') {
+    throw new StudioBridgeValidationError('settings.testProviderConnection.providerId 必须是字符串。')
+  }
+
+  return {
+    providerId: value.providerId,
+    config: parseProviderSettingsEntry(
+      value.config,
+      'settings.testProviderConnection.config',
+    ),
+    ...(value.model === undefined || value.model === null
+      ? {}
+      : {
+          model: parseOptionalString(
+            value.model,
+            'settings.testProviderConnection.model',
+          ) as string,
+        }),
+  }
+}
+
+export function parseStudioProviderConnectionTestResult(
+  payload: unknown,
+): StudioProviderConnectionTestResult {
+  const value = assertPlainObject(payload, 'settings.testProviderConnection 响应')
+  if (typeof value.success !== 'boolean') {
+    throw new StudioBridgeValidationError('settings.testProviderConnection.success 必须是布尔值。')
+  }
+  if (typeof value.providerId !== 'string') {
+    throw new StudioBridgeValidationError('settings.testProviderConnection.providerId 必须是字符串。')
+  }
+
+  if (value.success) {
+    if (typeof value.model !== 'string') {
+      throw new StudioBridgeValidationError('settings.testProviderConnection.model 必须是字符串。')
+    }
+    if (typeof value.durationMs !== 'number') {
+      throw new StudioBridgeValidationError('settings.testProviderConnection.durationMs 必须是数字。')
+    }
+    return {
+      success: true,
+      providerId: value.providerId,
+      model: value.model,
+      durationMs: value.durationMs,
+    }
+  }
+
+  if (typeof value.error !== 'string') {
+    throw new StudioBridgeValidationError('settings.testProviderConnection.error 必须是字符串。')
+  }
+
+  return {
+    success: false,
+    providerId: value.providerId,
+    ...(typeof value.model === 'string' ? { model: value.model } : {}),
+    error: value.error,
+  }
+}
+
+export function parseStudioMemoryOverviewSnapshot(
+  payload: unknown,
+): StudioMemoryOverviewSnapshot {
+  const value = assertPlainObject(payload, 'memory.getOverview 响应')
+  const embedding = assertPlainObject(value.embedding, 'memory.embedding')
+  const overview = assertPlainObject(value.overview, 'memory.overview')
+  const source = assertPlainObject(value.source, 'memory.source')
+
+  if (typeof value.enabled !== 'boolean') {
+    throw new StudioBridgeValidationError('memory.enabled 必须是布尔值。')
+  }
+  if (
+    value.status !== 'disabled' &&
+    value.status !== 'bm25' &&
+    value.status !== 'ready' &&
+    value.status !== 'degraded'
+  ) {
+    throw new StudioBridgeValidationError('memory.status 非法。')
+  }
+  if (typeof value.statusMessage !== 'string') {
+    throw new StudioBridgeValidationError('memory.statusMessage 必须是字符串。')
+  }
+  if (typeof embedding.configured !== 'boolean') {
+    throw new StudioBridgeValidationError('memory.embedding.configured 必须是布尔值。')
+  }
+  if (
+    embedding.dimension !== null &&
+    embedding.dimension !== undefined &&
+    typeof embedding.dimension !== 'number'
+  ) {
+    throw new StudioBridgeValidationError('memory.embedding.dimension 必须是数字或 null。')
+  }
+  if (typeof overview.globalEntries !== 'number') {
+    throw new StudioBridgeValidationError('memory.overview.globalEntries 必须是数字。')
+  }
+  if (typeof overview.projectEntries !== 'number') {
+    throw new StudioBridgeValidationError('memory.overview.projectEntries 必须是数字。')
+  }
+  if (typeof overview.vectorChunks !== 'number') {
+    throw new StudioBridgeValidationError('memory.overview.vectorChunks 必须是数字。')
+  }
+  if (
+    overview.projectPath !== null &&
+    overview.projectPath !== undefined &&
+    typeof overview.projectPath !== 'string'
+  ) {
+    throw new StudioBridgeValidationError('memory.overview.projectPath 必须是字符串或 null。')
+  }
+
+  return {
+    enabled: value.enabled,
+    status: value.status,
+    statusMessage: value.statusMessage,
+    embedding: {
+      configured: embedding.configured,
+      dimension:
+        embedding.dimension === undefined
+          ? null
+          : (embedding.dimension as number | null),
+      missingFields:
+        embedding.missingFields === undefined
+          ? []
+          : parseStringArray(embedding.missingFields, 'memory.embedding.missingFields'),
+    },
+    overview: {
+      projectPath:
+        overview.projectPath === undefined
+          ? null
+          : (overview.projectPath as string | null),
+      globalEntries: overview.globalEntries,
+      projectEntries: overview.projectEntries,
+      vectorChunks: overview.vectorChunks,
+    },
+    source: {
+      ...(parseOptionalString(source.userToml, 'memory.source.userToml')
+        ? { userToml: source.userToml as string }
+        : {}),
+      ...(parseOptionalString(source.projectToml, 'memory.source.projectToml')
+        ? { projectToml: source.projectToml as string }
+        : {}),
+      ...(parseOptionalString(source.legacyJson, 'memory.source.legacyJson')
+        ? { legacyJson: source.legacyJson as string }
+        : {}),
+    },
+    warnings:
+      value.warnings === undefined
+        ? []
+        : parseStringArray(value.warnings, 'memory.warnings'),
+  }
+}
+
+export function parseStudioMemoryRebuildResult(
+  payload: unknown,
+): StudioMemoryRebuildResult {
+  const value = assertPlainObject(payload, 'memory.rebuild 响应')
+  if (typeof value.success !== 'boolean') {
+    throw new StudioBridgeValidationError('memory.rebuild.success 必须是布尔值。')
+  }
+  if (typeof value.message !== 'string') {
+    throw new StudioBridgeValidationError('memory.rebuild.message 必须是字符串。')
+  }
+
+  return {
+    success: value.success,
+    message: value.message,
+    ...(value.snapshot ? { snapshot: parseStudioMemoryOverviewSnapshot(value.snapshot) } : {}),
+  }
+}
+
+function parseMcpServerConfigInput(
+  payload: unknown,
+  subject: string,
+): StudioMcpServerMutationInput['config'] {
+  const value = assertPlainObject(payload, subject)
+  if (
+    value.transport !== 'stdio' &&
+    value.transport !== 'sse' &&
+    value.transport !== 'streamable-http' &&
+    value.transport !== 'http'
+  ) {
+    throw new StudioBridgeValidationError(`${subject}.transport 非法。`)
+  }
+  if (value.command !== undefined && typeof value.command !== 'string') {
+    throw new StudioBridgeValidationError(`${subject}.command 必须是字符串。`)
+  }
+  if (
+    value.url !== undefined &&
+    value.url !== null &&
+    typeof value.url !== 'string'
+  ) {
+    throw new StudioBridgeValidationError(`${subject}.url 必须是字符串或 null。`)
+  }
+  if (
+    value.args !== undefined &&
+    (!Array.isArray(value.args) || value.args.some((item) => typeof item !== 'string'))
+  ) {
+    throw new StudioBridgeValidationError(`${subject}.args 必须是字符串数组。`)
+  }
+  if (
+    value.headers !== undefined &&
+    !isPlainObject(value.headers)
+  ) {
+    throw new StudioBridgeValidationError(`${subject}.headers 必须是对象。`)
+  }
+
+  const headers = value.headers
+    ? Object.fromEntries(
+        Object.entries(value.headers).map(([key, item]) => {
+          if (typeof item !== 'string') {
+            throw new StudioBridgeValidationError(`${subject}.headers.${key} 必须是字符串。`)
+          }
+          return [key, item]
+        }),
+      )
+    : undefined
+
+  return {
+    transport: value.transport,
+    ...(typeof value.command === 'string' ? { command: value.command } : {}),
+    ...(Array.isArray(value.args) ? { args: [...value.args] } : {}),
+    ...(value.url === undefined ? {} : { url: value.url as string | null }),
+    ...(headers ? { headers } : {}),
+  }
+}
+
+export function parseStudioMcpServerMutationInput(
+  payload: unknown,
+): StudioMcpServerMutationInput {
+  const value = assertPlainObject(payload, 'mcp.mutation')
+  if (typeof value.name !== 'string') {
+    throw new StudioBridgeValidationError('mcp.mutation.name 必须是字符串。')
+  }
+
+  return {
+    name: value.name,
+    config: parseMcpServerConfigInput(value.config, 'mcp.mutation.config'),
+  }
+}
+
+function parseMcpOverviewServer(
+  payload: unknown,
+  subject: string,
+): StudioMcpOverviewSnapshot['servers'][number] {
+  const value = assertPlainObject(payload, subject)
+  if (typeof value.name !== 'string') {
+    throw new StudioBridgeValidationError(`${subject}.name 必须是字符串。`)
+  }
+  if (
+    value.transport !== 'stdio' &&
+    value.transport !== 'sse' &&
+    value.transport !== 'streamable-http' &&
+    value.transport !== 'http'
+  ) {
+    throw new StudioBridgeValidationError(`${subject}.transport 非法。`)
+  }
+  if (value.status !== 'connected' && value.status !== 'failed') {
+    throw new StudioBridgeValidationError(`${subject}.status 非法。`)
+  }
+  if (typeof value.source !== 'string') {
+    throw new StudioBridgeValidationError(`${subject}.source 必须是字符串。`)
+  }
+  if (typeof value.writable !== 'boolean') {
+    throw new StudioBridgeValidationError(`${subject}.writable 必须是布尔值。`)
+  }
+  if (typeof value.toolCount !== 'number') {
+    throw new StudioBridgeValidationError(`${subject}.toolCount 必须是数字。`)
+  }
+
+  return {
+    name: value.name,
+    transport: value.transport,
+    status: value.status,
+    source: value.source,
+    writable: value.writable,
+    toolCount: value.toolCount,
+    toolNames:
+      value.toolNames === undefined
+        ? []
+        : parseStringArray(value.toolNames, `${subject}.toolNames`),
+    ...(typeof value.error === 'string' ? { error: value.error } : {}),
+  }
+}
+
+export function parseStudioMcpOverviewSnapshot(
+  payload: unknown,
+): StudioMcpOverviewSnapshot {
+  const value = assertPlainObject(payload, 'mcp.getOverview 响应')
+  if (
+    value.status !== 'unconfigured' &&
+    value.status !== 'connected' &&
+    value.status !== 'failed'
+  ) {
+    throw new StudioBridgeValidationError('mcp.status 非法。')
+  }
+  if (typeof value.statusMessage !== 'string') {
+    throw new StudioBridgeValidationError('mcp.statusMessage 必须是字符串。')
+  }
+  if (typeof value.writableConfigPath !== 'string') {
+    throw new StudioBridgeValidationError('mcp.writableConfigPath 必须是字符串。')
+  }
+  if (!Array.isArray(value.servers)) {
+    throw new StudioBridgeValidationError('mcp.servers 必须是数组。')
+  }
+
+  return {
+    status: value.status,
+    statusMessage: value.statusMessage,
+    writableConfigPath: value.writableConfigPath,
+    servers: value.servers.map((item, index) =>
+      parseMcpOverviewServer(item, `mcp.servers[${index}]`),
+    ),
+    warnings:
+      value.warnings === undefined
+        ? []
+        : parseStringArray(value.warnings, 'mcp.warnings'),
+  }
+}
+
+export function parseStudioMcpMutationResult(
+  payload: unknown,
+): StudioMcpMutationResult {
+  const value = assertPlainObject(payload, 'mcp.mutation 响应')
+  if (typeof value.success !== 'boolean') {
+    throw new StudioBridgeValidationError('mcp.mutation.success 必须是布尔值。')
+  }
+  if (typeof value.message !== 'string') {
+    throw new StudioBridgeValidationError('mcp.mutation.message 必须是字符串。')
+  }
+
+  return {
+    success: value.success,
+    message: value.message,
+    ...(value.snapshot ? { snapshot: parseStudioMcpOverviewSnapshot(value.snapshot) } : {}),
+  }
+}
+
+export function parseStudioSkillsPluginsOverviewSnapshot(
+  payload: unknown,
+): StudioSkillsPluginsOverviewSnapshot {
+  const value = assertPlainObject(payload, 'skillsPlugins.getOverview 响应')
+  if (
+    value.status !== 'ready' &&
+    value.status !== 'empty' &&
+    value.status !== 'error'
+  ) {
+    throw new StudioBridgeValidationError('skillsPlugins.status 非法。')
+  }
+  if (typeof value.statusMessage !== 'string') {
+    throw new StudioBridgeValidationError('skillsPlugins.statusMessage 必须是字符串。')
+  }
+  if (!Array.isArray(value.sourceDistribution)) {
+    throw new StudioBridgeValidationError('skillsPlugins.sourceDistribution 必须是数组。')
+  }
+  if (!Array.isArray(value.recentSkills)) {
+    throw new StudioBridgeValidationError('skillsPlugins.recentSkills 必须是数组。')
+  }
+  if (!Array.isArray(value.frequentSkills)) {
+    throw new StudioBridgeValidationError('skillsPlugins.frequentSkills 必须是数组。')
+  }
+  if (!Array.isArray(value.plugins)) {
+    throw new StudioBridgeValidationError('skillsPlugins.plugins 必须是数组。')
+  }
+
+  return {
+    status: value.status,
+    statusMessage: value.statusMessage,
+    sourceDistribution: value.sourceDistribution.map((item, index) => {
+      const entry = assertPlainObject(item, `skillsPlugins.sourceDistribution[${index}]`)
+      if (
+        entry.source !== 'builtin' &&
+        entry.source !== 'plugin' &&
+        entry.source !== 'user' &&
+        entry.source !== 'project'
+      ) {
+        throw new StudioBridgeValidationError(`skillsPlugins.sourceDistribution[${index}].source 非法。`)
+      }
+      if (typeof entry.count !== 'number') {
+        throw new StudioBridgeValidationError(`skillsPlugins.sourceDistribution[${index}].count 必须是数字。`)
+      }
+      return {
+        source: entry.source,
+        count: entry.count,
+      }
+    }),
+    recentSkills: value.recentSkills.map((item, index) => {
+      const entry = assertPlainObject(item, `skillsPlugins.recentSkills[${index}]`)
+      if (typeof entry.name !== 'string' || typeof entry.lastUsedAt !== 'string') {
+        throw new StudioBridgeValidationError(`skillsPlugins.recentSkills[${index}] 字段不合法。`)
+      }
+      if (
+        entry.source !== 'builtin' &&
+        entry.source !== 'plugin' &&
+        entry.source !== 'user' &&
+        entry.source !== 'project'
+      ) {
+        throw new StudioBridgeValidationError(`skillsPlugins.recentSkills[${index}].source 非法。`)
+      }
+      return {
+        name: entry.name,
+        source: entry.source,
+        lastUsedAt: entry.lastUsedAt,
+      }
+    }),
+    frequentSkills: value.frequentSkills.map((item, index) => {
+      const entry = assertPlainObject(item, `skillsPlugins.frequentSkills[${index}]`)
+      if (typeof entry.name !== 'string' || typeof entry.useCount !== 'number') {
+        throw new StudioBridgeValidationError(`skillsPlugins.frequentSkills[${index}] 字段不合法。`)
+      }
+      if (
+        entry.source !== 'builtin' &&
+        entry.source !== 'plugin' &&
+        entry.source !== 'user' &&
+        entry.source !== 'project'
+      ) {
+        throw new StudioBridgeValidationError(`skillsPlugins.frequentSkills[${index}].source 非法。`)
+      }
+      return {
+        name: entry.name,
+        source: entry.source,
+        useCount: entry.useCount,
+      }
+    }),
+    plugins: value.plugins.map((item, index) => {
+      const entry = assertPlainObject(item, `skillsPlugins.plugins[${index}]`)
+      if (
+        entry.source !== 'xnova' &&
+        entry.source !== 'claude-code' &&
+        entry.source !== 'manual'
+      ) {
+        throw new StudioBridgeValidationError(`skillsPlugins.plugins[${index}].source 非法。`)
+      }
+      if (
+        typeof entry.name !== 'string' ||
+        typeof entry.version !== 'string' ||
+        typeof entry.skillCount !== 'number' ||
+        typeof entry.hasHooks !== 'boolean'
+      ) {
+        throw new StudioBridgeValidationError(`skillsPlugins.plugins[${index}] 字段不合法。`)
+      }
+      return {
+        name: entry.name,
+        source: entry.source,
+        version: entry.version,
+        skillCount: entry.skillCount,
+        hasHooks: entry.hasHooks,
+        ...(typeof entry.description === 'string' ? { description: entry.description } : {}),
+      }
+    }),
+    warnings:
+      value.warnings === undefined
+        ? []
+        : parseStringArray(value.warnings, 'skillsPlugins.warnings'),
+  }
 }
 
 function parseWorkspaceSelectionResult(

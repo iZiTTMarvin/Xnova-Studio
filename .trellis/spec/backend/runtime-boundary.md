@@ -261,6 +261,7 @@ import { sessionStore } from '../../../cli/src/persistence/index.js'
 
 - 单元测试：
   - `studio-shell-inspector.test.ts` 断言源码不再 import `cli/src/persistence/index`
+  - `studio` main 侧若新增 Settings / Memory / Tools 服务，需断言不会在启动主路径静态 import 会触发 `libsql` 的模块
   - inspector 在损坏会话下仍能返回最近项目，而不是把整个 shell 弄崩
 - 集成 / smoke：
   - 真实 Electron smoke 通过 `host.getState -> openWorkspace -> runtime.inspect`
@@ -289,3 +290,19 @@ const store = new SessionStore(join(homedir(), '.xnovacode', 'sessions'))
 ```
 
 并把 `store` 作为 inspector 依赖注入，保持 `studio` main 只消费 JSONL 事实源，而不是无意碰到 SQLite/native 层。
+
+### 8. Extended Note: 按需加载会触发 Native 依赖的服务
+
+- 适用场景：
+  - `studio/src/main/**` 新增 Memory / Settings / Tools 服务
+  - 服务内部会读取 `db.ts`、`libsql-vector-store.ts`、`memory overview` 之类最终依赖 `libsql` 的模块
+- 规则：
+  - **禁止**把这类服务静态 import 到 Electron main 的启动主路径
+  - 如果确实需要通过 IPC 触发，必须延迟到 handler 调用时再 `import()`，并确保失败能显式返回给 renderer
+- 典型风险：
+  - `electron-vite build` 通过，但真实启动立刻报
+    `Could not dynamically require "@libsql/..."`
+- 推荐做法：
+  - 启动主路径只挂载 thin IPC handler
+  - handler 内部按需加载会触发 native 依赖的实现
+  - renderer 把失败显示成降级提示，不允许主进程因某张状态卡片直接崩溃

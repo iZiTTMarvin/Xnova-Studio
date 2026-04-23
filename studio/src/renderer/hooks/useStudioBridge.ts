@@ -1,8 +1,11 @@
 import { useEffect, useMemo, useState } from 'react'
 import type {
+  RuntimeInspectResult,
+  StudioBridgeApi,
   StudioHostState,
   StudioProjectSessionSummary,
   StudioScratchpadEntry,
+  StudioSettingsApi,
   StudioShellSnapshot,
   StudioRuntimeEvent,
 } from '../../shared/studio-bridge-contract'
@@ -75,6 +78,11 @@ export function useStudioBridge() {
   )
   const [shellSnapshot, setShellSnapshot] = useState<StudioShellSnapshot | null>(null)
   const [shellError, setShellError] = useState<string | null>(null)
+  const [runtimeStatus, setRuntimeStatus] = useState<'loading' | 'ready' | 'disabled' | 'error'>(
+    bridge ? 'loading' : 'disabled',
+  )
+  const [runtimeInspectResult, setRuntimeInspectResult] = useState<RuntimeInspectResult | null>(null)
+  const [runtimeError, setRuntimeError] = useState<string | null>(null)
   const [lastRuntimeEvent, setLastRuntimeEvent] = useState<StudioRuntimeEvent | null>(null)
   const [selectedProjectPath, setSelectedProjectPath] = useState<string | null>(null)
   const [selectedSessionId, setSelectedSessionId] = useState<string | null>(null)
@@ -131,6 +139,34 @@ export function useStudioBridge() {
     [activeSession, currentMode, selectedProjectPath, shellSnapshot],
   )
 
+  const inspectRuntime = async (
+    activeBridge: StudioBridgeApi,
+    refresh?: boolean,
+  ): Promise<void> => {
+    setRuntimeStatus('loading')
+    setRuntimeError(null)
+
+    try {
+      const result = await activeBridge.runtime.inspect(
+        refresh ? { refresh: true } : undefined,
+      )
+      setRuntimeInspectResult(result)
+
+      if (result.ok) {
+        setRuntimeStatus('ready')
+        setRuntimeError(null)
+        return
+      }
+
+      setRuntimeStatus('error')
+      setRuntimeError(result.error)
+    } catch (error) {
+      setRuntimeInspectResult(null)
+      setRuntimeStatus('error')
+      setRuntimeError(getErrorMessage(error))
+    }
+  }
+
   useEffect(() => {
     if (bridge) {
       return
@@ -154,6 +190,9 @@ export function useStudioBridge() {
       setHostError('宿主桥接不可用')
       setShellStatus('disabled')
       setShellError('宿主桥接不可用')
+      setRuntimeStatus('disabled')
+      setRuntimeError('宿主桥接不可用')
+      setRuntimeInspectResult(null)
       return
     }
 
@@ -162,6 +201,8 @@ export function useStudioBridge() {
     setHostError(null)
     setShellStatus('loading')
     setShellError(null)
+    setRuntimeStatus('loading')
+    setRuntimeError(null)
 
     const applySnapshot = (
       snapshot: StudioShellSnapshot,
@@ -212,6 +253,7 @@ export function useStudioBridge() {
         setHostState(state)
         setHostStatus('ready')
         void loadShellSnapshot(state.workspacePath)
+        void inspectRuntime(bridge)
       })
       .catch((error) => {
         if (disposed) {
@@ -223,6 +265,8 @@ export function useStudioBridge() {
         setHostError(message)
         setShellStatus('error')
         setShellError(message)
+        setRuntimeStatus('error')
+        setRuntimeError(message)
       })
 
     const unsubscribeHost = bridge.host.onStateChanged((state) => {
@@ -233,6 +277,7 @@ export function useStudioBridge() {
       setHostState(state)
       setHostStatus('ready')
       void loadShellSnapshot(state.workspacePath)
+      void inspectRuntime(bridge, true)
     })
 
     const unsubscribeRuntime = bridge.runtime.onEvent((event) => {
@@ -276,12 +321,15 @@ export function useStudioBridge() {
       setShellStatus('ready')
       setSelectedProjectPath(selection.projectPath)
       setSelectedSessionId(selection.sessionId)
+      await inspectRuntime(bridge, true)
     } catch (error) {
       const message = getErrorMessage(error)
       setHostStatus('error')
       setHostError(message)
       setShellStatus('error')
       setShellError(message)
+      setRuntimeStatus('error')
+      setRuntimeError(message)
     } finally {
       setIsOpeningWorkspace(false)
     }
@@ -304,6 +352,7 @@ export function useStudioBridge() {
       setShellStatus('ready')
       setSelectedProjectPath(selection.projectPath)
       setSelectedSessionId(selection.sessionId)
+      await inspectRuntime(bridge, true)
     } catch (error) {
       setShellStatus('error')
       setShellError(getErrorMessage(error))
@@ -365,6 +414,10 @@ export function useStudioBridge() {
     openWorkspace,
     shellStatus,
     shellSnapshot,
+    shellError,
+    runtimeStatus,
+    runtimeInspectResult,
+    runtimeError,
     startupRoute,
     startupNotice,
     activeSession,
@@ -377,5 +430,9 @@ export function useStudioBridge() {
     currentMode,
     switchMode,
     lastRuntimeEvent,
+    settingsApi: (bridge?.settings ?? null) as StudioSettingsApi | null,
+    memoryApi: bridge?.memory ?? null,
+    mcpApi: bridge?.mcp ?? null,
+    skillsPluginsApi: bridge?.skillsPlugins ?? null,
   }
 }

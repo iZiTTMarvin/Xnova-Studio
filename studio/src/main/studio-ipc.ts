@@ -2,7 +2,18 @@ import type { MainLogger } from './logger'
 import type { WorkspaceSelectionResult } from '../shared/studio-bridge-contract'
 import {
   STUDIO_BRIDGE_CHANNELS,
+  type StudioSkillsPluginsOverviewSnapshot,
+  type StudioMcpMutationResult,
+  type StudioMcpOverviewSnapshot,
+  type StudioMcpServerMutationInput,
+  type StudioMemoryOverviewSnapshot,
+  type StudioMemoryRebuildResult,
   type OpenWorkspaceResponse,
+  type StudioProviderConnectionTestRequest,
+  type StudioProviderConnectionTestResult,
+  type StudioProviderSettingsSaveInput,
+  type StudioProviderSettingsSaveResult,
+  type StudioProviderSettingsSnapshot,
   type RuntimeInspectRequest,
   type RuntimeInspectResult,
   type StudioHostState,
@@ -82,6 +93,195 @@ function parseShellSnapshotPayload(
     : { projectPath: payload.projectPath as string | null }
 }
 
+function parseProviderSettingsEntry(
+  payload: unknown,
+  subject: string,
+): StudioProviderSettingsSaveInput['providers'][number] {
+  if (!isPlainObject(payload)) {
+    throw new Error(`${subject} 必须是对象。`)
+  }
+  if (typeof payload.id !== 'string') {
+    throw new Error(`${subject}.id 必须是字符串。`)
+  }
+  if (typeof payload.apiKey !== 'string') {
+    throw new Error(`${subject}.apiKey 必须是字符串。`)
+  }
+  if (
+    payload.baseURL !== undefined &&
+    payload.baseURL !== null &&
+    typeof payload.baseURL !== 'string'
+  ) {
+    throw new Error(`${subject}.baseURL 必须是字符串或 null。`)
+  }
+  if (payload.protocol !== 'anthropic' && payload.protocol !== 'openai') {
+    throw new Error(`${subject}.protocol 必须是 anthropic 或 openai。`)
+  }
+  if (!Array.isArray(payload.models) || payload.models.some((item) => typeof item !== 'string')) {
+    throw new Error(`${subject}.models 必须是字符串数组。`)
+  }
+  if (
+    payload.visionModels !== undefined &&
+    (!Array.isArray(payload.visionModels) || payload.visionModels.some((item) => typeof item !== 'string'))
+  ) {
+    throw new Error(`${subject}.visionModels 必须是字符串数组。`)
+  }
+
+  return {
+    id: payload.id,
+    apiKey: payload.apiKey,
+    baseURL:
+      payload.baseURL === undefined ? null : (payload.baseURL as string | null),
+    protocol: payload.protocol as 'anthropic' | 'openai',
+    models: [...payload.models],
+    visionModels:
+      payload.visionModels === undefined ? [] : [...payload.visionModels],
+  }
+}
+
+function parseProviderSettingsSavePayload(
+  payload: unknown,
+): StudioProviderSettingsSaveInput {
+  if (!isPlainObject(payload)) {
+    throw new Error('studio.settings.saveProviderSettings 参数必须是对象。')
+  }
+  if (typeof payload.defaultProvider !== 'string') {
+    throw new Error('studio.settings.saveProviderSettings.defaultProvider 必须是字符串。')
+  }
+  if (typeof payload.defaultModel !== 'string') {
+    throw new Error('studio.settings.saveProviderSettings.defaultModel 必须是字符串。')
+  }
+  if (
+    payload.subAgentModel !== undefined &&
+    payload.subAgentModel !== null &&
+    typeof payload.subAgentModel !== 'string'
+  ) {
+    throw new Error('studio.settings.saveProviderSettings.subAgentModel 必须是字符串或 null。')
+  }
+  if (!Array.isArray(payload.providers)) {
+    throw new Error('studio.settings.saveProviderSettings.providers 必须是数组。')
+  }
+
+  return {
+    defaultProvider: payload.defaultProvider,
+    defaultModel: payload.defaultModel,
+    subAgentModel:
+      payload.subAgentModel === undefined
+        ? null
+        : (payload.subAgentModel as string | null),
+    providers: payload.providers.map((item, index) =>
+      parseProviderSettingsEntry(
+        item,
+        `studio.settings.saveProviderSettings.providers[${index}]`,
+      ),
+    ),
+  }
+}
+
+function parseProviderConnectionTestPayload(
+  payload: unknown,
+): StudioProviderConnectionTestRequest {
+  if (!isPlainObject(payload)) {
+    throw new Error('studio.settings.testProviderConnection 参数必须是对象。')
+  }
+  if (typeof payload.providerId !== 'string') {
+    throw new Error('studio.settings.testProviderConnection.providerId 必须是字符串。')
+  }
+
+  return {
+    providerId: payload.providerId,
+    config: parseProviderSettingsEntry(
+      payload.config,
+      'studio.settings.testProviderConnection.config',
+    ),
+    ...(payload.model === undefined || payload.model === null
+      ? {}
+      : { model: payload.model as string }),
+  }
+}
+
+function parseMcpServerConfig(
+  payload: unknown,
+  subject: string,
+): StudioMcpServerMutationInput['config'] {
+  if (!isPlainObject(payload)) {
+    throw new Error(`${subject} 必须是对象。`)
+  }
+  if (
+    payload.transport !== 'stdio' &&
+    payload.transport !== 'sse' &&
+    payload.transport !== 'streamable-http' &&
+    payload.transport !== 'http'
+  ) {
+    throw new Error(`${subject}.transport 非法。`)
+  }
+  if (payload.command !== undefined && typeof payload.command !== 'string') {
+    throw new Error(`${subject}.command 必须是字符串。`)
+  }
+  if (
+    payload.args !== undefined &&
+    (!Array.isArray(payload.args) || payload.args.some((item) => typeof item !== 'string'))
+  ) {
+    throw new Error(`${subject}.args 必须是字符串数组。`)
+  }
+  if (
+    payload.url !== undefined &&
+    payload.url !== null &&
+    typeof payload.url !== 'string'
+  ) {
+    throw new Error(`${subject}.url 必须是字符串或 null。`)
+  }
+  if (
+    payload.headers !== undefined &&
+    !isPlainObject(payload.headers)
+  ) {
+    throw new Error(`${subject}.headers 必须是对象。`)
+  }
+
+  const headers = payload.headers
+    ? Object.fromEntries(
+        Object.entries(payload.headers).map(([key, value]) => {
+          if (typeof value !== 'string') {
+            throw new Error(`${subject}.headers.${key} 必须是字符串。`)
+          }
+          return [key, value]
+        }),
+      )
+    : undefined
+
+  return {
+    transport: payload.transport,
+    ...(typeof payload.command === 'string' ? { command: payload.command } : {}),
+    ...(Array.isArray(payload.args) ? { args: [...payload.args] } : {}),
+    ...(payload.url === undefined ? {} : { url: payload.url as string | null }),
+    ...(headers ? { headers } : {}),
+  }
+}
+
+function parseMcpMutationPayload(
+  payload: unknown,
+): StudioMcpServerMutationInput {
+  if (!isPlainObject(payload)) {
+    throw new Error('studio.mcp.addServer 参数必须是对象。')
+  }
+  if (typeof payload.name !== 'string') {
+    throw new Error('studio.mcp.addServer.name 必须是字符串。')
+  }
+  return {
+    name: payload.name,
+    config: parseMcpServerConfig(payload.config, 'studio.mcp.addServer.config'),
+  }
+}
+
+function parseMcpDeletePayload(payload: unknown): string {
+  if (!isPlainObject(payload)) {
+    throw new Error('studio.mcp.deleteServer 参数必须是对象。')
+  }
+  if (typeof payload.name !== 'string') {
+    throw new Error('studio.mcp.deleteServer.name 必须是字符串。')
+  }
+  return payload.name
+}
+
 function createRuntimeEvent(
   result: RuntimeInspectResult,
   request: RuntimeInspectRequest,
@@ -121,6 +321,37 @@ export interface RegisterStudioMainIpcHandlersOptions {
     request: StudioShellSnapshotRequest,
     state: StudioHostState,
   ) => Promise<StudioShellSnapshot>
+  getProviderSettings?: (
+    state: StudioHostState,
+  ) => Promise<StudioProviderSettingsSnapshot>
+  saveProviderSettings?: (
+    input: StudioProviderSettingsSaveInput,
+    state: StudioHostState,
+  ) => Promise<StudioProviderSettingsSaveResult>
+  testProviderConnection?: (
+    input: StudioProviderConnectionTestRequest,
+    state: StudioHostState,
+  ) => Promise<StudioProviderConnectionTestResult>
+  getMemoryOverview?: (
+    state: StudioHostState,
+  ) => Promise<StudioMemoryOverviewSnapshot>
+  rebuildMemory?: (
+    state: StudioHostState,
+  ) => Promise<StudioMemoryRebuildResult>
+  getMcpOverview?: (
+    state: StudioHostState,
+  ) => Promise<StudioMcpOverviewSnapshot>
+  addMcpServer?: (
+    input: StudioMcpServerMutationInput,
+    state: StudioHostState,
+  ) => Promise<StudioMcpMutationResult>
+  deleteMcpServer?: (
+    name: string,
+    state: StudioHostState,
+  ) => Promise<StudioMcpMutationResult>
+  getSkillsPluginsOverview?: (
+    state: StudioHostState,
+  ) => Promise<StudioSkillsPluginsOverviewSnapshot>
   selectWorkspaceDirectory: () => Promise<WorkspaceSelectionResult>
   mainWindowManager: {
     getMainWindow(): HostStateWindowLike | null
@@ -224,6 +455,105 @@ export function registerStudioMainIpcHandlers(
     async (_event, payload): Promise<StudioShellSnapshot> => {
       const request = parseShellSnapshotPayload(payload)
       return options.inspectShell(request, hostState)
+    },
+  )
+
+  options.ipcMainLike.handle(
+    STUDIO_BRIDGE_CHANNELS.settingsGetProviderSettings,
+    async (_event, payload): Promise<StudioProviderSettingsSnapshot> => {
+      assertNoPayload(payload, 'studio.settings.getProviderSettings')
+      if (!options.getProviderSettings) {
+        throw new Error('studio.settings.getProviderSettings 尚未实现。')
+      }
+      return options.getProviderSettings(hostState)
+    },
+  )
+
+  options.ipcMainLike.handle(
+    STUDIO_BRIDGE_CHANNELS.settingsSaveProviderSettings,
+    async (_event, payload): Promise<StudioProviderSettingsSaveResult> => {
+      const request = parseProviderSettingsSavePayload(payload)
+      if (!options.saveProviderSettings) {
+        throw new Error('studio.settings.saveProviderSettings 尚未实现。')
+      }
+      return options.saveProviderSettings(request, hostState)
+    },
+  )
+
+  options.ipcMainLike.handle(
+    STUDIO_BRIDGE_CHANNELS.settingsTestProviderConnection,
+    async (_event, payload): Promise<StudioProviderConnectionTestResult> => {
+      const request = parseProviderConnectionTestPayload(payload)
+      if (!options.testProviderConnection) {
+        throw new Error('studio.settings.testProviderConnection 尚未实现。')
+      }
+      return options.testProviderConnection(request, hostState)
+    },
+  )
+
+  options.ipcMainLike.handle(
+    STUDIO_BRIDGE_CHANNELS.memoryGetOverview,
+    async (_event, payload): Promise<StudioMemoryOverviewSnapshot> => {
+      assertNoPayload(payload, 'studio.memory.getOverview')
+      if (!options.getMemoryOverview) {
+        throw new Error('studio.memory.getOverview 尚未实现。')
+      }
+      return options.getMemoryOverview(hostState)
+    },
+  )
+
+  options.ipcMainLike.handle(
+    STUDIO_BRIDGE_CHANNELS.memoryRebuild,
+    async (_event, payload): Promise<StudioMemoryRebuildResult> => {
+      assertNoPayload(payload, 'studio.memory.rebuild')
+      if (!options.rebuildMemory) {
+        throw new Error('studio.memory.rebuild 尚未实现。')
+      }
+      return options.rebuildMemory(hostState)
+    },
+  )
+
+  options.ipcMainLike.handle(
+    STUDIO_BRIDGE_CHANNELS.mcpGetOverview,
+    async (_event, payload): Promise<StudioMcpOverviewSnapshot> => {
+      assertNoPayload(payload, 'studio.mcp.getOverview')
+      if (!options.getMcpOverview) {
+        throw new Error('studio.mcp.getOverview 尚未实现。')
+      }
+      return options.getMcpOverview(hostState)
+    },
+  )
+
+  options.ipcMainLike.handle(
+    STUDIO_BRIDGE_CHANNELS.mcpAddServer,
+    async (_event, payload): Promise<StudioMcpMutationResult> => {
+      const request = parseMcpMutationPayload(payload)
+      if (!options.addMcpServer) {
+        throw new Error('studio.mcp.addServer 尚未实现。')
+      }
+      return options.addMcpServer(request, hostState)
+    },
+  )
+
+  options.ipcMainLike.handle(
+    STUDIO_BRIDGE_CHANNELS.mcpDeleteServer,
+    async (_event, payload): Promise<StudioMcpMutationResult> => {
+      const name = parseMcpDeletePayload(payload)
+      if (!options.deleteMcpServer) {
+        throw new Error('studio.mcp.deleteServer 尚未实现。')
+      }
+      return options.deleteMcpServer(name, hostState)
+    },
+  )
+
+  options.ipcMainLike.handle(
+    STUDIO_BRIDGE_CHANNELS.skillsPluginsGetOverview,
+    async (_event, payload): Promise<StudioSkillsPluginsOverviewSnapshot> => {
+      assertNoPayload(payload, 'studio.skillsPlugins.getOverview')
+      if (!options.getSkillsPluginsOverview) {
+        throw new Error('studio.skillsPlugins.getOverview 尚未实现。')
+      }
+      return options.getSkillsPluginsOverview(hostState)
     },
   )
 }

@@ -9,14 +9,27 @@ import { ContextBar } from '../components/ContextBar'
 import { ProjectTreePanel } from '../components/ProjectTreePanel'
 import { ScratchpadList } from '../components/ScratchpadList'
 import { useStudioBridge } from '../hooks/useStudioBridge'
+import { useSettingsToolsPageModel } from '../hooks/useSettingsToolsPageModel'
+import { StudioSettingsPage } from './SettingsPage'
+import { StudioToolsPage } from './ToolsPage'
 
 export function StudioHomePage() {
   const {
+    hostStatus,
     hostState,
+    hostError,
     isOpeningWorkspace,
     openWorkspace,
     shellStatus,
     shellSnapshot,
+    shellError,
+    runtimeStatus,
+    runtimeInspectResult,
+    runtimeError,
+    settingsApi,
+    memoryApi,
+    mcpApi,
+    skillsPluginsApi,
     startupRoute,
     startupNotice,
     activeSession,
@@ -30,6 +43,18 @@ export function StudioHomePage() {
     switchMode,
   } = useStudioBridge()
   const [activeNavId, setActiveNavId] = useState<PrimaryNavId>('quick-chat')
+
+  const { settingsPage, toolsPage } = useSettingsToolsPageModel({
+    hostStatus,
+    hostState,
+    hostError,
+    shellStatus,
+    shellSnapshot,
+    shellError,
+    runtimeStatus,
+    runtimeInspectResult,
+    runtimeError,
+  })
 
   useEffect(() => {
     setActiveNavId(startupRoute.kind === 'restore-session' ? 'projects' : 'quick-chat')
@@ -94,21 +119,9 @@ export function StudioHomePage() {
         </section>
       )
       : activeNavId === 'tools'
-        ? (
-          <section className="session-card">
-            <p className="section-eyebrow">工具</p>
-            <h2>工具页已预留稳定入口</h2>
-            <p className="session-meta">Phase 5 不提前做 Settings/Tools 深度整合，只保留主壳位置。</p>
-          </section>
-        )
+        ? <StudioToolsPage page={toolsPage} mcpApi={mcpApi} skillsPluginsApi={skillsPluginsApi} />
         : activeNavId === 'settings'
-          ? (
-            <section className="session-card">
-              <p className="section-eyebrow">设置</p>
-              <h2>设置页已预留稳定入口</h2>
-              <p className="session-meta">Settings 的深内容属于后续阶段，本子任务只锁定 IA。</p>
-            </section>
-          )
+          ? <StudioSettingsPage page={settingsPage} settingsApi={settingsApi} memoryApi={memoryApi} />
           : activeNavId === 'chat'
             ? (
               <section className="blank-chat-card">
@@ -225,10 +238,18 @@ export function StudioHomePage() {
         ) : null}
 
         <section className="hero-card">
-          <p className="hero-eyebrow">Phase 5 Project-aware Shell</p>
+          <p className="hero-eyebrow">
+            {activeNavId === 'settings' || activeNavId === 'tools'
+              ? 'Phase 6 Settings and Tools'
+              : 'Phase 5 Project-aware Shell'}
+          </p>
           <h1>Xnova Studio</h1>
           <p className="hero-copy">
-            {shellStatus === 'loading'
+            {activeNavId === 'settings'
+              ? '把全局设置与项目默认值收进桌面主壳，后续子任务会逐步填充 Provider 与 Memory。'
+              : activeNavId === 'tools'
+                ? 'MCP、Skills、Plugins 以状态卡片进入主壳，不再另起一套桌面运维后台。'
+                : shellStatus === 'loading'
               ? '正在恢复最近的项目上下文与工作会话。'
               : startupRoute.kind === 'restore-session'
                 ? '冷启动已从最近项目恢复到上一次工作会话，Overview 不再承担默认首页职责。'

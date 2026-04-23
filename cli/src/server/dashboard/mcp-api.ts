@@ -9,33 +9,11 @@
  */
 
 import { Hono } from 'hono'
-import { existsSync, readFileSync, writeFileSync, mkdirSync } from 'node:fs'
-import { join } from 'node:path'
-import { homedir } from 'node:os'
-import { dbg } from '../../debug.js'
-
-/** MCP 配置文件搜索路径（按优先级从高到低） */
-const MCP_CONFIG_PATHS = [
-  { path: () => join(homedir(), '.xnovacode', '.mcp.json'), label: '~/.xnovacode/.mcp.json', writable: true },
-  { path: () => join(homedir(), '.claude.json'), label: '~/.claude.json', writable: false },
-  { path: () => join(homedir(), '.mcp.json'), label: '~/.mcp.json', writable: false },
-]
-
-interface McpServerConfig {
-  command?: string
-  args?: string[]
-  env?: Record<string, string>
-  type?: string
-  url?: string
-  headers?: Record<string, string>
-}
-
-interface McpServerInfo {
-  name: string
-  config: McpServerConfig
-  source: string
-  writable: boolean
-}
+import { loadMcpConfigWithSources, MCP_CONFIG_PATHS } from '@config/mcp-config.js'
+import {
+  addMcpServer,
+  deleteMcpServer,
+} from '@mcp/status-service.js'
 
 export function createMcpRoutes(): Hono {
   const api = new Hono()
@@ -43,7 +21,14 @@ export function createMcpRoutes(): Hono {
   // ═══ MCP Server 列表 ═══
   api.get('/servers', (c) => {
     try {
-      const servers = loadAllMcpServers()
+      const merged = loadMcpConfigWithSources()
+      const writablePath = MCP_CONFIG_PATHS[0]!
+      const servers = Object.entries(merged.mcpServers).map(([name, config]) => ({
+        name,
+        config,
+        source: merged.serverSources[name] ?? 'unknown',
+        writable: merged.serverSources[name] === writablePath,
+      }))
       return c.json({ servers })
     } catch (err) {
       return c.json({ error: String(err) }, 500)
@@ -53,24 +38,40 @@ export function createMcpRoutes(): Hono {
   // ═══ 添加 MCP Server ═══
   api.post('/servers/add', async (c) => {
     try {
-      const body = await c.req.json() as { name: string; config: McpServerConfig }
-      const xnovaMcpPath = MCP_CONFIG_PATHS[0]!.path()
-
-      // 读取现有配置
-      let data: { mcpServers: Record<string, McpServerConfig> } = { mcpServers: {} }
-      if (existsSync(xnovaMcpPath)) {
-        data = JSON.parse(readFileSync(xnovaMcpPath, 'utf-8'))
+      const body = await c.req.json() as {
+        name: string
+        config: {
+          command?: string
+          args?: string[]
+          type?: string
+          url?: string
+          headers?: Record<string, string>
+        }
       }
-
-      if (data.mcpServers[body.name]) {
-        return c.json({ error: `MCP Server "${body.name}" 已存在` }, 400)
-      }
-
-      data.mcpServers[body.name] = body.config
-      mkdirSync(join(homedir(), '.xnovacode'), { recursive: true })
-      writeFileSync(xnovaMcpPath, JSON.stringify(data, null, 2), 'utf-8')
-
-      return c.json({ success: true })
+      const result = await addMcpServer({
+        name: body.name,
+        config: body.config.command
+          ? {
+              transport: 'stdio',
+              command: body.config.command,
+              args: body.config.args ?? [],
+            }
+          : (() => {
+              const config = {
+                transport:
+                  body.config.type === 'sse'
+                    ? 'sse'
+                    : body.config.type === 'streamable-http'
+                      ? 'streamable-http'
+                      : 'http',
+                url: body.config.url ?? null,
+              } as const
+              return body.config.headers
+                ? { ...config, headers: body.config.headers }
+                : config
+            })(),
+      })
+      return c.json(result, result.success ? 200 : 400)
     } catch (err) {
       return c.json({ error: String(err) }, 500)
     }
@@ -80,56 +81,12 @@ export function createMcpRoutes(): Hono {
   api.post('/servers/delete', async (c) => {
     try {
       const body = await c.req.json() as { name: string }
-      const xnovaMcpPath = MCP_CONFIG_PATHS[0]!.path()
-
-      if (!existsSync(xnovaMcpPath)) {
-        return c.json({ error: '~/.xnovacode/.mcp.json 不存在' }, 400)
-      }
-
-      const data = JSON.parse(readFileSync(xnovaMcpPath, 'utf-8'))
-      if (!data.mcpServers?.[body.name]) {
-        return c.json({ error: `只能删除 ~/.xnovacode/.mcp.json 中的 Server（其他来源的配置请手动编辑）` }, 400)
-      }
-
-      delete data.mcpServers[body.name]
-      writeFileSync(xnovaMcpPath, JSON.stringify(data, null, 2), 'utf-8')
-
-      return c.json({ success: true })
+      const result = await deleteMcpServer(body.name)
+      return c.json(result, result.success ? 200 : 400)
     } catch (err) {
       return c.json({ error: String(err) }, 500)
     }
   })
 
   return api
-}
-
-/** 加载所有 MCP 配置源，合并去重 */
-function loadAllMcpServers(): McpServerInfo[] {
-  const servers: McpServerInfo[] = []
-  const seen = new Set<string>()
-
-  for (const source of MCP_CONFIG_PATHS) {
-    const filePath = source.path()
-    if (!existsSync(filePath)) continue
-
-    try {
-      const data = JSON.parse(readFileSync(filePath, 'utf-8'))
-      const mcpServers = data.mcpServers ?? {}
-
-      for (const [name, config] of Object.entries(mcpServers)) {
-        if (seen.has(name)) continue // 高优先级已覆盖
-        seen.add(name)
-        servers.push({
-          name,
-          config: config as McpServerConfig,
-          source: source.label,
-          writable: source.writable,
-        })
-      }
-    } catch (err) {
-      dbg(`[McpAPI] MCP 配置解析失败 source=${source.label}: ${err instanceof Error ? err.message : String(err)}\n`)
-    }
-  }
-
-  return servers
 }

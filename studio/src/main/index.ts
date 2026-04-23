@@ -4,6 +4,10 @@ import { registerStudioMainIpcHandlers } from './studio-ipc'
 import { startMainProcess } from './lifecycle'
 import { createMainLogger } from './logger'
 import { readSmokeConfig, runSmokeScenario } from './smoke'
+import { createStudioProviderSettingsService } from './studio-provider-settings'
+import { createStudioMemoryService } from './studio-memory-service'
+import { createStudioMcpService } from './studio-mcp-service'
+import { createStudioSkillsPluginsService } from './studio-skills-plugins-service'
 import { createStudioShellInspector } from './studio-shell-inspector'
 import { createStudioRuntimeInspector } from './studio-runtime-inspector'
 import { createMainWindowManager } from './window'
@@ -19,6 +23,10 @@ const logger = createMainLogger()
 const smokeConfig = readSmokeConfig(process.env)
 const runtimeInspector = createStudioRuntimeInspector()
 const shellInspector = createStudioShellInspector()
+const providerSettingsService = createStudioProviderSettingsService()
+const memoryService = createStudioMemoryService()
+const mcpService = createStudioMcpService()
+const skillsPluginsService = createStudioSkillsPluginsService()
 const mainWindowManager = createMainWindowManager({
   BrowserWindow,
   logger,
@@ -49,6 +57,16 @@ registerStudioMainIpcHandlers({
   mainWindowManager,
   inspectRuntime: (request, state) => runtimeInspector.inspect(request, state),
   inspectShell: (request, state) => shellInspector.inspect(request, state),
+  getProviderSettings: (state) => providerSettingsService.getSnapshot(state),
+  saveProviderSettings: (input, state) => providerSettingsService.save(input, state),
+  testProviderConnection: (input, state) =>
+    providerSettingsService.testConnection(input, state),
+  getMemoryOverview: (state) => memoryService.getOverview(state),
+  rebuildMemory: (state) => memoryService.rebuild(state),
+  getMcpOverview: (state) => mcpService.getOverview(state),
+  addMcpServer: (input, state) => mcpService.addServer(input, state),
+  deleteMcpServer: (name, state) => mcpService.deleteServer(name, state),
+  getSkillsPluginsOverview: (state) => skillsPluginsService.getOverview(state),
   logger,
 })
 

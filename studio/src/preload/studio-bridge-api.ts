@@ -1,5 +1,16 @@
 import type {
+  StudioSkillsPluginsOverviewSnapshot,
+  StudioMcpMutationResult,
+  StudioMcpOverviewSnapshot,
+  StudioMcpServerMutationInput,
   OpenWorkspaceResponse,
+  StudioMemoryOverviewSnapshot,
+  StudioMemoryRebuildResult,
+  StudioProviderConnectionTestRequest,
+  StudioProviderConnectionTestResult,
+  StudioProviderSettingsSaveInput,
+  StudioProviderSettingsSaveResult,
+  StudioProviderSettingsSnapshot,
   RuntimeInspectRequest,
   StudioBridgeApi,
   StudioHostState,
@@ -11,7 +22,18 @@ import { STUDIO_BRIDGE_CHANNELS, type StudioIpcRendererLike } from './studio-ipc
 import {
   assertStudioNoPayload,
   parseStudioHostState,
+  parseStudioSkillsPluginsOverviewSnapshot,
+  parseStudioMcpMutationResult,
+  parseStudioMcpOverviewSnapshot,
+  parseStudioMcpServerMutationInput,
+  parseStudioMemoryOverviewSnapshot,
+  parseStudioMemoryRebuildResult,
   parseStudioOpenWorkspaceResponse,
+  parseStudioProviderConnectionTestRequest,
+  parseStudioProviderConnectionTestResult,
+  parseStudioProviderSettingsSaveInput,
+  parseStudioProviderSettingsSaveResult,
+  parseStudioProviderSettingsSnapshot,
   parseStudioShellSnapshot,
   parseStudioShellSnapshotRequest,
   parseStudioRuntimeInspectRequest,
@@ -83,6 +105,87 @@ export function createStudioBridgeApi(
     return parseStudioShellSnapshot(payload)
   }
 
+  async function getProviderSettings(): Promise<StudioProviderSettingsSnapshot> {
+    const payload = await options.ipcRenderer.invoke(
+      STUDIO_BRIDGE_CHANNELS.settingsGetProviderSettings,
+    )
+    return parseStudioProviderSettingsSnapshot(payload)
+  }
+
+  async function saveProviderSettings(
+    input: StudioProviderSettingsSaveInput,
+  ): Promise<StudioProviderSettingsSaveResult> {
+    const request = parseStudioProviderSettingsSaveInput(input)
+    const payload = await options.ipcRenderer.invoke(
+      STUDIO_BRIDGE_CHANNELS.settingsSaveProviderSettings,
+      request,
+    )
+    return parseStudioProviderSettingsSaveResult(payload)
+  }
+
+  async function testProviderConnection(
+    input: StudioProviderConnectionTestRequest,
+  ): Promise<StudioProviderConnectionTestResult> {
+    const request = parseStudioProviderConnectionTestRequest(input)
+    const payload = await options.ipcRenderer.invoke(
+      STUDIO_BRIDGE_CHANNELS.settingsTestProviderConnection,
+      request,
+    )
+    return parseStudioProviderConnectionTestResult(payload)
+  }
+
+  async function getMemoryOverview(): Promise<StudioMemoryOverviewSnapshot> {
+    const payload = await options.ipcRenderer.invoke(
+      STUDIO_BRIDGE_CHANNELS.memoryGetOverview,
+    )
+    return parseStudioMemoryOverviewSnapshot(payload)
+  }
+
+  async function rebuildMemory(): Promise<StudioMemoryRebuildResult> {
+    const payload = await options.ipcRenderer.invoke(
+      STUDIO_BRIDGE_CHANNELS.memoryRebuild,
+    )
+    return parseStudioMemoryRebuildResult(payload)
+  }
+
+  async function getMcpOverview(): Promise<StudioMcpOverviewSnapshot> {
+    const payload = await options.ipcRenderer.invoke(
+      STUDIO_BRIDGE_CHANNELS.mcpGetOverview,
+    )
+    return parseStudioMcpOverviewSnapshot(payload)
+  }
+
+  async function addMcpServer(
+    input: StudioMcpServerMutationInput,
+  ): Promise<StudioMcpMutationResult> {
+    const request = parseStudioMcpServerMutationInput(input)
+    const payload = await options.ipcRenderer.invoke(
+      STUDIO_BRIDGE_CHANNELS.mcpAddServer,
+      request,
+    )
+    return parseStudioMcpMutationResult(payload)
+  }
+
+  async function deleteMcpServer(
+    name: string,
+  ): Promise<StudioMcpMutationResult> {
+    if (typeof name !== 'string') {
+      throw new Error('studio.mcp.deleteServer 需要字符串名称。')
+    }
+    const payload = await options.ipcRenderer.invoke(
+      STUDIO_BRIDGE_CHANNELS.mcpDeleteServer,
+      { name },
+    )
+    return parseStudioMcpMutationResult(payload)
+  }
+
+  async function getSkillsPluginsOverview(): Promise<StudioSkillsPluginsOverviewSnapshot> {
+    const payload = await options.ipcRenderer.invoke(
+      STUDIO_BRIDGE_CHANNELS.skillsPluginsGetOverview,
+    )
+    return parseStudioSkillsPluginsOverviewSnapshot(payload)
+  }
+
   return {
     host: {
       async getState(...args: unknown[]) {
@@ -112,6 +215,46 @@ export function createStudioBridgeApi(
     shell: {
       async getSnapshot(input?: StudioShellSnapshotRequest) {
         return getShellSnapshot(input)
+      },
+    },
+    settings: {
+      async getProviderSettings(...args: unknown[]) {
+        assertStudioNoPayload(args[0], 'studio.settings.getProviderSettings')
+        return getProviderSettings()
+      },
+      async saveProviderSettings(input: StudioProviderSettingsSaveInput) {
+        return saveProviderSettings(input)
+      },
+      async testProviderConnection(input: StudioProviderConnectionTestRequest) {
+        return testProviderConnection(input)
+      },
+    },
+    memory: {
+      async getOverview(...args: unknown[]) {
+        assertStudioNoPayload(args[0], 'studio.memory.getOverview')
+        return getMemoryOverview()
+      },
+      async rebuild(...args: unknown[]) {
+        assertStudioNoPayload(args[0], 'studio.memory.rebuild')
+        return rebuildMemory()
+      },
+    },
+    mcp: {
+      async getOverview(...args: unknown[]) {
+        assertStudioNoPayload(args[0], 'studio.mcp.getOverview')
+        return getMcpOverview()
+      },
+      async addServer(input: StudioMcpServerMutationInput) {
+        return addMcpServer(input)
+      },
+      async deleteServer(name: string) {
+        return deleteMcpServer(name)
+      },
+    },
+    skillsPlugins: {
+      async getOverview(...args: unknown[]) {
+        assertStudioNoPayload(args[0], 'studio.skillsPlugins.getOverview')
+        return getSkillsPluginsOverview()
       },
     },
   }
