@@ -1,4 +1,9 @@
 ## 2026-04-23
+- **Design System · Xnova Studio**：补齐桌面主壳的前端视觉系统与预览基线
+  - 新增 `DESIGN.md`，锁定 `Xnova Studio` 的整体气质、字体、配色、布局、动效和 project-aware 主壳规则
+  - 新增 `docs/xnova-studio-design-preview.html`，用静态预览页展示空白聊天页、Tools / Settings 状态页和 Agents / 会话层级的目标观感
+  - 新增 `CLAUDE.md` 设计协作约束，确保后续 UI 实现与评审都先对齐设计系统
+
 - **Phase 7 · Polish and Release**：桌面主壳完成恢复、错误态、边缘反馈、性能收口与发布准备
   - `studio/src/renderer/**`、`studio/src/main/**` 与 `cli/src/**` 打通最近项目/会话/Mode/Agent/Model 恢复、结构化错误合同、memory / subagent 主流程反馈，以及大会话恢复的轻量摘要与性能采样
   - `studio/package.json`、`studio/electron-builder.yml`、`README.md`、`docs/release/xnova-studio-v1-trial.md` 补齐 Windows 打包脚本、目录产物链路、版本信息与试用说明
