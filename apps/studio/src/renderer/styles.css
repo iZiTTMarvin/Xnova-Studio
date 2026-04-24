@@ -64,6 +64,44 @@
   box-sizing: border-box;
 }
 
+/* 全局 focus-visible — 统一键盘焦点样式 */
+button:focus-visible,
+input:focus-visible,
+select:focus-visible,
+textarea:focus-visible,
+[role="button"]:focus-visible {
+  outline: none;
+  border-color: var(--border-strong);
+  box-shadow: 0 0 0 2px rgba(98, 188, 255, 0.22);
+}
+
+/* 统一过渡动画 */
+button,
+input,
+select,
+textarea {
+  transition: border-color 150ms ease, background 150ms ease, box-shadow 150ms ease, opacity 150ms ease;
+}
+
+/* 自定义滚动条 */
+::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+::-webkit-scrollbar-thumb {
+  background: rgba(151, 164, 186, 0.18);
+  border-radius: 3px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: rgba(151, 164, 186, 0.32);
+}
+
 body {
   margin: 0;
   min-height: 100vh;
@@ -107,11 +145,9 @@ body {
   width: 28px;
   height: 28px;
   border-radius: 12px;
-  background:
-    linear-gradient(135deg, rgba(98, 188, 255, 0.28), rgba(126, 217, 197, 0.16)),
-    var(--bg-soft);
   border: 1px solid var(--border-strong);
   flex-shrink: 0;
+  object-fit: cover;
 }
 
 .sidebar-brand-title {
@@ -161,15 +197,17 @@ body {
 }
 
 .sidebar-nav-icon {
-  width: 14px;
-  height: 14px;
-  border-radius: 5px;
-  background: color-mix(in srgb, var(--text-faint) 65%, transparent);
+  width: 16px;
+  height: 16px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
   flex-shrink: 0;
+  color: var(--text-faint);
 }
 
 .sidebar-nav-button-active .sidebar-nav-icon {
-  background: color-mix(in srgb, var(--primary) 72%, white 8%);
+  color: var(--primary);
 }
 
 /* Sidebar Block */
@@ -218,6 +256,20 @@ body {
 
 .sidebar-block-body {
   padding: 10px 12px 12px;
+  display: grid;
+  grid-template-rows: 1fr;
+  transition: grid-template-rows 200ms ease, padding 200ms ease;
+}
+
+.sidebar-block-body.collapsed {
+  grid-template-rows: 0fr;
+  padding-top: 0;
+  padding-bottom: 0;
+  overflow: hidden;
+}
+
+.sidebar-block-body > * {
+  overflow: hidden;
 }
 
 .sidebar-block-scroll {
@@ -685,9 +737,11 @@ body {
 .suggestion-icon {
   width: 18px;
   height: 18px;
-  border-radius: 6px;
-  background: color-mix(in srgb, var(--primary) 55%, transparent);
+  display: flex;
+  align-items: center;
+  justify-content: center;
   flex-shrink: 0;
+  color: var(--primary);
 }
 
 .suggestion-row strong {
@@ -803,19 +857,16 @@ body {
   box-shadow: 0 10px 28px rgba(49, 113, 166, 0.24);
   cursor: pointer;
   flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: #02131f;
   transition: transform 120ms ease, box-shadow 120ms ease;
 }
 
 .composer-send:hover {
   transform: scale(1.04);
   box-shadow: 0 12px 32px rgba(49, 113, 166, 0.3);
-}
-
-.composer-send::before {
-  content: ">";
-  color: #02131f;
-  font-size: 15px;
-  font-weight: 800;
 }
 
 /* ========================================
@@ -1552,5 +1603,77 @@ body {
   .blank-chat-stage {
     min-height: 400px;
     padding-top: 42px;
+  }
+}
+
+@media (max-width: 768px) {
+  .studio-sidebar {
+    position: fixed;
+    inset: 0;
+    z-index: 80;
+    max-height: 100vh;
+    border-right: 0;
+    transform: translateX(-100%);
+    transition: transform 200ms ease;
+  }
+
+  .studio-sidebar.sidebar-open {
+    transform: translateX(0);
+  }
+
+  .sidebar-backdrop {
+    display: block;
+    position: fixed;
+    inset: 0;
+    z-index: 79;
+    background: rgba(0, 0, 0, 0.45);
+  }
+
+  .project-shell-page {
+    padding: 12px 10px 24px;
+  }
+
+  .studio-settings-dialog {
+    width: calc(100% - 16px);
+    max-height: 90vh;
+  }
+
+  .suggestion-row {
+    flex-direction: column;
+    gap: 8px;
+  }
+
+  .suggestion-card {
+    width: 100%;
+  }
+
+  .composer-shell {
+    border-radius: var(--radius-lg);
+  }
+}
+
+@media (max-width: 480px) {
+  .project-shell-page {
+    padding: 8px 6px 16px;
+  }
+
+  .page-heading {
+    font-size: 18px;
+  }
+
+  .composer-input {
+    font-size: 14px;
+  }
+
+  .context-strip {
+    flex-wrap: wrap;
+  }
+
+  .sidebar-brand-title {
+    font-size: 14px;
+  }
+
+  .sidebar-brand-subtitle {
+    display: none;
   }
 }

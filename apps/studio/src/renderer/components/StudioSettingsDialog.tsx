@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import type { StudioMemoryApi, StudioSettingsApi } from '../../shared/studio-bridge-contract'
 import { MemoryOverviewCard } from './MemoryOverviewCard'
 import { ProviderSettingsCard } from './ProviderSettingsCard'
@@ -139,8 +139,37 @@ function DefaultModelPanel(props: DefaultModelPanelProps) {
 
 export function StudioSettingsDialog(props: StudioSettingsDialogProps) {
   const [activeModule, setActiveModule] = useState<SettingsModuleId>('providers')
+  const dialogRef = useRef<HTMLElement>(null)
   const providerForm = useProviderSettingsForm(props.settingsApi)
   const memoryOverview = useMemoryOverview(props.memoryApi)
+
+  useEffect(() => {
+    if (!props.open) return
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') {
+        props.onClose()
+        return
+      }
+      if (e.key === 'Tab' && dialogRef.current) {
+        const focusable = dialogRef.current.querySelectorAll<HTMLElement>(
+          'button, [href], input, select, textarea, [tabindex]:not([tabindex="-1"])',
+        )
+        if (focusable.length === 0) return
+        const first = focusable[0]!
+        const last = focusable[focusable.length - 1]!
+        if (e.shiftKey && document.activeElement === first) {
+          e.preventDefault()
+          last.focus()
+        } else if (!e.shiftKey && document.activeElement === last) {
+          e.preventDefault()
+          first.focus()
+        }
+      }
+    }
+    document.addEventListener('keydown', handleKeyDown)
+    dialogRef.current?.focus()
+    return () => document.removeEventListener('keydown', handleKeyDown)
+  }, [props.open, props.onClose])
 
   const statusText = useMemo(() => {
     const providerStatus =
@@ -173,10 +202,12 @@ export function StudioSettingsDialog(props: StudioSettingsDialogProps) {
       onClick={props.onClose}
     >
       <section
+        ref={dialogRef}
         className="studio-settings-dialog"
         role="dialog"
         aria-modal="true"
         aria-label="设置"
+        tabIndex={-1}
         onClick={(event) => {
           event.stopPropagation()
         }}

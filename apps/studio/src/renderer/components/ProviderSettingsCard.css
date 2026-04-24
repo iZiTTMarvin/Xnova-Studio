@@ -65,8 +65,8 @@
 }
 
 .provider-platform-item-active {
-  border-color: color-mix(in srgb, var(--accent-color) 60%, var(--border-subtle));
-  background: color-mix(in srgb, var(--accent-color) 12%, transparent);
+  border-color: color-mix(in srgb, var(--primary) 60%, var(--border-subtle));
+  background: color-mix(in srgb, var(--primary) 12%, transparent);
 }
 
 .provider-platform-detail {

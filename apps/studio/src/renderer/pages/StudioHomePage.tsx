@@ -11,6 +11,7 @@ import { ProjectTreePanel } from '../components/ProjectTreePanel'
 import { SessionModelPicker } from '../components/SessionModelPicker'
 import { ScratchpadList } from '../components/ScratchpadList'
 import { StudioSettingsDialog } from '../components/StudioSettingsDialog'
+import { IconSend, IconFolder, IconSuggestionExplore } from '../components/Icons'
 import { useStudioBridge } from '../hooks/useStudioBridge'
 import { useMemoryOverview } from '../hooks/useMemoryOverview'
 import { useSettingsToolsPageModel } from '../hooks/useSettingsToolsPageModel'
@@ -372,7 +373,9 @@ export function StudioHomePage() {
           onClick={() => {
             void handleSubmitPrompt()
           }}
-        />
+        >
+          <IconSend />
+        </button>
       </div>
     </div>
   )
@@ -663,7 +666,7 @@ export function StudioHomePage() {
             void openWorkspace()
           }}
         >
-          <div className="suggestion-icon" />
+          <div className="suggestion-icon"><IconFolder /></div>
           <div>
             <strong>绑定项目目录</strong>
             <span>选择 workspace，让后续会话与分支上下文自动跟随。</span>
@@ -679,7 +682,7 @@ export function StudioHomePage() {
             }
           }}
         >
-          <div className="suggestion-icon" />
+          <div className="suggestion-icon"><IconSuggestionExplore /></div>
           <div>
             <strong>继续当前项目会话</strong>
             <span>直接进入项目会话树，延续最近工作状态。</span>

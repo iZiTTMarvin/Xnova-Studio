@@ -53,7 +53,7 @@
 }
 
 .studio-settings-dialog-meta strong {
-  color: var(--text-strong);
+  color: var(--text-primary);
 }
 
 .studio-settings-dialog-content {
@@ -69,7 +69,7 @@
   display: flex;
   flex-direction: column;
   gap: 8px;
-  background: color-mix(in srgb, var(--bg-muted) 35%, transparent);
+  background: color-mix(in srgb, var(--bg-soft) 35%, transparent);
 }
 
 .studio-settings-nav-item {
@@ -88,8 +88,8 @@
 }
 
 .studio-settings-nav-item-active {
-  border-color: color-mix(in srgb, var(--accent-color) 60%, var(--border-subtle));
-  background: color-mix(in srgb, var(--accent-color) 14%, transparent);
+  border-color: color-mix(in srgb, var(--primary) 60%, var(--border-subtle));
+  background: color-mix(in srgb, var(--primary) 14%, transparent);
 }
 
 .studio-settings-module-content {

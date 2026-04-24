@@ -1,4 +1,6 @@
 import { useState, type ReactNode } from 'react'
+import { IconChat, IconSearch, IconAgent, IconFolder, IconTool, IconSettings } from './Icons'
+import xnovaLogo from '../assets/xnova-logo.png'
 import './ProjectShellSidebar.css'
 
 export type PrimaryNavId =
@@ -20,14 +22,15 @@ interface SidebarBlockConfig {
 interface PrimaryNavItem {
   id: PrimaryNavId
   label: string
+  icon: ReactNode
 }
 
 export const PRIMARY_NAV_ITEMS: PrimaryNavItem[] = [
-  { id: 'quick-chat', label: '新对话' },
-  { id: 'search', label: '搜索' },
-  { id: 'agents', label: 'Agents' },
-  { id: 'projects', label: '项目' },
-  { id: 'tools', label: '工具' },
+  { id: 'quick-chat', label: '新对话', icon: <IconChat /> },
+  { id: 'search', label: '搜索', icon: <IconSearch /> },
+  { id: 'agents', label: 'Agents', icon: <IconAgent /> },
+  { id: 'projects', label: '项目', icon: <IconFolder /> },
+  { id: 'tools', label: '工具', icon: <IconTool /> },
 ]
 
 export interface ProjectShellSidebarProps {
@@ -65,7 +68,7 @@ export function ProjectShellSidebar(props: ProjectShellSidebarProps) {
   return (
     <aside className="studio-sidebar">
       <div className="sidebar-brand">
-        <div className="sidebar-brand-mark" />
+        <img src={xnovaLogo} alt="Xnova" className="sidebar-brand-mark" />
         <div>
           <h1 className="sidebar-brand-title">Xnova Studio</h1>
           <div className="sidebar-brand-subtitle">Quiet operational shell</div>
@@ -85,7 +88,7 @@ export function ProjectShellSidebar(props: ProjectShellSidebarProps) {
                 props.onNavigate(item.id)
               }}
             >
-              <span className="sidebar-nav-icon" />
+              <span className="sidebar-nav-icon">{item.icon}</span>
               {item.label}
             </button>
           ))}
@@ -140,7 +143,7 @@ export function ProjectShellSidebar(props: ProjectShellSidebarProps) {
           className="sidebar-nav-button sidebar-utility-button"
           onClick={props.onOpenSettings}
         >
-          <span className="sidebar-nav-icon" />
+          <span className="sidebar-nav-icon"><IconSettings /></span>
           设置
         </button>
       </div>

@@ -1,3 +1,4 @@
+import { useEffect, useRef } from 'react'
 import type {
   StudioActiveSessionDetail,
   StudioConversationMessage,
@@ -28,7 +29,7 @@ function renderToolEventSummary(
   toolEvent: NonNullable<StudioConversationMessage['toolEvents']>[number],
 ) {
   const argsText = Object.keys(toolEvent.args ?? {}).length > 0
-    ? JSON.stringify(toolEvent.args)
+    ? JSON.stringify(toolEvent.args, null, 2)
     : '无参数'
 
   return (
@@ -83,6 +84,7 @@ function renderPersistedMessage(message: StudioConversationMessage) {
 }
 
 export function ConversationTimeline(props: ConversationTimelineProps) {
+  const bottomRef = useRef<HTMLDivElement>(null)
   const persistedMessages = props.session?.messages ?? []
   const hasLiveContent =
     props.liveConversation.pendingUserText !== null ||
@@ -90,6 +92,16 @@ export function ConversationTimeline(props: ConversationTimelineProps) {
     props.liveConversation.assistantText.length > 0 ||
     props.liveConversation.thinkingText.length > 0 ||
     props.liveConversation.systemMessages.length > 0
+
+  useEffect(() => {
+    bottomRef.current?.scrollIntoView({ behavior: 'smooth' })
+  }, [
+    persistedMessages.length,
+    props.liveConversation.assistantText,
+    props.liveConversation.thinkingText,
+    props.liveConversation.toolEvents.length,
+    props.liveConversation.systemMessages.length,
+  ])
 
   if (persistedMessages.length === 0 && !hasLiveContent) {
     return (
@@ -144,13 +156,14 @@ export function ConversationTimeline(props: ConversationTimelineProps) {
 
       {props.liveConversation.systemMessages.map((message, index) => (
         <article
-          key={`live-system-${index}`}
+          key={`live-system-${message.slice(0, 20)}-${index}`}
           className="conversation-message conversation-message-system conversation-message-live"
         >
           <div className="conversation-message-label">系统</div>
           <div className="conversation-message-body">{message}</div>
         </article>
       ))}
+      <div ref={bottomRef} />
     </section>
   )
 }

@@ -1,3 +1,4 @@
+import path from 'node:path'
 import type { BrowserWindowConstructorOptions } from 'electron'
 
 export interface RendererTargetInput {
@@ -17,7 +18,8 @@ export function createMainWindowOptions(preloadPath: string): BrowserWindowConst
     height: 800,
     minWidth: 960,
     minHeight: 640,
-    backgroundColor: '#0f172a',
+    backgroundColor: '#06080d',
+    icon: path.join(__dirname, '../../resources/icon.png'),
     webPreferences: {
       preload: preloadPath,
       contextIsolation: true,

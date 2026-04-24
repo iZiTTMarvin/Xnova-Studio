@@ -37,6 +37,10 @@ export function McpOverviewCard(props: McpOverviewCardProps) {
   const [args, setArgs] = useState('')
   const [url, setUrl] = useState('')
 
+  const canSubmitServer =
+    name.trim().length > 0 &&
+    (transport === 'stdio' ? command.trim().length > 0 : url.trim().length > 0)
+
   return (
     <section className="feature-section-card">
       <div className="feature-section-header">
@@ -213,7 +217,7 @@ export function McpOverviewCard(props: McpOverviewCardProps) {
                           },
                   })
                 }}
-                disabled={props.isMutating}
+                disabled={props.isMutating || !canSubmitServer}
               >
                 新增 MCP Server
               </button>

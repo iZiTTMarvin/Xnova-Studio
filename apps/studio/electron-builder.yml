@@ -1,5 +1,6 @@
 appId: com.xnova.studio
 productName: Xnova Studio
+icon: resources/icon.png
 directories:
   output: release
 files:
@@ -13,6 +14,7 @@ files:
   - '!vitest.config.ts'
 asar: true
 win:
+  icon: resources/icon.ico
   target:
     - target: nsis
       arch:
