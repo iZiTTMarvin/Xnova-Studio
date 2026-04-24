@@ -102,3 +102,4 @@ venv/
 .windsurf/
 .gstack
 废弃
+.playwright-mcp

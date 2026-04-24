@@ -384,10 +384,10 @@ export function StudioHomePage() {
     shellStatus === 'ready' &&
     activeNavId !== 'tools' &&
     memoryApi !== null &&
-    (memoryOverview.status !== 'ready' ||
-      memoryOverview.snapshot?.status !== 'ready' ||
-      memoryOverview.error !== null ||
-      memoryOverview.isRebuilding)
+    memoryOverview.status !== 'loading' &&
+    (memoryOverview.snapshot?.status === 'degraded' ||
+      memoryOverview.snapshot?.status === 'bm25' ||
+      memoryOverview.error !== null)
   const memoryFeedback = resolveMemoryFeedbackPresentation({
     snapshot: memoryOverview.snapshot,
     status: memoryOverview.status,
@@ -696,6 +696,9 @@ export function StudioHomePage() {
     </section>
   )
 
+  const isConversationView = activeNavId !== 'search' && activeNavId !== 'agents' && activeNavId !== 'tools'
+    && (selectedSubagentEntry != null || activeSession != null)
+
   const content = activeNavId === 'search'
     ? searchContent
     : activeNavId === 'agents'
@@ -778,112 +781,68 @@ export function StudioHomePage() {
         </header>
 
         {startupNotice ? (
-          <section className="shell-banner">
+          <div className="notice-bar notice-bar-error">
             <strong>{startupNotice}</strong>
-          </section>
-        ) : null}
-
-        {modeNotice ? (
-          <div className="mode-notice-backdrop" role="presentation">
-            <section className="mode-notice-card" role="dialog" aria-modal="true" aria-label={modeNotice.title}>
-              <strong>{modeNotice.title}</strong>
-              <p>{modeNotice.message}</p>
-              <button
-                type="button"
-                className="primary-button"
-                onClick={() => {
-                  setModeNotice(null)
-                }}
-              >
-                我知道了
-              </button>
-            </section>
           </div>
         ) : null}
 
         {statusIssues.length > 0 ? (
-          <section className="warning-list-card" aria-label="状态问题">
-            <strong>状态问题</strong>
-            <ul>
-              {statusIssues.map((issue) => (
-                <li key={`${issue.code}-${issue.message}`}>
-                  <span className="status-issue-code mono">{issue.code}</span>
-                  <span className="status-issue-message">{issue.message}</span>
-                </li>
-              ))}
-            </ul>
-          </section>
+          <div className="notice-bar notice-bar-warning">
+            <strong>状态问题:</strong>
+            {' '}
+            {statusIssues.map((issue) => issue.message).join(' · ')}
+          </div>
         ) : null}
 
         {shouldShowMemoryFeedback ? (
-          <section className="warning-list-card" aria-label="Memory 主流程反馈">
-            <div className="warning-status-line">
-              <strong>Memory 状态</strong>
-              <span className="warning-status-label">{memoryFeedback.statusLabel}</span>
-            </div>
-            <ul>
-              <li>{memoryFeedback.statusMessage}</li>
-              {memoryFeedback.actionHint ? (
-                <li>建议动作: {memoryFeedback.actionHint}</li>
-              ) : null}
-            </ul>
-          </section>
+          <div className="notice-bar notice-bar-warning">
+            <strong>Memory {memoryFeedback.statusLabel}:</strong>
+            {' '}
+            {memoryFeedback.statusMessage}
+          </div>
         ) : null}
 
-        {liveSubagentFeedback || sessionSubagentFeedback.length > 0 ? (
-          <section className="warning-list-card" aria-label="SubAgent 主流程反馈">
-            <strong>SubAgent 状态</strong>
-            <ul>
-              {liveSubagentFeedback ? (
-                <li>{liveSubagentFeedback.message}</li>
-              ) : null}
-              {liveSubagentFeedback?.partialResult ? (
-                <li>{liveSubagentFeedback.partialResult}</li>
-              ) : null}
-              {sessionSubagentFeedback.map((subagent) => (
-                <Fragment key={subagent.agentId}>
-                  <li key={`${subagent.agentId}-status`}>
-                    {subagent.agentId}
-                    {': '}
-                    {subagent.stateMessage ?? getSubagentStatusLabel(subagent.status)}
-                  </li>
-                  {subagent.partialResult ? (
-                    <li key={`${subagent.agentId}-partial`}>{subagent.partialResult}</li>
-                  ) : null}
-                </Fragment>
-              ))}
-            </ul>
-          </section>
-        ) : null}
+        {isConversationView ? (
+          content
+        ) : (
+          <div className="main-scroll-area">
+            {content}
 
-        {content}
-
-        {activeNavId !== 'tools' && recoveryStatus.kind !== 'empty' ? (
-          <section className="inline-card" style={{ padding: '14px 18px' }}>
-            <div className="detail-row" style={{ padding: '6px 0' }}>
-              <span>恢复状态</span>
-              <strong>{recoveryStatus.message}</strong>
-            </div>
-            <div className="detail-row" style={{ padding: '6px 0' }}>
-              <span>来源</span>
-              <span className="mono">
-                会话:{recoverySources.session} · 模式:{recoverySources.mode} · Agent:{recoverySources.agent}
-              </span>
-            </div>
-            {canRestoreProjectDefaults ? (
-              <div style={{ marginTop: '8px' }}>
-                <button
-                  type="button"
-                  className="secondary-button"
-                  onClick={restoreProjectDefaults}
-                >
-                  回到项目推荐值
-                </button>
+            {recoveryStatus.kind !== 'empty' ? (
+              <div className="notice-bar" style={{ marginTop: 12, borderRadius: 8 }}>
+                <span>恢复: {recoveryStatus.message}</span>
+                {canRestoreProjectDefaults ? (
+                  <button
+                    type="button"
+                    className="ghost-button"
+                    onClick={restoreProjectDefaults}
+                  >
+                    回到推荐值
+                  </button>
+                ) : null}
               </div>
             ) : null}
-          </section>
-        ) : null}
+          </div>
+        )}
       </main>
+
+      {modeNotice ? (
+        <div className="mode-notice-backdrop" role="presentation">
+          <section className="mode-notice-card" role="dialog" aria-modal="true" aria-label={modeNotice.title}>
+            <strong>{modeNotice.title}</strong>
+            <p>{modeNotice.message}</p>
+            <button
+              type="button"
+              className="primary-button"
+              onClick={() => {
+                setModeNotice(null)
+              }}
+            >
+              我知道了
+            </button>
+          </section>
+        </div>
+      ) : null}
 
       <StudioSettingsDialog
         open={settingsDialogOpen}
