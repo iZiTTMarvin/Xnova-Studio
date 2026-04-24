@@ -29,6 +29,9 @@ export default defineConfig({
     },
     build: {
       outDir: 'dist/main',
+      externalizeDeps: {
+        exclude: ['@xnova/runtime'],
+      },
       rollupOptions: {
         external: nativeRuntimeExternals,
         input: {
