@@ -1,0 +1,36 @@
+{
+  "extends": "../../tsconfig.base.json",
+  "compilerOptions": {
+    "types": ["node", "vitest/globals"],
+    "baseUrl": ".",
+    "paths": {
+      "@xnova/core": ["../core/src/index.ts"],
+      "@xnova/core/*": ["../core/src/*"],
+      "@xnova/runtime": ["../runtime/src/index.ts"],
+      "@xnova/runtime/*": ["../runtime/src/*"],
+      "@core": ["../core/src/index.ts"],
+      "@core/*": ["../core/src/*"],
+      "@core/*.js": ["../core/src/*.ts"],
+      "@tools": ["../tools/src/index.ts"],
+      "@tools/*": ["../tools/src/*"],
+      "@memory": ["../memory/src/index.ts"],
+      "@memory/*": ["../memory/src/*"],
+      "@mcp": ["../mcp/src/index.ts"],
+      "@mcp/*": ["../mcp/src/*"],
+      "@skills": ["../skills/src/index.ts"],
+      "@skills/*": ["../skills/src/*"],
+      "@plugin": ["../plugin/src/index.ts"],
+      "@plugin/*": ["../plugin/src/*"],
+      "@providers/*": ["../providers/src/providers/*"],
+      "@hooks": ["../core/src/hooks/index.ts"],
+      "@hooks/*": ["../core/src/hooks/*"],
+      "@config/*": ["../config/src/config/*"],
+      "@observability/*": ["../observability/src/observability/*"],
+      "@persistence/*": ["../persistence/src/persistence/*"],
+      "@file-index": ["../core/src/file-index/index.ts"],
+      "@file-index/*": ["../core/src/file-index/*"],
+      "@platform/*": ["../platform/src/platform/*"]
+    }
+  },
+  "include": ["src/**/*.ts", "vitest.config.ts"]
+}

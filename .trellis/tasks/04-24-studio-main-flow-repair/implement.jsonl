@@ -1,0 +1,7 @@
+{"file": ".trellis/workflow.md", "reason": "Project workflow and conventions"}
+{"file": ".trellis/spec/backend/index.md", "reason": "Backend development guide"}
+{"file": ".trellis/spec/frontend/index.md", "reason": "Frontend development guide"}
+{"file": ".trellis/spec/backend/error-handling.md", "reason": "runtime-not-ready 与未实现入口不能静默失败"}
+{"file": ".trellis/spec/backend/runtime-boundary.md", "reason": "Studio 通过 runtime bridge 提交而非伪交互"}
+{"file": "docs/xnova-studio-V1核心设计文档.md", "reason": "对齐主链路、会话视图、模型切换和 XForge v1 范围"}
+{"file": ".trellis/spec/frontend/project-shell-v1.md", "reason": "Studio 主壳与上下文条、模型/模式入口约束"}

@@ -1,0 +1,24 @@
+{
+  "name": "@xnova/memory",
+  "private": true,
+  "version": "0.0.0",
+  "type": "module",
+  "description": "Xnova 能力域：记忆系统",
+  "scripts": {
+    "build": "pnpm run typecheck",
+    "typecheck": "pnpm -w exec tsc --noEmit -p packages/memory/tsconfig.json",
+    "test": "pnpm -w exec vitest run --config packages/memory/vitest.config.ts"
+  },
+  "exports": {
+    ".": "./src/index.ts",
+    "./*": "./src/*"
+  },
+  "dependencies": {
+    "@xnova/tools": "workspace:*",
+    "jieba-wasm": "^2.4.0"
+  },
+  "devDependencies": {
+    "@types/node": "^25.6.0",
+    "vitest": "^4.1.5"
+  }
+}

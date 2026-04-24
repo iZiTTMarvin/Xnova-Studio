@@ -1,0 +1,24 @@
+{
+  "name": "@xnova/persistence",
+  "private": true,
+  "version": "0.0.0",
+  "type": "module",
+  "description": "Xnova 持久化领域包",
+  "exports": {
+    ".": "./src/index.ts",
+    "./*": "./src/*"
+  },
+  "scripts": {
+    "build": "pnpm run typecheck",
+    "typecheck": "pnpm -w exec tsc --noEmit -p packages/persistence/tsconfig.json",
+    "test": "pnpm -w exec vitest run --config packages/persistence/vitest.config.ts"
+  },
+  "dependencies": {
+    "@xnova/core": "workspace:*",
+    "libsql": "^0.5.22",
+    "uuid": "^13.0.0"
+  },
+  "devDependencies": {
+    "@types/node": "^25.6.0"
+  }
+}

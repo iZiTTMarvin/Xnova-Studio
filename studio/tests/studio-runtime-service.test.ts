@@ -105,6 +105,8 @@ describe('studio runtime service', () => {
     expect(runtimeInstance.submit).toHaveBeenCalledWith(
       expect.objectContaining({
         text: '分析当前项目结构',
+        history: [{ role: 'user', content: '分析当前项目结构' }],
+        loggedUserContent: '分析当前项目结构',
         model: 'gpt-4o',
       }),
     )

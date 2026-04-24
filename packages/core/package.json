@@ -1,0 +1,35 @@
+{
+  "name": "@xnova/core",
+  "private": true,
+  "version": "0.0.0",
+  "type": "module",
+  "description": "Xnova 共享运行时内核编排层",
+  "scripts": {
+    "build": "pnpm run typecheck",
+    "typecheck": "pnpm -w exec tsc --noEmit -p packages/core/tsconfig.json",
+    "test": "node --test src/__tests__/core-kernel-extract.test.mjs"
+  },
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "dependencies": {
+    "@xnova/config": "workspace:*",
+    "@xnova/observability": "workspace:*",
+    "@xnova/persistence": "workspace:*",
+    "@xnova/platform": "workspace:*",
+    "@xnova/providers": "workspace:*",
+    "@xnova/mcp": "workspace:*",
+    "@xnova/tools": "workspace:*",
+    "@xnova/skills": "workspace:*",
+    "@xnova/plugin": "workspace:*",
+    "@xnova/memory": "workspace:*",
+    "execa": "^9.6.1",
+    "fast-glob": "^3.3.3",
+    "fzf": "^0.5.2",
+    "ignore": "^7.0.5",
+    "libsql": "^0.5.22"
+  },
+  "devDependencies": {
+    "@types/node": "^25.6.0"
+  }
+}

@@ -4,18 +4,17 @@
 
 ## 当前事实
 
-- **Phase 1 已落定（2026-04-21）**：
-  - `cli/src/runtime/` 已创建，含 `types.ts` / `create-runtime.ts` / `tool-registry.ts` / `events.ts` / `bridge.ts` / `index.ts`
-  - `cli/src/host/cli/` 已创建，含 `repl.ts` / `pipe-mode.ts` / `lifecycle.ts` / `index.ts`
-  - `cli/bin/ccli.ts` 已重写为薄入口，委托给 `host/cli/`
-  - `runtime/` 已验证无 `ink` / `electron` / `ui/*` 依赖
-- 当前运行时装配中心仍是 `cli/src/core/bootstrap.ts`（过渡期保留，Phase 2 逐步迁移）
-- 当前主业务循环仍由 `cli/src/core/agent-loop.ts`、`cli/src/ui/useChat.ts` 和工具/存储单例共同驱动
-- 当前桌面宿主 `studio/` 尚未实现
+- 当前主线已切换为 `packages/ + apps/`：
+  - `packages/runtime/` 承载共享运行时入口、bridge、events、inspect、factory
+  - `packages/core/` 承载 `AgentLoop`、`bootstrap`、`context-manager` 等编排内核
+  - `apps/studio/` 是当前唯一主宿主
+- `cli/` 仍保留为历史供体与迁移参考，但不再定义运行时的物理边界
+- 当前运行时装配仍处于过渡态：
+  - `packages/runtime` 已改为优先依赖 `@xnova/core`
+  - `packages/core` 仍临时映射部分旧 `cli/src/**` 领域包，等待后续 package 子任务继续接管
 - 需求文档已锁定目标方向：
   - `shared runtime + dual host`
-  - 先抽 `cli/src/runtime/`（已完成）
-  - 再由 `cli/src/host/cli/`（已完成）与未来 `studio/` 消费
+  - 物理位置上由 `packages/runtime + packages/core` 承载核心，而不是继续挂靠 `cli/src/runtime`
 
 ## 场景：定义 shared runtime / host / renderer contract
 
@@ -56,7 +55,7 @@ interface RuntimeInstance {
 function createRuntime(input: RuntimeConfigInput, bridge: RuntimeHostBridge): Promise<RuntimeInstance>
 ```
 
-> **类型引用约定（已落定，参见 `cli/src/runtime/types.ts`）**：
+> **类型引用约定（当前主线，参见 `packages/runtime/src/types.ts`）**：
 >
 > 上述签名中的所有类型已由 Phase 1 `04-21-runtime-boundary` 落定到 `cli/src/runtime/types.ts`：
 >
@@ -67,7 +66,7 @@ function createRuntime(input: RuntimeConfigInput, bridge: RuntimeHostBridge): Pr
 > - `RuntimeSubmitInput`：已落定，主字段含 `text` / `provider?` / `model?` / `history?` / `loggedUserContent?` / `nonInteractive?` / `waitForMcp?` / `resumeLeafUuid?` / `attachments?`。
 > - `RuntimeSnapshot`：已落定，含 `sessionId` / `isRunning` / `provider` / `model` / `contextUsed` / `contextLimit` / `warnings`。
 > - `RuntimeTurnResult`：已落定，含 `text` / `thinking` / `stopReason` / `llmCallCount` / `toolCallCount` / `usage` / `aborted` / `historyCompacted` / `sessionId` / `error?`。
-> - **实现约束**：新增字段须同时更新本 spec 与 `cli/src/runtime/types.ts`。
+> - **实现约束**：新增字段须同时更新本 spec 与 `packages/runtime/src/types.ts`。
 
 当前代码里的现实入口主要是：
 
@@ -122,6 +121,9 @@ function createRuntime(input: RuntimeConfigInput, bridge: RuntimeHostBridge): Pr
 | runtime 直接 import Ink/Electron UI 代码 | 视为边界违规，必须回退 |
 | host 重新实现 ToolRegistry / AgentLoop | 视为重复实现，必须复用 runtime |
 | renderer 直接触达 SQLite / shell / 本地文件系统 | 必须通过 host/runtime 桥接，不允许直连 |
+| `apps/studio` main / build / test alias 仍把 `@core/@config/@memory/...` 解析回 `cli/src` | 视为 P0 假迁移，必须改为 `packages/*` 或 `packages/core` 子目录 |
+| host 每次 `submit` 都先 `dispose()` 再重建 runtime | 视为会话生命周期缺陷，必须改成会话级持有并按 session/cwd/agent 复用 |
+| host 对 `requestPermission()` 无条件 `allow: true` | 视为安全红线，至少要有显式 allow/deny 策略与审计事件 |
 | runtime 初始化部分能力失败（如 embedding） | 可降级，但必须通过 warning/event 暴露 |
 | host/renderer 未就绪 | runtime 不应直接依赖 UI 完成后才可构建 |
 
@@ -131,11 +133,14 @@ function createRuntime(input: RuntimeConfigInput, bridge: RuntimeHostBridge): Pr
   - `runtime` 输出统一事件流，CLI 与桌面只消费
   - CLI host 只负责终端交互，不再装配底层能力
   - renderer 只通过 bridge/IPC 请求 runtime 行为
+  - `apps/studio` 的 main/build/test 全部只解析到 `packages/*`
+  - Studio host 以 session 维度持有 runtime，并对权限请求产出显式决策事件
 - Base：
   - 先从 `core/bootstrap.ts` 抽出 registry/session/config 边界，保留兼容层
 - Bad：
   - 把 `useChat`、Bridge API、Electron IPC、ToolRegistry 再次揉成一个模块
   - CLI host 和 desktop host 各自复制一套 memory/mcp 初始化逻辑
+  - 看上去 import 了 `@xnova/*`，但 Vite/Vitest alias 仍偷偷回指 `cli/src`
 
 ### 6. Tests Required
 
@@ -176,20 +181,21 @@ await runtime.submit({ text: 'analyze current project' })
 
 ## 当前代码参考
 
-- Runtime 层（Phase 1 已落定）：
-  - 类型契约：`cli/src/runtime/types.ts`
-  - Factory 入口：`cli/src/runtime/create-runtime.ts`
-  - Bridge 实现：`cli/src/runtime/bridge.ts`（`NoopBridge` / `CallbackBridge`）
-- CLI Host 层（Phase 1 已落定）：
-  - REPL 启动：`cli/src/host/cli/repl.ts`
-  - Pipe Mode：`cli/src/host/cli/pipe-mode.ts`
-  - 生命周期：`cli/src/host/cli/lifecycle.ts`
-  - 薄入口：`cli/bin/ccli.ts`
-- Core 层（过渡期保留）：
-  - 装配中心：`cli/src/core/bootstrap.ts`
-  - 业务循环：`cli/src/core/agent-loop.ts`
-  - 终端业务 Hook：`cli/src/ui/useChat.ts`
-  - Bridge 适配：`cli/src/server/bridge/*`
+- Runtime 层（当前主线）：
+  - 类型契约：`packages/runtime/src/types.ts`
+  - Factory 入口：`packages/runtime/src/create-runtime.ts`
+  - Bridge 实现：`packages/runtime/src/bridge.ts`
+- Core 层（当前主线）：
+  - 编排内核：`packages/core/src/agent-loop.ts`
+  - 装配中心：`packages/core/src/bootstrap.ts`
+  - 上下文管理：`packages/core/src/context-manager.ts`
+- Studio Host 层（当前主线）：
+  - Runtime host service：`apps/studio/src/main/studio-runtime-service.ts`
+  - Runtime inspect：`apps/studio/src/main/studio-runtime-inspector.ts`
+- Legacy 参考层：
+  - `cli/src/host/cli/*`
+  - `cli/src/ui/useChat.ts`
+  - `cli/src/server/bridge/*`
 
 ## 反模式
 
@@ -310,3 +316,256 @@ const store = new SessionStore(join(homedir(), '.xnovacode', 'sessions'))
   - handler 内部按需加载会触发 native 依赖的实现
   - 对 read-only overview / status service，也要把 `db.ts` 读取下沉到函数内部（例如默认 getter 用 `await import('../persistence/db.js')`），而不是停留在文件顶层 import
   - renderer 把失败显示成降级提示，不允许主进程因某张状态卡片直接崩溃
+
+## 场景：Studio Main 复用 Shared Runtime 时必须 externalize Native Runtime Dependencies
+
+### 1. Scope / Trigger
+
+- 触发条件：
+  - `studio/src/main/**` 通过 `cli/src/runtime/create-runtime.ts` 复用 shared runtime
+  - `electron.vite.config.ts` 调整 main bundle 打包策略
+  - `studio/package.json` 需要声明供 Electron main 使用的运行时依赖
+- 这是 infra + cross-layer 场景：shared runtime 可以合法依赖 `libsql`，但 Electron main bundle **不能**把 `libsql` 原生动态加载逻辑错误内联；否则 build 能过，真实 `runtime.submit` 会在主链路第一轮执行时崩溃。
+
+### 2. Signatures
+
+推荐签名：
+
+```ts
+// studio/electron.vite.config.ts
+const nativeRuntimeExternals = ['libsql', /^@libsql\//]
+
+export default defineConfig({
+  main: {
+    build: {
+      rollupOptions: {
+        external: nativeRuntimeExternals,
+      },
+    },
+  },
+})
+```
+
+```json
+{
+  "dependencies": {
+    "libsql": "^0.5.22"
+  },
+  "pnpm": {
+    "onlyBuiltDependencies": ["libsql"]
+  }
+}
+```
+
+### 3. Contracts
+
+- 当 `studio` main bundle 复用 CLI shared runtime，且该 runtime 传递依赖 `db.ts` / `libsql-vector-store.ts` / `memory-manager.ts`：
+  - `electron-vite` main build 必须把 `libsql` 与 `@libsql/*` 设为 external
+  - `studio/package.json` 必须显式声明 `libsql` 运行时依赖，不能指望从 `cli/node_modules`“碰巧解析到”
+- 判定标准：
+  - 构建后的 `studio/dist/main/chunks/db-*.js` 应表现为 `require("libsql")`
+  - 不应再出现 Rollup commonjs helper 抛出的
+    `Could not dynamically require "@libsql/..."`
+- 该规则只约束 **main** 宿主边界；
+  - renderer / preload 不允许直接消费 `libsql`
+  - CLI 侧原本如何使用 `libsql` 不受此条约束
+
+### 4. Validation & Error Matrix
+
+| 条件 | 处理方式 |
+|---|---|
+| `studio` main bundle 未 externalize `libsql` | 视为 P0 打包边界缺陷，必须修构建配置 |
+| `studio/package.json` 未声明 `libsql` 依赖 | 视为宿主依赖缺陷，必须补齐 package 声明与 lockfile |
+| build 通过，但 `runtime.submit` 报 `Could not dynamically require "@libsql/..."` | 优先检查 main build external 配置与 `studio` 自身依赖，而不是先怀疑 Provider 配置 |
+| 构建产物仍内联 `commonjsRequire("@libsql/...")` helper | 说明 native 依赖仍被错误 bundle，禁止合入 |
+
+### 5. Good / Base / Bad Cases
+
+- Good：
+  - `studio/electron.vite.config.ts` 明确维护 `nativeRuntimeExternals`
+  - `studio/package.json` 自己声明 `libsql`，Electron 宿主依赖自洽
+  - 回归测试直接锁住 build config + package contract
+- Base：
+  - 只 externalize 当前已知的 `libsql` native 依赖，并在新增 native 包时照此扩展
+- Bad：
+  - 仅靠 “CLI 已经装过 libsql” 侥幸运行
+  - 只在代码层修 import，不修宿主的打包和依赖声明
+
+### 6. Tests Required
+
+- 单元测试：
+  - `studio/tests/native-runtime-packaging.test.ts`
+    - 断言 `electron.vite.config.ts` 的 main external 含 `libsql` 与 `/^@libsql\\//`
+    - 断言 `studio/package.json` 声明 `dependencies.libsql` 与 `pnpm.onlyBuiltDependencies`
+- 构建验证：
+  - `pnpm --dir studio build`
+  - 检查 `dist/main/chunks/db-*.js` 使用 `require("libsql")`，而不是 Rollup 动态 require helper
+- 回归验证：
+  - `pnpm --dir studio test`
+  - `pnpm --dir studio typecheck`
+
+### 7. Wrong vs Correct
+
+#### Wrong
+
+```ts
+export default defineConfig({
+  main: {
+    build: {
+      rollupOptions: {
+        input: {
+          index: resolve(__dirname, 'src/main/index.ts'),
+        },
+      },
+    },
+  },
+})
+```
+
+```json
+{
+  "dependencies": {
+    "react": "^19.2.5"
+  }
+}
+```
+
+问题：
+
+- `studio` main 会把 `libsql` 错误 bundle 进 Electron 产物
+- 真实 `runtime.submit` 才暴露 native dynamic require 崩溃
+- 宿主依赖不自洽，打包产物无法独立运行
+
+#### Correct
+
+```ts
+const nativeRuntimeExternals = ['libsql', /^@libsql\//]
+
+export default defineConfig({
+  main: {
+    build: {
+      rollupOptions: {
+        external: nativeRuntimeExternals,
+      },
+    },
+  },
+})
+```
+
+```json
+{
+  "dependencies": {
+    "libsql": "^0.5.22"
+  },
+  "pnpm": {
+    "onlyBuiltDependencies": ["libsql"]
+  }
+}
+```
+
+这样 shared runtime 仍可复用 CLI 的 `db.ts` / Memory 链路，但 native 绑定交由 Electron main 在宿主依赖树中正常解析，不再落入 bundler 动态 require 陷阱。
+
+## 场景：Host 直接调用 Runtime.submit 时必须显式携带当前用户消息 History
+
+### 1. Scope / Trigger
+
+- 触发条件：
+  - `studio/src/main/**`、`host/cli/**` 或其他宿主直接调用 `runtime.submit(...)`
+  - 宿主没有像 `useChat` 一样维护 `ContextManager`
+- 这是 cross-layer 契约：`Runtime.submit.text` 只是本轮输入文本，不会自动替宿主把它注入 `history`。如果宿主传空 history，Provider 侧最终可能收到空 `messages`，直接在首轮请求报 400。
+
+### 2. Signatures
+
+推荐签名：
+
+```ts
+await runtime.submit({
+  text,
+  history: [{ role: 'user', content: text }],
+  loggedUserContent: text,
+  provider,
+  model,
+})
+```
+
+CLI `useChat` 这类已维护 `ContextManager` 的场景可传：
+
+```ts
+await runtime.submit({
+  text,
+  history: contextManager.getHistoryRef(),
+  loggedUserContent,
+  provider,
+  model,
+})
+```
+
+### 3. Contracts
+
+- `Runtime.submit.text`：
+  - 用于本轮输入的语义标识、日志与调用方状态管理
+  - **不等于** Runtime 会自动构造首条 `user` history
+- `Runtime.submit.history`：
+  - 必须是“本轮送给 AgentLoop 的完整历史”
+  - 至少包含当前用户消息；否则 `AgentLoop.run(history)` 首轮就是空数组
+- `Runtime.submit.loggedUserContent`：
+  - 与写入 session JSONL 的原始用户输入保持一致
+  - 宿主直接调用时，默认应与 `text` 同源
+
+### 4. Validation & Error Matrix
+
+| 条件 | 处理方式 |
+|---|---|
+| 宿主直接调 `runtime.submit` 且未传 `history` | 视为高风险主链路缺陷，必须修宿主 submit 装配 |
+| Provider 返回 `messages must not be empty` | 优先检查宿主是否遗漏当前 user turn history |
+| 使用 `ContextManager` 的宿主传 `contextManager.getHistoryRef()` | 合法，前提是 submit 前已把当前 user turn 写入 ContextManager |
+
+### 5. Good / Base / Bad Cases
+
+- Good：
+  - `Studio` 主进程在 submit 前构造 `[{ role: 'user', content: text }]`
+  - `CLI useChat` 先 `pushUser(...)`，再把 ContextManager history 传给 runtime
+- Base：
+  - 一次性宿主至少保证首轮 history 不为空
+- Bad：
+  - 只传 `text/provider/model`，期望 Runtime 自己“猜”出 messages
+
+### 6. Tests Required
+
+- 单元测试：
+  - `studio-runtime-service.test.ts`
+  - `studio-runtime-service-guard.test.ts`
+  - 断言 `runtime.submit` 收到 `history: [{ role: 'user', content: text }]` 与 `loggedUserContent`
+- 回归验证：
+  - 真实首轮对话不再报 Provider 侧 `messages must not be empty`
+
+### 7. Wrong vs Correct
+
+#### Wrong
+
+```ts
+await runtime.submit({
+  text,
+  provider,
+  model,
+})
+```
+
+问题：
+
+- AgentLoop 首轮拿到空 history
+- Provider 侧可能直接报 `messages must not be empty`
+
+#### Correct
+
+```ts
+await runtime.submit({
+  text,
+  history: [{ role: 'user', content: text }],
+  loggedUserContent: text,
+  provider,
+  model,
+})
+```
+
+这样 Runtime 才能像 CLI 主链路一样，真正从当前用户消息开始构造首轮对话。

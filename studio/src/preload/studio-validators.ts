@@ -137,11 +137,12 @@ export function parseStudioRuntimeSubmitRequest(
         key !== 'text' &&
         key !== 'projectPath' &&
         key !== 'agentId' &&
+        key !== 'providerId' &&
         key !== 'modelId',
     )
   ) {
     throw new StudioBridgeValidationError(
-      'runtime.submit 只允许 text/projectPath/agentId/modelId 字段。',
+      'runtime.submit 只允许 text/projectPath/agentId/providerId/modelId 字段。',
     )
   }
   if (typeof value.text !== 'string') {
@@ -175,12 +176,17 @@ export function parseStudioRuntimeSubmitRequest(
     'runtime.submit.projectPath',
   )
   const agentId = parseNullableField(value.agentId, 'runtime.submit.agentId')
+  const providerId = parseNullableField(
+    value.providerId,
+    'runtime.submit.providerId',
+  )
   const modelId = parseNullableField(value.modelId, 'runtime.submit.modelId')
 
   return {
     text,
     ...(projectPath === undefined ? {} : { projectPath }),
     ...(agentId === undefined ? {} : { agentId }),
+    ...(providerId === undefined ? {} : { providerId }),
     ...(modelId === undefined ? {} : { modelId }),
   }
 }
@@ -193,8 +199,8 @@ export function parseStudioShellSnapshotRequest(
   }
 
   const value = assertPlainObject(payload, 'shell.getSnapshot 参数')
-  if (Object.keys(value).some((key) => key !== 'projectPath')) {
-    throw new StudioBridgeValidationError('shell.getSnapshot 只允许 projectPath 字段。')
+  if (Object.keys(value).some((key) => key !== 'projectPath' && key !== 'sessionId')) {
+    throw new StudioBridgeValidationError('shell.getSnapshot 只允许 projectPath/sessionId 字段。')
   }
   if (
     value.projectPath !== undefined &&
@@ -203,8 +209,18 @@ export function parseStudioShellSnapshotRequest(
   ) {
     throw new StudioBridgeValidationError('shell.getSnapshot.projectPath 必须是字符串或 null。')
   }
+  if (
+    value.sessionId !== undefined &&
+    value.sessionId !== null &&
+    typeof value.sessionId !== 'string'
+  ) {
+    throw new StudioBridgeValidationError('shell.getSnapshot.sessionId 必须是字符串或 null。')
+  }
 
-  return value.projectPath === undefined ? {} : { projectPath: value.projectPath as string | null }
+  return {
+    ...(value.projectPath === undefined ? {} : { projectPath: value.projectPath as string | null }),
+    ...(value.sessionId === undefined ? {} : { sessionId: value.sessionId as string | null }),
+  }
 }
 
 function parseProviderSettingsEntry(
@@ -1221,6 +1237,212 @@ function parseProjectSessionSummary(
   }
 }
 
+function parseConversationToolEvent(
+  payload: unknown,
+  subject: string,
+) {
+  const value = assertPlainObject(payload, subject)
+  if (typeof value.toolCallId !== 'string') {
+    throw new StudioBridgeValidationError(`${subject}.toolCallId 必须是字符串。`)
+  }
+  if (typeof value.toolName !== 'string') {
+    throw new StudioBridgeValidationError(`${subject}.toolName 必须是字符串。`)
+  }
+  if (!isPlainObject(value.args)) {
+    throw new StudioBridgeValidationError(`${subject}.args 必须是对象。`)
+  }
+  if (
+    value.durationMs !== undefined &&
+    value.durationMs !== null &&
+    typeof value.durationMs !== 'number'
+  ) {
+    throw new StudioBridgeValidationError(`${subject}.durationMs 必须是数字或 null。`)
+  }
+  if (
+    value.success !== undefined &&
+    value.success !== null &&
+    typeof value.success !== 'boolean'
+  ) {
+    throw new StudioBridgeValidationError(`${subject}.success 必须是布尔值或 null。`)
+  }
+  if (
+    value.resultSummary !== undefined &&
+    value.resultSummary !== null &&
+    typeof value.resultSummary !== 'string'
+  ) {
+    throw new StudioBridgeValidationError(`${subject}.resultSummary 必须是字符串或 null。`)
+  }
+  if (
+    value.resultFull !== undefined &&
+    value.resultFull !== null &&
+    typeof value.resultFull !== 'string'
+  ) {
+    throw new StudioBridgeValidationError(`${subject}.resultFull 必须是字符串或 null。`)
+  }
+  if (
+    value.agentId !== undefined &&
+    value.agentId !== null &&
+    typeof value.agentId !== 'string'
+  ) {
+    throw new StudioBridgeValidationError(`${subject}.agentId 必须是字符串或 null。`)
+  }
+
+  return {
+    toolCallId: value.toolCallId,
+    toolName: value.toolName,
+    args: value.args as Record<string, unknown>,
+    ...(typeof value.durationMs === 'number' ? { durationMs: value.durationMs } : {}),
+    ...(typeof value.success === 'boolean' ? { success: value.success } : {}),
+    ...(typeof value.resultSummary === 'string'
+      ? { resultSummary: value.resultSummary }
+      : {}),
+    ...(typeof value.resultFull === 'string' ? { resultFull: value.resultFull } : {}),
+    ...(typeof value.agentId === 'string' ? { agentId: value.agentId } : {}),
+  }
+}
+
+function parseConversationUsage(
+  payload: unknown,
+  subject: string,
+) {
+  const value = assertPlainObject(payload, subject)
+  const keys = [
+    'inputTokens',
+    'outputTokens',
+    'cacheReadTokens',
+    'cacheWriteTokens',
+  ] as const
+
+  for (const key of keys) {
+    if (typeof value[key] !== 'number') {
+      throw new StudioBridgeValidationError(`${subject}.${key} 必须是数字。`)
+    }
+  }
+
+  return {
+    inputTokens: value.inputTokens as number,
+    outputTokens: value.outputTokens as number,
+    cacheReadTokens: value.cacheReadTokens as number,
+    cacheWriteTokens: value.cacheWriteTokens as number,
+  }
+}
+
+function parseConversationMessage(
+  payload: unknown,
+  subject: string,
+) {
+  const value = assertPlainObject(payload, subject)
+  if (typeof value.id !== 'string') {
+    throw new StudioBridgeValidationError(`${subject}.id 必须是字符串。`)
+  }
+  if (
+    typeof value.role !== 'string' ||
+    !['user', 'assistant', 'system'].includes(value.role)
+  ) {
+    throw new StudioBridgeValidationError(`${subject}.role 非法。`)
+  }
+  if (typeof value.content !== 'string') {
+    throw new StudioBridgeValidationError(`${subject}.content 必须是字符串。`)
+  }
+  if (
+    value.toolEvents !== undefined &&
+    !Array.isArray(value.toolEvents)
+  ) {
+    throw new StudioBridgeValidationError(`${subject}.toolEvents 必须是数组。`)
+  }
+  if (
+    value.providerId !== undefined &&
+    value.providerId !== null &&
+    typeof value.providerId !== 'string'
+  ) {
+    throw new StudioBridgeValidationError(`${subject}.providerId 必须是字符串或 null。`)
+  }
+  if (
+    value.modelId !== undefined &&
+    value.modelId !== null &&
+    typeof value.modelId !== 'string'
+  ) {
+    throw new StudioBridgeValidationError(`${subject}.modelId 必须是字符串或 null。`)
+  }
+  if (
+    value.thinking !== undefined &&
+    value.thinking !== null &&
+    typeof value.thinking !== 'string'
+  ) {
+    throw new StudioBridgeValidationError(`${subject}.thinking 必须是字符串或 null。`)
+  }
+  if (
+    value.usage !== undefined &&
+    value.usage !== null &&
+    !isPlainObject(value.usage)
+  ) {
+    throw new StudioBridgeValidationError(`${subject}.usage 必须是对象或 null。`)
+  }
+  if (
+    value.llmCallCount !== undefined &&
+    value.llmCallCount !== null &&
+    typeof value.llmCallCount !== 'number'
+  ) {
+    throw new StudioBridgeValidationError(`${subject}.llmCallCount 必须是数字或 null。`)
+  }
+  if (
+    value.toolCallCount !== undefined &&
+    value.toolCallCount !== null &&
+    typeof value.toolCallCount !== 'number'
+  ) {
+    throw new StudioBridgeValidationError(`${subject}.toolCallCount 必须是数字或 null。`)
+  }
+
+  return {
+    id: value.id,
+    role: value.role as 'user' | 'assistant' | 'system',
+    content: value.content,
+    ...(value.toolEvents === undefined
+      ? {}
+      : {
+          toolEvents: (value.toolEvents as unknown[]).map((item, index) =>
+            parseConversationToolEvent(item, `${subject}.toolEvents[${index}]`),
+          ),
+        }),
+    ...(value.providerId === undefined ? {} : { providerId: value.providerId as string | null }),
+    ...(value.modelId === undefined ? {} : { modelId: value.modelId as string | null }),
+    ...(typeof value.thinking === 'string' ? { thinking: value.thinking } : {}),
+    ...(value.usage === undefined || value.usage === null
+      ? {}
+      : { usage: parseConversationUsage(value.usage, `${subject}.usage`) }),
+    ...(typeof value.llmCallCount === 'number'
+      ? { llmCallCount: value.llmCallCount }
+      : {}),
+    ...(typeof value.toolCallCount === 'number'
+      ? { toolCallCount: value.toolCallCount }
+      : {}),
+  }
+}
+
+function parseActiveSessionDetail(payload: unknown) {
+  const summary = parseProjectSessionSummary(payload)
+  const value = assertPlainObject(payload, 'shell.activeSession')
+  if (
+    value.leafEventUuid !== undefined &&
+    value.leafEventUuid !== null &&
+    typeof value.leafEventUuid !== 'string'
+  ) {
+    throw new StudioBridgeValidationError('shell.activeSession.leafEventUuid 必须是字符串或 null。')
+  }
+  if (!Array.isArray(value.messages)) {
+    throw new StudioBridgeValidationError('shell.activeSession.messages 必须是数组。')
+  }
+
+  return {
+    ...summary,
+    leafEventUuid:
+      value.leafEventUuid === undefined ? null : (value.leafEventUuid as string | null),
+    messages: value.messages.map((item, index) =>
+      parseConversationMessage(item, `shell.activeSession.messages[${index}]`),
+    ),
+  }
+}
+
 function parseScratchpadEntry(payload: unknown): StudioScratchpadEntry {
   const value = assertPlainObject(payload, 'scratchpadEntries 项')
   if (typeof value.id !== 'string') {
@@ -1319,6 +1541,13 @@ export function parseStudioShellSnapshot(
   if (!Array.isArray(value.scratchpadEntries)) {
     throw new StudioBridgeValidationError('shell.scratchpadEntries 必须是数组。')
   }
+  if (
+    value.activeSession !== undefined &&
+    value.activeSession !== null &&
+    !isPlainObject(value.activeSession)
+  ) {
+    throw new StudioBridgeValidationError('shell.activeSession 必须是对象或 null。')
+  }
   if (value.issues !== undefined && !Array.isArray(value.issues)) {
     throw new StudioBridgeValidationError('shell.issues 必须是数组。')
   }
@@ -1336,6 +1565,12 @@ export function parseStudioShellSnapshot(
     },
     recentProjects: value.recentProjects.map((item) => parseRecentProjectSummary(item)),
     projectSessions: value.projectSessions.map((item) => parseProjectSessionSummary(item)),
+    ...(value.activeSession === undefined
+      ? {}
+      : {
+          activeSession:
+            value.activeSession === null ? null : parseActiveSessionDetail(value.activeSession),
+        }),
     scratchpadEntries: value.scratchpadEntries.map((item) => parseScratchpadEntry(item)),
     defaults: parseShellDefaults(value.defaults),
     issues:

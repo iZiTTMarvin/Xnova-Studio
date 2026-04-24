@@ -43,12 +43,6 @@
     "multi-model"
   ],
   "license": "MIT",
-  "pnpm": {
-    "onlyBuiltDependencies": [
-      "libsql",
-      "esbuild"
-    ]
-  },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.78.0",
     "@hono/node-server": "^1.19.11",

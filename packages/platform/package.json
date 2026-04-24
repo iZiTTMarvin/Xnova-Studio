@@ -1,0 +1,19 @@
+{
+  "name": "@xnova/platform",
+  "private": true,
+  "version": "0.0.0",
+  "type": "module",
+  "description": "Xnova 平台能力领域包",
+  "exports": {
+    ".": "./src/index.ts",
+    "./*": "./src/*"
+  },
+  "scripts": {
+    "build": "pnpm run typecheck",
+    "typecheck": "pnpm -w exec tsc --noEmit -p packages/platform/tsconfig.json",
+    "test": "pnpm -w exec vitest run --config packages/platform/vitest.config.ts"
+  },
+  "devDependencies": {
+    "@types/node": "^25.6.0"
+  }
+}

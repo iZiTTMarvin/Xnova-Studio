@@ -30,12 +30,39 @@ interface RecoveryState {
   projectDefaults: ResolvedWorkPreference['projectDefaults']
 }
 
+interface SubmitPromptResult {
+  ok: boolean
+  error?: string
+}
+
+interface LiveConversationState {
+  pendingUserText: string | null
+  assistantText: string
+  thinkingText: string
+  toolEvents: Array<{
+    toolCallId: string
+    toolName: string
+    args: Record<string, unknown>
+    status: 'running' | 'done'
+    durationMs?: number
+    success?: boolean
+    resultSummary?: string
+  }>
+  systemMessages: string[]
+}
+
 function getErrorMessage(error: unknown): string {
   return error instanceof Error ? error.message : String(error)
 }
 
-function buildShellRequest(projectPath?: string | null) {
-  return projectPath === undefined ? {} : { projectPath }
+function buildShellRequest(
+  projectPath?: string | null,
+  sessionId?: string | null,
+) {
+  return {
+    ...(projectPath === undefined ? {} : { projectPath }),
+    ...(sessionId === undefined ? {} : { sessionId }),
+  }
 }
 
 function resolveProjectPathFromSnapshot(
@@ -103,8 +130,16 @@ export function useStudioBridge() {
   const [selectedSessionId, setSelectedSessionId] = useState<string | null>(null)
   const [currentMode, setCurrentMode] = useState<'standard' | 'xforge'>('standard')
   const [currentAgentId, setCurrentAgentId] = useState<string | null>(null)
+  const [currentProviderId, setCurrentProviderId] = useState<string | null>(null)
   const [currentModelId, setCurrentModelId] = useState<string | null>(null)
   const [isSubmitting, setIsSubmitting] = useState(false)
+  const [liveConversation, setLiveConversation] = useState<LiveConversationState>({
+    pendingUserText: null,
+    assistantText: '',
+    thinkingText: '',
+    toolEvents: [],
+    systemMessages: [],
+  })
   const [recoveryState, setRecoveryState] = useState<RecoveryState>({
     status: {
       kind: 'empty',
@@ -135,6 +170,10 @@ export function useStudioBridge() {
   const activeSession: StudioProjectSessionSummary | null = useMemo(() => {
     if (!selectedSessionId) {
       return null
+    }
+
+    if (shellSnapshot?.activeSession?.sessionId === selectedSessionId) {
+      return shellSnapshot.activeSession
     }
 
     return (
@@ -269,7 +308,15 @@ export function useStudioBridge() {
       setIsSubmitting(false)
       setRuntimeInspectResult(null)
       setCurrentAgentId(null)
+      setCurrentProviderId(null)
       setCurrentModelId(null)
+      setLiveConversation({
+        pendingUserText: null,
+        assistantText: '',
+        thinkingText: '',
+        toolEvents: [],
+        systemMessages: [],
+      })
       setRecoveryState({
         status: {
           kind: 'empty',
@@ -323,13 +370,23 @@ export function useStudioBridge() {
         defaults: snapshot.defaults,
         storedPreference,
       })
+      const nextSelectedSessionId = selection?.sessionId ?? restored.sessionId
+      const nextActiveSession =
+        snapshot.activeSession?.sessionId === nextSelectedSessionId
+          ? snapshot.activeSession
+          : (snapshot.projectSessions.find(
+              (session) => session.sessionId === nextSelectedSessionId,
+            ) ?? null)
 
       setShellSnapshot(snapshot)
       setShellStatus('ready')
       setSelectedProjectPath(nextProjectPath)
-      setSelectedSessionId(selection?.sessionId ?? restored.sessionId)
+      setSelectedSessionId(nextSelectedSessionId)
       setCurrentMode(restored.mode)
       setCurrentAgentId(restored.agentId)
+      setCurrentProviderId(
+        nextActiveSession?.providerId ?? snapshot.defaults.providerId ?? null,
+      )
       setCurrentModelId(restored.modelId)
       setRecoveryState({
         status: resolveDisplayRecoveryStatus(nextStartupRoute, restored.status),
@@ -343,7 +400,9 @@ export function useStudioBridge() {
       sessionId?: string | null,
     ) => {
       try {
-        const snapshot = await bridge.shell.getSnapshot(buildShellRequest(projectPath))
+        const snapshot = await bridge.shell.getSnapshot(
+          buildShellRequest(projectPath, sessionId),
+        )
         if (disposed) {
           return
         }
@@ -372,7 +431,8 @@ export function useStudioBridge() {
 
         setHostState(state)
         setHostStatus('ready')
-        void loadShellSnapshot(state.workspacePath)
+        const storedPreference = readProjectWorkPreference(state.workspacePath)
+        void loadShellSnapshot(state.workspacePath, storedPreference?.sessionId ?? undefined)
         void inspectRuntime(bridge)
       })
       .catch((error) => {
@@ -396,7 +456,8 @@ export function useStudioBridge() {
 
       setHostState(state)
       setHostStatus('ready')
-      void loadShellSnapshot(state.workspacePath)
+      const storedPreference = readProjectWorkPreference(state.workspacePath)
+      void loadShellSnapshot(state.workspacePath, storedPreference?.sessionId ?? undefined)
       void inspectRuntime(bridge, true)
     })
 
@@ -406,6 +467,95 @@ export function useStudioBridge() {
       }
 
       setLastRuntimeEvent(event)
+      setLiveConversation((current) => {
+        switch (event.type) {
+          case 'text_delta':
+            return {
+              ...current,
+              assistantText:
+                current.assistantText +
+                (typeof event.payload?.text === 'string' ? event.payload.text : ''),
+            }
+          case 'thinking':
+            return {
+              ...current,
+              thinkingText:
+                current.thinkingText +
+                (typeof event.payload?.text === 'string' ? event.payload.text : ''),
+            }
+          case 'tool_start': {
+            const toolCallId =
+              typeof event.payload?.toolCallId === 'string'
+                ? event.payload.toolCallId
+                : `tool-${Date.now()}`
+            const toolName =
+              typeof event.payload?.toolName === 'string'
+                ? event.payload.toolName
+                : 'unknown'
+            const args =
+              event.payload?.args && typeof event.payload.args === 'object'
+                ? (event.payload.args as Record<string, unknown>)
+                : {}
+
+            return {
+              ...current,
+              toolEvents: [
+                ...current.toolEvents,
+                {
+                  toolCallId,
+                  toolName,
+                  args,
+                  status: 'running',
+                },
+              ],
+            }
+          }
+          case 'tool_end': {
+            const toolCallId =
+              typeof event.payload?.toolCallId === 'string'
+                ? event.payload.toolCallId
+                : ''
+            return {
+              ...current,
+              toolEvents: current.toolEvents.map((toolEvent) =>
+                toolEvent.toolCallId === toolCallId
+                  ? {
+                      ...toolEvent,
+                      status: 'done',
+                      ...(typeof event.payload?.durationMs === 'number'
+                        ? { durationMs: event.payload.durationMs }
+                        : {}),
+                      ...(typeof event.payload?.success === 'boolean'
+                        ? { success: event.payload.success }
+                        : {}),
+                      ...(typeof event.payload?.resultSummary === 'string'
+                        ? { resultSummary: event.payload.resultSummary }
+                        : {}),
+                    }
+                  : toolEvent,
+              ),
+            }
+          }
+          case 'warning':
+          case 'error':
+          case 'runtime.error': {
+            const message =
+              typeof event.payload?.message === 'string'
+                ? event.payload.message
+                : typeof event.payload?.error === 'string'
+                  ? event.payload.error
+                  : null
+            return message
+              ? {
+                  ...current,
+                  systemMessages: [...current.systemMessages, message],
+                }
+              : current
+          }
+          default:
+            return current
+        }
+      })
     })
 
     return () => {
@@ -430,28 +580,33 @@ export function useStudioBridge() {
       if (!response.selection.ok && response.selection.code !== 'cancelled') {
         setHostError(response.selection.message)
       }
+      const storedPreference = readProjectWorkPreference(response.state.workspacePath)
 
       const snapshot = await bridge.shell.getSnapshot(
-        buildShellRequest(response.state.workspacePath),
+        buildShellRequest(
+          response.state.workspacePath,
+          storedPreference?.sessionId ?? undefined,
+        ),
       )
       setShellStatus('ready')
       const selection = {
         projectPath: response.state.workspacePath,
       }
       const nextProjectPath = resolveProjectPathFromSnapshot(snapshot, selection)
-      const storedPreference = readProjectWorkPreference(nextProjectPath)
+      const nextStoredPreference = readProjectWorkPreference(nextProjectPath)
       const restored = resolveWorkPreferenceRestore({
         projectPath: nextProjectPath,
         startupSessionId: snapshot.startup.recentSession?.sessionId ?? null,
         sessions: snapshot.projectSessions,
         defaults: snapshot.defaults,
-        storedPreference,
+        storedPreference: nextStoredPreference,
       })
       setShellSnapshot(snapshot)
       setSelectedProjectPath(nextProjectPath)
       setSelectedSessionId(restored.sessionId)
       setCurrentMode(restored.mode)
       setCurrentAgentId(restored.agentId)
+      setCurrentProviderId(snapshot.activeSession?.providerId ?? snapshot.defaults.providerId ?? null)
       setCurrentModelId(restored.modelId)
       setRecoveryState({
         status: resolveDisplayRecoveryStatus(startupRoute, restored.status),
@@ -481,8 +636,11 @@ export function useStudioBridge() {
     setShellError(null)
 
     try {
-      const snapshot = await bridge.shell.getSnapshot({ projectPath })
       const storedPreference = readProjectWorkPreference(projectPath)
+      const snapshot = await bridge.shell.getSnapshot({
+        projectPath,
+        ...(storedPreference?.sessionId ? { sessionId: storedPreference.sessionId } : {}),
+      })
       const restored = resolveWorkPreferenceRestore({
         projectPath,
         startupSessionId: snapshot.startup.recentSession?.sessionId ?? null,
@@ -496,6 +654,7 @@ export function useStudioBridge() {
       setSelectedSessionId(restored.sessionId)
       setCurrentMode(restored.mode)
       setCurrentAgentId(restored.agentId)
+      setCurrentProviderId(snapshot.activeSession?.providerId ?? snapshot.defaults.providerId ?? null)
       setCurrentModelId(restored.modelId)
       setRecoveryState({
         status: resolveDisplayRecoveryStatus(startupRoute, restored.status),
@@ -509,20 +668,54 @@ export function useStudioBridge() {
     }
   }
 
-  const selectSession = (sessionId: string): void => {
-    setSelectedSessionId(sessionId)
-    if (!selectedProjectPath) {
+  const selectSession = async (sessionId: string): Promise<void> => {
+    if (!selectedProjectPath || !bridge) {
+      setSelectedSessionId(sessionId)
       return
     }
 
-    const nextSession =
-      shellSnapshot?.projectSessions.find((session) => session.sessionId === sessionId) ?? null
-    const nextModelId = nextSession?.modelId ?? recoveryState.projectDefaults.modelId
-    setCurrentModelId(nextModelId)
-    writeProjectWorkPreference(selectedProjectPath, {
-      sessionId,
-      modelId: nextModelId,
-    })
+    setShellStatus('loading')
+    setShellError(null)
+    try {
+      const snapshot = await bridge.shell.getSnapshot({
+        projectPath: selectedProjectPath,
+        sessionId,
+      })
+      const nextStartupRoute = resolveStartupRoute({
+        recentProject: snapshot.startup.recentProject,
+        recentSession: snapshot.startup.recentSession,
+      })
+      const storedPreference = readProjectWorkPreference(selectedProjectPath)
+      const restored = resolveWorkPreferenceRestore({
+        projectPath: selectedProjectPath,
+        startupSessionId: sessionId,
+        sessions: snapshot.projectSessions,
+        defaults: snapshot.defaults,
+        storedPreference,
+      })
+      const nextSession =
+        snapshot.projectSessions.find((session) => session.sessionId === sessionId) ?? null
+      setShellSnapshot(snapshot)
+      setShellStatus('ready')
+      setSelectedProjectPath(selectedProjectPath)
+      setSelectedSessionId(sessionId)
+      setCurrentMode(restored.mode)
+      setCurrentAgentId(restored.agentId)
+      setCurrentProviderId(nextSession?.providerId ?? snapshot.defaults.providerId ?? null)
+      setCurrentModelId(nextSession?.modelId ?? restored.modelId)
+      setRecoveryState({
+        status: resolveDisplayRecoveryStatus(nextStartupRoute, restored.status),
+        sources: restored.sources,
+        projectDefaults: restored.projectDefaults,
+      })
+      writeProjectWorkPreference(selectedProjectPath, {
+        sessionId,
+        modelId: nextSession?.modelId ?? recoveryState.projectDefaults.modelId,
+      })
+    } catch (error) {
+      setShellStatus('error')
+      setShellError(getErrorMessage(error))
+    }
   }
 
   const startupNotice = useMemo(() => {
@@ -544,13 +737,18 @@ export function useStudioBridge() {
     }
   }, [bridge, shellError, startupRoute])
 
-  const switchMode = (mode: 'standard' | 'xforge'): void => {
+  const switchMode = (mode: 'standard' | 'xforge'): string | null => {
     if (!shellSnapshot?.defaults.allowedModes.includes(mode)) {
-      return
+      return null
+    }
+
+    if (mode === 'xforge') {
+      return 'XForge 暂未开放'
     }
 
     setCurrentMode(mode)
     writeProjectWorkPreference(selectedProjectPath, { mode })
+    return null
   }
 
   const restoreProjectDefaults = (): void => {
@@ -561,6 +759,7 @@ export function useStudioBridge() {
     clearProjectWorkPreference(selectedProjectPath, ['mode', 'agentId', 'modelId'])
     setCurrentMode(recoveryState.projectDefaults.mode)
     setCurrentAgentId(recoveryState.projectDefaults.agentId)
+    setCurrentProviderId(shellSnapshot?.defaults.providerId ?? null)
     setCurrentModelId(recoveryState.projectDefaults.modelId)
     setRecoveryState((current) => ({
       ...current,
@@ -603,15 +802,39 @@ export function useStudioBridge() {
     }
   }
 
-  const submitPrompt = async (text: string): Promise<void> => {
+  const submitPrompt = async (text: string): Promise<SubmitPromptResult> => {
     const prompt = text.trim()
     if (!prompt || !bridge) {
-      return
+      return { ok: false, error: '宿主桥接不可用。' }
+    }
+    if (!hostState.workspacePath?.trim()) {
+      setRuntimeStatus('not-ready')
+      setRuntimeError('请先绑定 Workspace，再开始项目会话。')
+      return {
+        ok: false,
+        error: '请先绑定 Workspace，再开始项目会话。',
+      }
+    }
+    if (runtimeStatus !== 'ready') {
+      const message =
+        runtimeInspectResult?.issues[0]?.message ?? '请先绑定 Workspace，再开始项目会话。'
+      setRuntimeError(message)
+      return {
+        ok: false,
+        error: message,
+      }
     }
 
     setIsSubmitting(true)
     setRuntimeError(null)
     setShellError(null)
+    setLiveConversation({
+      pendingUserText: prompt,
+      assistantText: '',
+      thinkingText: '',
+      toolEvents: [],
+      systemMessages: [],
+    })
     const projectPath = selectedProjectPath ?? hostState.workspacePath ?? null
 
     try {
@@ -624,6 +847,7 @@ export function useStudioBridge() {
               text: prompt,
               projectPath,
               agentId: currentAgentId,
+              providerId: currentProviderId,
               modelId: currentModelId,
             })
           : typeof runtimeApi.submitPrompt === 'function'
@@ -638,10 +862,19 @@ export function useStudioBridge() {
       if (!submitResult.ok) {
         setRuntimeStatus('error')
         setRuntimeError(submitResult.error)
-        return
+        setLiveConversation((current) => ({
+          ...current,
+          systemMessages: [...current.systemMessages, submitResult.error],
+        }))
+        return { ok: false, error: submitResult.error }
       }
 
-      const snapshot = await bridge.shell.getSnapshot(buildShellRequest(projectPath))
+      const snapshot = await bridge.shell.getSnapshot(
+        buildShellRequest(
+          projectPath,
+          submitResult.sessionId === null ? undefined : submitResult.sessionId,
+        ),
+      )
       const selection = {
         ...(projectPath === undefined ? {} : { projectPath }),
         ...(submitResult.sessionId === null
@@ -673,19 +906,35 @@ export function useStudioBridge() {
       setSelectedSessionId(submitResult.sessionId ?? restored.sessionId)
       setCurrentMode(restored.mode)
       setCurrentAgentId(restored.agentId)
+      setCurrentProviderId(
+        snapshot.activeSession?.providerId ?? snapshot.defaults.providerId ?? null,
+      )
       setCurrentModelId(restored.modelId)
       setRecoveryState({
         status: resolveDisplayRecoveryStatus(nextStartupRoute, restored.status),
         sources: restored.sources,
         projectDefaults: restored.projectDefaults,
       })
+      setLiveConversation({
+        pendingUserText: null,
+        assistantText: '',
+        thinkingText: '',
+        toolEvents: [],
+        systemMessages: [],
+      })
       await inspectRuntime(bridge, true)
+      return { ok: true }
     } catch (error) {
       const message = getErrorMessage(error)
       setRuntimeStatus('error')
       setRuntimeError(message)
       setShellStatus('error')
       setShellError(message)
+      setLiveConversation((current) => ({
+        ...current,
+        systemMessages: [...current.systemMessages, message],
+      }))
+      return { ok: false, error: message }
     } finally {
       setIsSubmitting(false)
     }
@@ -714,7 +963,12 @@ export function useStudioBridge() {
     workContext,
     currentMode,
     currentAgentId,
+    currentProviderId,
     currentModelId,
+    setCurrentProviderModel: (providerId: string, modelId: string) => {
+      setCurrentProviderId(providerId || null)
+      setCurrentModelId(modelId || null)
+    },
     availablePrimaryAgentIds,
     recoveryStatus: recoveryState.status,
     recoverySources: recoveryState.sources,
@@ -725,6 +979,7 @@ export function useStudioBridge() {
     switchPrimaryAgent,
     submitPrompt,
     isSubmitting,
+    liveConversation,
     lastRuntimeEvent,
     settingsApi: (bridge?.settings ?? null) as StudioSettingsApi | null,
     memoryApi: bridge?.memory ?? null,

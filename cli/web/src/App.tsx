@@ -46,7 +46,7 @@ export function App() {
               <Route path="/settings" element={<SettingsPage />} />
               <Route path="/agents" element={<AgentsPage />} />
               <Route path="/logs" element={<LogsPage />} />
-              <Route path="/" element={<Navigate to="/overview" replace />} />
+              <Route path="/" element={<Navigate to="/session" replace />} />
             </Routes>
           </Suspense>
         </div>

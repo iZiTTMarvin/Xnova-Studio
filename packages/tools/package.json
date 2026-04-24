@@ -1,0 +1,25 @@
+{
+  "name": "@xnova/tools",
+  "private": true,
+  "version": "0.0.0",
+  "type": "module",
+  "description": "Xnova 能力域：工具系统",
+  "scripts": {
+    "build": "pnpm run typecheck",
+    "typecheck": "pnpm -w exec tsc --noEmit -p packages/tools/tsconfig.json",
+    "test": "pnpm -w exec vitest run --config packages/tools/vitest.config.ts"
+  },
+  "exports": {
+    ".": "./src/index.ts",
+    "./*": "./src/*"
+  },
+  "dependencies": {
+    "@xnova/core": "workspace:*",
+    "execa": "^9.6.1",
+    "fast-glob": "^3.3.3"
+  },
+  "devDependencies": {
+    "@types/node": "^25.6.0",
+    "vitest": "^4.1.5"
+  }
+}

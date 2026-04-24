@@ -2,6 +2,8 @@ import { resolve } from 'node:path'
 import { defineConfig } from 'electron-vite'
 import react from '@vitejs/plugin-react'
 
+const nativeRuntimeExternals = ['libsql', /^@libsql\//]
+
 const cliAliases = {
   '@core': resolve(__dirname, '../cli/src/core'),
   '@providers': resolve(__dirname, '../cli/src/providers'),
@@ -30,6 +32,7 @@ export default defineConfig({
     build: {
       outDir: 'dist/main',
       rollupOptions: {
+        external: nativeRuntimeExternals,
         input: {
           index: resolve(__dirname, 'src/main/index.ts'),
         },

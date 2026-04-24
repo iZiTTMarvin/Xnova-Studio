@@ -1,0 +1,25 @@
+{
+  "name": "@xnova/observability",
+  "private": true,
+  "version": "0.0.0",
+  "type": "module",
+  "description": "Xnova 观测与计量领域包",
+  "exports": {
+    ".": "./src/index.ts",
+    "./*": "./src/*"
+  },
+  "scripts": {
+    "build": "pnpm run typecheck",
+    "typecheck": "pnpm -w exec tsc --noEmit -p packages/observability/tsconfig.json",
+    "test": "pnpm -w exec vitest run --config packages/observability/vitest.config.ts"
+  },
+  "dependencies": {
+    "@xnova/core": "workspace:*",
+    "@xnova/mcp": "workspace:*",
+    "@xnova/persistence": "workspace:*",
+    "libsql": "^0.5.22"
+  },
+  "devDependencies": {
+    "@types/node": "^25.6.0"
+  }
+}

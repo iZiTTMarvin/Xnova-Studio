@@ -237,6 +237,95 @@ function buildProjectSessions(
     })
 }
 
+function selectActiveSessionId(
+  request: StudioShellSnapshotRequest,
+  projectPath: string | null,
+  startupSession: StudioStartupSessionCandidate | null,
+  projectSessions: StudioProjectSessionSummary[],
+): string | null {
+  const requestedSessionId = request.sessionId?.trim()
+  if (requestedSessionId) {
+    return projectSessions.some((session) => session.sessionId === requestedSessionId)
+      ? requestedSessionId
+      : null
+  }
+
+  if (
+    startupSession?.valid &&
+    startupSession.projectPath === projectPath &&
+    projectSessions.some((session) => session.sessionId === startupSession.sessionId)
+  ) {
+    return startupSession.sessionId
+  }
+
+  return projectSessions[0]?.sessionId ?? null
+}
+
+function buildActiveSessionDetail(
+  sessionId: string | null,
+  projectSessions: StudioProjectSessionSummary[],
+  store: Pick<SessionStore, 'loadMessages'>,
+) {
+  if (!sessionId) {
+    return null
+  }
+
+  const summary =
+    projectSessions.find((session) => session.sessionId === sessionId) ?? null
+  if (!summary) {
+    return null
+  }
+
+  try {
+    const snapshot = store.loadMessages(sessionId)
+    return {
+      ...summary,
+      leafEventUuid: snapshot.leafEventUuid,
+      messages: snapshot.messages.map((message) => ({
+        id: message.id,
+        role: message.role,
+        content: message.content,
+        ...(message.toolEvents
+          ? {
+              toolEvents: message.toolEvents.map((toolEvent) => ({
+                toolCallId: toolEvent.toolCallId,
+                toolName: toolEvent.toolName,
+                args: toolEvent.args,
+                ...(typeof toolEvent.durationMs === 'number'
+                  ? { durationMs: toolEvent.durationMs }
+                  : {}),
+                ...(typeof toolEvent.success === 'boolean'
+                  ? { success: toolEvent.success }
+                  : {}),
+                ...(typeof toolEvent.resultSummary === 'string'
+                  ? { resultSummary: toolEvent.resultSummary }
+                  : {}),
+                ...(typeof toolEvent.resultFull === 'string'
+                  ? { resultFull: toolEvent.resultFull }
+                  : {}),
+                ...(typeof toolEvent.agentId === 'string'
+                  ? { agentId: toolEvent.agentId }
+                  : {}),
+              })),
+            }
+          : {}),
+        ...(message.provider ? { providerId: message.provider } : {}),
+        ...(message.model ? { modelId: message.model } : {}),
+        ...(message.thinking ? { thinking: message.thinking } : {}),
+        ...(message.usage ? { usage: message.usage } : {}),
+        ...(message.llmCallCount !== undefined
+          ? { llmCallCount: message.llmCallCount }
+          : {}),
+        ...(message.toolCallCount !== undefined
+          ? { toolCallCount: message.toolCallCount }
+          : {}),
+      })),
+    }
+  } catch {
+    return null
+  }
+}
+
 export interface StudioShellInspector {
   inspect(
     request: StudioShellSnapshotRequest,
@@ -323,6 +412,17 @@ export function createStudioShellInspector(
         store,
         readSessionOverview,
       )
+      const activeSessionId = selectActiveSessionId(
+        request,
+        projectPath,
+        startupSession,
+        projectSessions,
+      )
+      const activeSession = buildActiveSessionDetail(
+        activeSessionId,
+        projectSessions,
+        store,
+      )
 
       const defaults = {
         projectPath,
@@ -365,6 +465,7 @@ export function createStudioShellInspector(
         },
         recentProjects,
         projectSessions,
+        ...(activeSession ? { activeSession } : {}),
         scratchpadEntries: [],
         defaults,
         issues,

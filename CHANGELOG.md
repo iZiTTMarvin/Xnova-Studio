@@ -1,3 +1,59 @@
+## 2026-04-24
+- **Studio Runtime 边界收口**：清零 `runtime/main` 对 `cli/src` 的核心直连并补齐宿主会话生命周期
+  - `packages/runtime` 改为通过 package alias 消费 `config/core/mcp/memory/persistence/providers/skills/observability/plugin`，并把 `cleanup-service / event-bus / image-store / message-utils / hooks / file-index` 补齐到 `packages/core`
+  - `apps/studio` 的 main 层、`electron.vite`、`vitest`、`tsconfig` 全面改接 `packages/*`；`runtime.submit` 新增 `sessionId` 契约，主进程改为复用会话级 runtime，并为权限请求加入显式策略与审计事件
+  - 补齐 `plugin` 真实测试、runtime/studio 边界回归测试，并重新通过根工作区 `typecheck / test / build`；任务详情已归档至 `.trellis/tasks/04-24-04-24-studio-runtime-pivot/`
+
+- **Engine Service API 收敛**：将旧 CLI 命令能力收敛为面向 `apps/studio` 的 runtime service API
+  - 新增 `packages/runtime/src/engine-service-api.ts` 与配套类型导出，统一提供 `runtime/session/memory/mcp/skills/usage/plugin/maintenance` 服务合同，并落地旧命令能力映射
+  - `apps/studio/src/main/**` 最小接入 `createEngineServiceApi()`，通过 service API 复用 memory/mcp/skills/runtime.setModel 的核心业务能力，避免迁移命令壳
+  - 新增 runtime 与 studio adapter 回归测试并完成相关 `test/typecheck/build` 验证；任务详情已归档至 `.trellis/tasks/04-24-04-24-engine-service-api/`
+
+- **基础领域包迁移**：抽离 config/providers/persistence/platform/observability 为可独立消费的 packages
+  - 新增 `packages/config`、`packages/providers`、`packages/persistence`、`packages/platform`、`packages/observability` 的源码、`package.json`、`tsconfig.json` 与最小测试/构建配置，按 copy-first 复用 CLI 基础能力
+  - `packages/core` / `packages/runtime` 的基础域路径映射与关键导入切换到 `packages/*`，移除 runtime 对 `cli/src/config|providers|persistence|platform|observability` 的直接依赖
+  - 迁移并补齐基础域回归测试（先失败后通过）与相关包 `typecheck/test/build` 验证；任务详情见 `.trellis/tasks/04-24-04-24-foundation-domain-packages/`
+
+- **能力领域包迁移**：抽离 tools/memory/mcp/skills/plugin 为可独立消费的 packages
+  - 新增 `packages/tools`、`packages/memory`、`packages/mcp`、`packages/skills`、`packages/plugin` 的源码、`package.json`、`tsconfig.json` 与最小测试/构建配置，按 copy-first 复用 CLI 能力实现
+  - `packages/core` / `packages/runtime` 的能力域路径映射与关键导入切换到 `packages/*`，移除 runtime 对 `cli/src/tools|memory|mcp|skills|plugin` 的直接依赖
+  - 补齐迁移回归测试（先失败后通过）与相关包 `typecheck/test/build` 验证；任务详情已归档至 `.trellis/tasks/04-24-04-24-capability-domain-packages/`
+
+- **Runtime/Core P0 闭环修复**：改正运行时包改线、硬门禁与主宿主语义
+  - `packages/runtime` 改为直接依赖 `@xnova/core`，`apps/studio` 的 runtime service / inspector 与相关测试改接 `@xnova/runtime`
+  - 根工作区脚本不再使用 `--if-present` 软门禁，新增 `@xnova/core`、`@xnova/runtime` 的显式 `typecheck/test/build` 链路
+  - 冻结旧 `studio/` 目录并将脚本转发到 `apps/studio/`；同步修正 `packages/core` 的静默吞错日志与 workspace 依赖告警
+
+- **Runtime 包迁移**：按 copy-first 将旧 `cli/src/runtime/**` 基线迁入 `packages/runtime/src/**`
+  - 复制 `create-runtime`、`types`、`events`、`bridge`、`inspect`、`tool-registry` 与 `index`，仅做最小 import 路径修正
+  - 迁移并恢复 runtime 测试基线：`packages/runtime/src/__tests__` 共 14 条用例通过（含先失败后通过的 TDD 验证）
+  - 新增 `packages/runtime/package.json`、`tsconfig.json`、`vitest.config.ts` 最小包配置；任务详情已归档至 `.trellis/tasks/04-24-04-24-runtime-package-extract/`
+
+- **工作区骨架**：建立 `packages/ + apps/` 基线并迁移 Studio 宿主承载目录
+  - 新增根 `package.json`、`pnpm-workspace.yaml`、`tsconfig.base.json` 与 `tsconfig.json`，提供 workspace 与 TS 路径别名基线
+  - 按 copy-first 将 `studio/` 复制到 `apps/studio/`，并最小修正 `electron.vite.config.ts` / `tsconfig.json` 中的 `cli` 相对路径
+  - 新增 `apps/cli`、`packages/runtime`、`packages/core` 占位结构，不包含业务迁移实现；任务详情已归档至 `.trellis/tasks/04-24-04-24-packages-apps-bootstrap/`
+
+- **Studio Runtime Submit 修复**：补齐桌面宿主提交首轮消息的 history 契约
+  - `studio/src/main/studio-runtime-service.ts` 提交 shared runtime 时显式携带当前用户消息 `history` 与 `loggedUserContent`，修复 Provider 侧 `messages must not be empty`
+  - 更新 `studio/tests/studio-runtime-service.test.ts`、`studio/tests/studio-runtime-service-guard.test.ts`，锁住桌面宿主 submit 入参契约
+  - 回写 `.trellis/spec/backend/runtime-boundary.md`，明确 host 直调 `runtime.submit` 时不得省略当前 user turn history；任务详情已归档至 `.trellis/tasks/04-24-studio-main-flow-repair/`
+
+- **Studio Runtime 打包修复**：修正 Electron main 对 `libsql` native 依赖的打包边界
+  - `studio/electron.vite.config.ts` 将 `libsql` 与 `@libsql/*` 设为 main bundle external，避免运行时落入 Rollup 的动态 require 陷阱
+  - `studio/package.json`、`studio/pnpm-lock.yaml` 显式补齐 `libsql` 运行时依赖与 `pnpm.onlyBuiltDependencies`，确保 Studio 自身携带 native 绑定
+  - 新增 `studio/tests/native-runtime-packaging.test.ts` 锁住 native 打包边界；任务详情已归档至 `.trellis/tasks/04-24-studio-main-flow-repair/`
+
+- **Studio 主链路修复**：补齐会话聊天视图、runtime 门禁与会话级模型选择
+  - `studio/src/renderer/**` 新增真实会话聊天流与会话级 Provider / Model 选择器，项目会话页可继续输入，不再只显示摘要卡片
+  - `studio/src/main/**`、`studio/src/preload/**`、`studio/src/shared/**` 打通 `providerId / sessionId / activeSession` 契约，并让未绑定 Workspace 时真正阻止提交
+  - 顶部 `XForge` 点击改为明确提示“暂未开放”，同步补齐 `studio` 主链路回归测试；任务详情已归档至 `.trellis/tasks/04-24-studio-main-flow-repair/`
+
+- **运行时内核抽离**：按 copy-first 将核心编排层迁入 `packages/core`
+  - 新建 `packages/core/src`，复制 `agent-loop`、`bootstrap`、`context-manager`、`context-tracker`、`parallel-executor`、`args-summarizer` 及直接依赖 `types/repetition-detector/debug`
+  - 新增 `packages/core/src/index.ts`、`packages/core/package.json`、`packages/core/tsconfig.json` 与迁移测试 `packages/core/src/__tests__/core-kernel-extract.test.mjs`
+  - 保留 `bootstrap` 对旧 `cli/src` 领域包的临时依赖映射（providers/tools/memory/mcp/config 等），等待后续 package 子任务接管
+
 ## 2026-04-23
 - **Studio Settings Dialog**：重做设置为 Cherry 风格悬浮窗并打通模型服务可编辑流
   - 新增/重写 `StudioSettingsDialog` 三栏结构：左侧模块导航、模型服务平台列表、平台配置详情；`open=false` 返回 `null`，根节点固定 `role="dialog"`

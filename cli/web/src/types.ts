@@ -72,7 +72,7 @@ export type ServerEvent =
 
 /** 客户端发送的消息 */
 export type ClientMessage =
-  | { type: 'chat'; text: string; imageIds?: string[] }
+  | { type: 'chat'; text: string; imageIds?: string[]; provider?: string; model?: string }
   | { type: 'permission'; allow: boolean; always?: boolean }
   | { type: 'question'; cancelled: boolean; answers?: Record<string, string | string[]> }
   | { type: 'abort' }

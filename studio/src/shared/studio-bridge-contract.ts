@@ -28,6 +28,7 @@ export interface RuntimeSubmitRequest {
   text: string
   projectPath?: string | null
   agentId?: string | null
+  providerId?: string | null
   modelId?: string | null
 }
 
@@ -102,6 +103,7 @@ export interface StudioStartupSessionCandidate {
 
 export interface StudioShellSnapshotRequest {
   projectPath?: string | null
+  sessionId?: string | null
 }
 
 export interface StudioRecentProjectSummary {
@@ -132,6 +134,40 @@ export interface StudioProjectSessionSummary {
   subagents: StudioProjectSubagentSummary[]
 }
 
+export interface StudioConversationToolEvent {
+  toolCallId: string
+  toolName: string
+  args: Record<string, unknown>
+  durationMs?: number
+  success?: boolean
+  resultSummary?: string
+  resultFull?: string
+  agentId?: string
+}
+
+export interface StudioConversationMessage {
+  id: string
+  role: 'user' | 'assistant' | 'system'
+  content: string
+  toolEvents?: StudioConversationToolEvent[]
+  providerId?: string | null
+  modelId?: string | null
+  thinking?: string | null
+  usage?: {
+    inputTokens: number
+    outputTokens: number
+    cacheReadTokens: number
+    cacheWriteTokens: number
+  }
+  llmCallCount?: number
+  toolCallCount?: number
+}
+
+export interface StudioActiveSessionDetail extends StudioProjectSessionSummary {
+  leafEventUuid: string | null
+  messages: StudioConversationMessage[]
+}
+
 export interface StudioScratchpadEntry {
   id: string
   title: string
@@ -157,6 +193,7 @@ export interface StudioShellSnapshot {
   }
   recentProjects: StudioRecentProjectSummary[]
   projectSessions: StudioProjectSessionSummary[]
+  activeSession?: StudioActiveSessionDetail | null
   scratchpadEntries: StudioScratchpadEntry[]
   defaults: StudioShellDefaults
   issues: StudioStatusIssue[]

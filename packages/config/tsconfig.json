@@ -1,0 +1,33 @@
+{
+  "extends": "../../tsconfig.base.json",
+  "compilerOptions": {
+    "types": ["node"],
+    "baseUrl": ".",
+    "paths": {
+      "@config/*": ["src/config/*"],
+      "@providers/*": ["../providers/src/providers/*"],
+      "@observability/*": ["../observability/src/observability/*"],
+      "@persistence/*": ["../persistence/src/persistence/*"],
+      "@platform/*": ["../platform/src/platform/*"],
+      "@tools/*": ["../tools/src/*"],
+      "@hooks": ["../core/src/hooks/index.ts"],
+      "@hooks/*": ["../core/src/hooks/*"],
+      "@mcp": ["../mcp/src/index.ts"],
+      "@mcp/*": ["../mcp/src/*"],
+      "@skills": ["../skills/src/index.ts"],
+      "@skills/*": ["../skills/src/*"],
+      "@file-index": ["../core/src/file-index/index.ts"],
+      "@file-index/*": ["../core/src/file-index/*"],
+      "@plugin": ["../plugin/src/index.ts"],
+      "@plugin/*": ["../plugin/src/*"],
+      "@memory": ["../memory/src/index.ts"],
+      "@memory/*": ["../memory/src/*"],
+      "@core": ["../core/src/index.ts"],
+      "@core/*": ["../core/src/*"],
+      "@core/*.js": ["../core/src/*.ts"],
+      "@xnova/core": ["../core/src/index.ts"],
+      "@xnova/core/*": ["../core/src/*"]
+    }
+  },
+  "include": ["src/**/*.ts"]
+}

@@ -20,9 +20,7 @@
 
 import type { ToolContext, ToolResult, StreamableTool } from '../core/types.js'
 import type { ToolRegistry } from '../core/registry.js'
-import { AgentLoop } from '../../core/agent-loop.js'
-import type { AgentEvent } from '../../core/agent-loop.js'
-import { isAbortError } from '../../core/agent-loop.js'
+import { AgentLoop, isAbortError, type AgentEvent } from '@xnova/core'
 import { sessionStore } from '../../persistence/index.js'
 import { SessionLogger } from '../../observability/session-logger.js'
 import { loadEffectiveRuntimeConfig } from '../../config/resolver.js'

@@ -1,0 +1,29 @@
+{
+  "name": "xnova-workspace",
+  "private": true,
+  "version": "0.0.0",
+  "description": "Xnova Code workspace root",
+  "pnpm": {
+    "onlyBuiltDependencies": [
+      "electron",
+      "electron-winstaller",
+      "esbuild",
+      "libsql"
+    ]
+  },
+  "scripts": {
+    "build": "pnpm --filter @xnova/config build && pnpm --filter @xnova/providers build && pnpm --filter @xnova/persistence build && pnpm --filter @xnova/platform build && pnpm --filter @xnova/observability build && pnpm --filter @xnova/core build && pnpm --filter @xnova/tools build && pnpm --filter @xnova/memory build && pnpm --filter @xnova/mcp build && pnpm --filter @xnova/skills build && pnpm --filter @xnova/plugin build && pnpm --filter @xnova/runtime build && pnpm --filter xnova-studio build",
+    "typecheck": "pnpm --filter @xnova/config typecheck && pnpm --filter @xnova/providers typecheck && pnpm --filter @xnova/persistence typecheck && pnpm --filter @xnova/platform typecheck && pnpm --filter @xnova/observability typecheck && pnpm --filter @xnova/core typecheck && pnpm --filter @xnova/tools typecheck && pnpm --filter @xnova/memory typecheck && pnpm --filter @xnova/mcp typecheck && pnpm --filter @xnova/skills typecheck && pnpm --filter @xnova/plugin typecheck && pnpm --filter @xnova/runtime typecheck && pnpm --filter xnova-studio typecheck",
+    "test": "pnpm --filter @xnova/config test && pnpm --filter @xnova/providers test && pnpm --filter @xnova/persistence test && pnpm --filter @xnova/platform test && pnpm --filter @xnova/observability test && pnpm --filter @xnova/core test && pnpm --filter @xnova/tools test && pnpm --filter @xnova/memory test && pnpm --filter @xnova/mcp test && pnpm --filter @xnova/skills test && pnpm --filter @xnova/plugin test && pnpm --filter @xnova/runtime test && pnpm --filter xnova-studio test",
+    "studio:dev": "pnpm --filter xnova-studio dev",
+    "studio:build": "pnpm --filter xnova-studio build",
+    "studio:typecheck": "pnpm --filter xnova-studio typecheck",
+    "studio:test": "pnpm --filter xnova-studio test"
+  },
+  "devDependencies": {
+    "@types/node": "^25.6.0",
+    "execa": "^9.6.1",
+    "typescript": "^6.0.3",
+    "vitest": "^4.1.5"
+  }
+}

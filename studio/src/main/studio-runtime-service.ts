@@ -2,6 +2,7 @@ import {
   loadResolvedConfig,
   type ResolvedConfigResult,
 } from '../../../cli/src/config/resolver.js'
+import type { Message } from '../../../cli/src/core/types.js'
 import type {
   RuntimeConfigInput,
   RuntimeEvent,
@@ -48,8 +49,7 @@ function toStudioRuntimeEvent(event: RuntimeEvent): StudioRuntimeEvent {
 function resolveRuntimeCwd(
   request: RuntimeSubmitRequest,
   hostState: StudioHostState,
-  fallbackCwd: string,
-): string {
+): string | null {
   const explicitProjectPath = request.projectPath?.trim()
   if (explicitProjectPath) {
     return explicitProjectPath
@@ -57,7 +57,16 @@ function resolveRuntimeCwd(
   if (hostState.workspacePath?.trim()) {
     return hostState.workspacePath
   }
-  return fallbackCwd
+  return null
+}
+
+function buildStudioRuntimeHistory(text: string): Message[] {
+  return [
+    {
+      role: 'user',
+      content: text,
+    },
+  ]
 }
 
 export function createStudioRuntimeService(
@@ -70,7 +79,6 @@ export function createStudioRuntimeService(
       return runtimeModule.createRuntime(input, bridge)
     })
   const loadResolvedConfigFn = options.loadResolvedConfigFn ?? loadResolvedConfig
-  const fallbackCwd = options.fallbackCwd ?? process.cwd()
   const logger = options.logger ?? {
     info() {
       return undefined
@@ -112,7 +120,13 @@ export function createStudioRuntimeService(
         }
       }
 
-      const cwd = resolveRuntimeCwd(request, hostState, fallbackCwd)
+      const cwd = resolveRuntimeCwd(request, hostState)
+      if (!cwd) {
+        return {
+          ok: false,
+          error: '当前尚未绑定 Workspace，无法开始项目会话。',
+        }
+      }
 
       try {
         runtimeEventSink = emitRuntimeEvent
@@ -153,6 +167,9 @@ export function createStudioRuntimeService(
 
         const turnResult = await runtimeInstance.submit({
           text,
+          history: buildStudioRuntimeHistory(text),
+          loggedUserContent: text,
+          ...(request.providerId ? { provider: request.providerId } : {}),
           ...(request.modelId ? { model: request.modelId } : {}),
         })
 

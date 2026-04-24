@@ -1,0 +1,40 @@
+{
+  "name": "xnova-studio",
+  "version": "0.7.0-beta.1",
+  "private": true,
+  "description": "Xnova Studio Electron 桌面主壳",
+  "author": "Xnova Studio Team",
+  "main": "./dist/main/index.js",
+  "scripts": {
+    "dev": "electron-vite dev",
+    "build": "electron-vite build",
+    "preview": "electron-vite preview",
+    "pack:dir": "pnpm build && electron-builder --config electron-builder.yml --dir --publish never",
+    "pack:win": "pnpm build && electron-builder --config electron-builder.yml --win nsis --x64 --publish never",
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run"
+  },
+  "engines": {
+    "node": ">=20.0.0"
+  },
+  "dependencies": {
+    "@xnova/runtime": "workspace:*",
+    "libsql": "^0.5.22",
+    "react": "^19.2.5",
+    "react-dom": "^19.2.5"
+  },
+  "devDependencies": {
+    "@testing-library/react": "^16.3.2",
+    "@types/node": "^25.6.0",
+    "@types/react": "^19.2.14",
+    "@types/react-dom": "^19.2.3",
+    "@vitejs/plugin-react": "^5.2.0",
+    "electron": "^41.2.2",
+    "electron-builder": "^26.0.12",
+    "electron-vite": "^5.0.0",
+    "jsdom": "^29.0.2",
+    "typescript": "^6.0.3",
+    "vite": "^7.3.2",
+    "vitest": "^4.1.5"
+  }
+}

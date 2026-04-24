@@ -74,81 +74,72 @@ cli/src/
 
 ## v1 演进落点
 
-需求文档已锁定的方向是 `shared runtime + dual host`。在不做大搬家的前提下，新增结构性代码优先按下面落位：
+当前主线已切换为 **`packages/ + apps/`**：
 
 ```text
 Xnova-Code/
-├─ cli/
-│  └─ src/
-│     ├─ runtime/         # 新增：共享运行时入口、边界、装配
-│     ├─ host/cli/        # 新增：CLI 宿主适配
-│     ├─ core/            # 逐步收敛到更小的编排与兼容层
-│     └─ ...
-├─ studio/                # 新增：桌面宿主
-└─ docs/
-```
-
-或者最小落点可以理解为：
-
-```text
-cli/src/
-├─ runtime/         # 新增：共享运行时入口、边界、装配
-├─ host/cli/        # 新增：CLI 宿主适配
-├─ core/            # 逐步收敛到更小的编排与兼容层
-└─ ...
+├─ packages/
+│  ├─ runtime/            # 产品核心运行时入口
+│  ├─ core/               # 运行时编排内核
+│  ├─ config/
+│  ├─ providers/
+│  ├─ persistence/
+│  ├─ tools/
+│  ├─ memory/
+│  ├─ mcp/
+│  ├─ skills/
+│  └─ ...
+├─ apps/
+│  ├─ studio/             # 唯一主宿主
+│  └─ cli/                # 次级宿主占位 / 兼容适配
+├─ cli/                   # 历史供体与迁移参考，非主落点
+└─ studio/                # 冻结的旧桌面目录
 ```
 
 新增规则：
 
-- 想做“CLI 和桌面都能复用”的代码，优先考虑 `runtime/`。
-- 明显只属于终端交互、pipe mode、Ink 装配的逻辑，放 `host/cli/`。
-- 在 `studio/` 尚未创建前，不要为了“未来也许复用”把所有东西硬塞进 `core/`。
-- `v1` 明确采用**渐进式拆分**，不是先做重型 monorepo 搬家。
-- **禁止**在 `Phase 1` 一开始把仓库整体改造成 `apps/cli + apps/studio + packages/runtime` 结构。
-- 如果后续真的需要 packages 化，也必须满足：
-  - `runtime` 边界已经在 `cli/src/runtime/` 内跑稳
-  - CLI 主链路与测试基线已经稳定
-  - 桌面宿主已经开始实际消费该边界
+- 想做“Studio 和未来 CLI 都能复用”的代码，优先进入 `packages/*`。
+- `packages/runtime` 是产品核心入口，不应再放在 `cli/` 目录语义下。
+- `apps/studio` 是唯一主宿主；`studio/` 仅保留为冻结参考目录。
+- 终端交互、旧命令系统、旧桥接服务属于宿主/遗留层，不应再反向定义核心目录结构。
 
-### Design Decision: 渐进式拆分优先于 monorepo 搬家
+### Design Decision: Packages/Apps 优先于继续挂靠 cli/
 
-**Context**：`docs/xnova-studio-v1开发文档.md` 已明确，当前项目仍处于测试基础薄弱、主链路尚在收敛阶段。
+**Context**：产品主线已从 CLI 切换到 Studio，继续把 runtime 物理放在 `cli/src/` 下会持续误导 AI、维护者和后续迁移任务。
 
 **Options Considered**：
-1. 立即做 `apps/packages` 大搬家
-2. 先在 `cli/src/` 内抽 `runtime/` 与 `host/cli/`，再让 `studio/` 接入
+1. 继续维持 `cli/src/runtime/` 作为共享运行时，再逐步修补边界
+2. 迁入 `packages/runtime` / `packages/core`，由 `apps/studio` 作为主宿主消费
 
-**Decision**：选择方案 2。原因是当前阶段最大的风险是“行为迁移”和“运行时边界不稳”，而不是仓库目录看起来不够高级。
+**Decision**：选择方案 2。原因是当前阶段最大的风险已不再是“是否过早 monorepo”，而是“runtime 物理位置与产品语义长期错位”。
 
 **Why**：
 
-- 先做 monorepo 搬家，会把目录迁移、构建链、路径别名、运行时回归叠在同一批变更里
-- 当前 `cli/` 仍是唯一真实主实现，应该先围绕它抽稳定边界
-- `studio/` 尚未落地时，过早 packages 化只会放大迁移成本
+- `runtime` 仍挂在 `cli/` 下时，任何人都会默认它是 CLI 内部实现
+- `apps/studio` 作为主宿主需要稳定依赖 package 化核心，而不是直接绑定历史供体目录
+- `cli/` 现在的职责是提供可迁移能力，不再是定义项目主结构的锚点
 
 **Wrong vs Correct**
 
 #### Wrong
 
 ```text
-apps/cli
-apps/studio
-packages/runtime
-packages/config
-packages/agents
+cli/src/runtime/
+cli/src/core/
+studio/
 ```
 
-在没有 runtime 稳定边界、没有测试基线前直接全仓搬家。
+让主产品继续依赖历史目录语义。
 
 #### Correct
 
 ```text
-cli/src/runtime/
-cli/src/host/cli/
-studio/
+packages/runtime/
+packages/core/
+apps/studio/
 ```
 
-先完成增量拆分，再决定是否值得继续 packages 化。
+让物理位置、语义边界和产品主线保持一致。
 
 ## 命名约定
 

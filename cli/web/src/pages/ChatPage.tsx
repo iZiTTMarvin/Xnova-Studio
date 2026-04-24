@@ -4,6 +4,7 @@ import { useState, useEffect, useRef, useCallback } from 'react'
 import { useWebSocket } from '../hooks/useWebSocket'
 import { MessageBubble } from '../components/MessageBubble'
 import { InputBar } from '../components/InputBar'
+import { ModelSelector } from '../components/ModelSelector'
 import { ToolStatus } from '../components/ToolStatus'
 import { PermissionCard } from '../components/PermissionCard'
 import { UserQuestionForm } from '../components/UserQuestionForm'
@@ -41,6 +42,8 @@ export function ChatPage({ targetSessionId }: ChatPageProps) {
   const [memoryPanelOpen, setMemoryPanelOpen] = useState(false)
   /** 状态栏数据（CLI 推送的系统/进程/token/上下文指标） */
   const [statusBarData, setStatusBarData] = useState<StatusBarData | null>(null)
+  const [selectedProvider, setSelectedProvider] = useState<string | undefined>(undefined)
+  const [selectedModel, setSelectedModel] = useState<string | undefined>(undefined)
 
   const bottomRef = useRef<HTMLDivElement>(null)
   const msgIdCounter = useRef(0)
@@ -108,7 +111,8 @@ export function ChatPage({ targetSessionId }: ChatPageProps) {
         setSessionId(event.sessionId)
         setCliConnected(event.cliConnected !== false)
         setActiveSessionId(event.activeSessionId ?? null)
-        // model 信息现在由每条 assistant 消息携带，不需要 session 级别的
+        if (event.provider) setSelectedProvider(event.provider)
+        if (event.model) setSelectedModel(event.model)
         if (!targetSessionId && event.sessionId) {
           window.history.replaceState(null, '', `/session/${event.sessionId}`)
         }
@@ -385,9 +389,15 @@ export function ChatPage({ targetSessionId }: ChatPageProps) {
     setIsStreaming(true)
     turnTextRef.current = ''
     turnToolsRef.current = []
-    // WS 发送时携带 imageIds
-    setTimeout(() => send({ type: 'chat', text, ...(imageIds?.length ? { imageIds } : {}) }), 50)
-  }, [send, isStreaming])
+    // WS 发送时携带 imageIds + provider/model
+    setTimeout(() => send({
+      type: 'chat',
+      text,
+      ...(imageIds?.length ? { imageIds } : {}),
+      ...(selectedProvider ? { provider: selectedProvider } : {}),
+      ...(selectedModel ? { model: selectedModel } : {}),
+    }), 50)
+  }, [send, isStreaming, selectedProvider, selectedModel])
 
   return (
     <div className="flex flex-col h-full">
@@ -509,6 +519,15 @@ export function ChatPage({ targetSessionId }: ChatPageProps) {
         )}
         <div ref={bottomRef} />
       </div>
+
+      <ModelSelector
+        currentProvider={selectedProvider}
+        currentModel={selectedModel}
+        onChange={(provider, model) => {
+          setSelectedProvider(provider)
+          setSelectedModel(model)
+        }}
+      />
 
       <InputBar onSubmit={handleSubmit} disabled={!connected || !!compacting} />
 

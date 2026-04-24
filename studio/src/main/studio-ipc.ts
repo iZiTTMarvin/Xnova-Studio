@@ -78,11 +78,12 @@ function parseRuntimeSubmitPayload(payload: unknown): RuntimeSubmitRequest {
         key !== 'text' &&
         key !== 'projectPath' &&
         key !== 'agentId' &&
+        key !== 'providerId' &&
         key !== 'modelId',
     )
   ) {
     throw new Error(
-      'studio.runtime.submit 只允许 text/projectPath/agentId/modelId 字段。',
+      'studio.runtime.submit 只允许 text/projectPath/agentId/providerId/modelId 字段。',
     )
   }
 
@@ -116,12 +117,17 @@ function parseRuntimeSubmitPayload(payload: unknown): RuntimeSubmitRequest {
     'studio.runtime.submit.projectPath',
   )
   const agentId = parseNullableField(payload.agentId, 'studio.runtime.submit.agentId')
+  const providerId = parseNullableField(
+    payload.providerId,
+    'studio.runtime.submit.providerId',
+  )
   const modelId = parseNullableField(payload.modelId, 'studio.runtime.submit.modelId')
 
   return {
     text,
     ...(projectPath === undefined ? {} : { projectPath }),
     ...(agentId === undefined ? {} : { agentId }),
+    ...(providerId === undefined ? {} : { providerId }),
     ...(modelId === undefined ? {} : { modelId }),
   }
 }
@@ -137,8 +143,8 @@ function parseShellSnapshotPayload(
     throw new Error('studio.shell.getSnapshot 参数必须是对象。')
   }
 
-  if (Object.keys(payload).some((key) => key !== 'projectPath')) {
-    throw new Error('studio.shell.getSnapshot 只允许 projectPath 字段。')
+  if (Object.keys(payload).some((key) => key !== 'projectPath' && key !== 'sessionId')) {
+    throw new Error('studio.shell.getSnapshot 只允许 projectPath/sessionId 字段。')
   }
 
   if (
@@ -148,10 +154,22 @@ function parseShellSnapshotPayload(
   ) {
     throw new Error('studio.shell.getSnapshot.projectPath 必须是字符串或 null。')
   }
+  if (
+    payload.sessionId !== undefined &&
+    payload.sessionId !== null &&
+    typeof payload.sessionId !== 'string'
+  ) {
+    throw new Error('studio.shell.getSnapshot.sessionId 必须是字符串或 null。')
+  }
 
-  return payload.projectPath === undefined
-    ? {}
-    : { projectPath: payload.projectPath as string | null }
+  return {
+    ...(payload.projectPath === undefined
+      ? {}
+      : { projectPath: payload.projectPath as string | null }),
+    ...(payload.sessionId === undefined
+      ? {}
+      : { sessionId: payload.sessionId as string | null }),
+  }
 }
 
 function parseProviderSettingsEntry(

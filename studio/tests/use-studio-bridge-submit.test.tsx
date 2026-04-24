@@ -177,6 +177,7 @@ describe('useStudioBridge runtime submit', () => {
       text: '分析当前项目结构',
       projectPath: 'D:/workspace/demo',
       agentId: 'general',
+      providerId: 'anthropic',
       modelId: 'claude-sonnet-4-6',
     })
     await waitFor(() => {

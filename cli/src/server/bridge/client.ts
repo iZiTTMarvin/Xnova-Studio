@@ -99,6 +99,14 @@ function doConnect(port: number): void {
 function handleBridgeMessage(msg: { type: string; [key: string]: unknown }): void {
   switch (msg.type) {
     case 'chat':
+      // Web 端携带了 model/provider → 先切换模型（与 /model 指令等价）
+      if (msg['provider'] || msg['model']) {
+        eventBus.emit({
+          type: 'config_changed',
+          provider: String(msg['provider'] ?? ''),
+          model: String(msg['model'] ?? ''),
+        })
+      }
       eventBus.emit({
         type: 'user_input',
         text: String(msg['text'] ?? ''),

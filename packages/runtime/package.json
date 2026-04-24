@@ -1,0 +1,30 @@
+{
+  "name": "@xnova/runtime",
+  "private": true,
+  "version": "0.0.0",
+  "type": "module",
+  "description": "Xnova 共享运行时核心入口",
+  "scripts": {
+    "build": "pnpm run typecheck",
+    "typecheck": "pnpm -w exec tsc --noEmit -p packages/runtime/tsconfig.json",
+    "test": "pnpm -w exec vitest run --config packages/runtime/vitest.config.ts"
+  },
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "dependencies": {
+    "@xnova/config": "workspace:*",
+    "@xnova/core": "workspace:*",
+    "@xnova/mcp": "workspace:*",
+    "@xnova/memory": "workspace:*",
+    "@xnova/observability": "workspace:*",
+    "@xnova/persistence": "workspace:*",
+    "@xnova/plugin": "workspace:*",
+    "@xnova/providers": "workspace:*",
+    "@xnova/skills": "workspace:*",
+    "@xnova/tools": "workspace:*"
+  },
+  "devDependencies": {
+    "@types/node": "^25.6.0"
+  }
+}

@@ -1,0 +1,34 @@
+{
+  "extends": "../../tsconfig.base.json",
+  "compilerOptions": {
+    "types": ["node"],
+    "baseUrl": ".",
+    "paths": {
+      "@xnova/core": ["../core/src/index.ts"],
+      "@xnova/core/*": ["../core/src/*"],
+      "@core": ["../core/src/index.ts"],
+      "@core/*": ["../core/src/*"],
+      "@core/*.js": ["../core/src/*.ts"],
+      "@providers/*": ["../../packages/providers/src/providers/*"],
+      "@tools": ["../../packages/tools/src/index.ts"],
+      "@tools/*": ["../../packages/tools/src/*"],
+      "@hooks": ["../core/src/hooks/index.ts"],
+      "@hooks/*": ["../core/src/hooks/*"],
+      "@config/*": ["../../packages/config/src/config/*"],
+      "@mcp": ["../../packages/mcp/src/index.ts"],
+      "@mcp/*": ["../../packages/mcp/src/*"],
+      "@observability/*": ["../../packages/observability/src/observability/*"],
+      "@persistence/*": ["../../packages/persistence/src/persistence/*"],
+      "@skills": ["../../packages/skills/src/index.ts"],
+      "@skills/*": ["../../packages/skills/src/*"],
+      "@file-index": ["../core/src/file-index/index.ts"],
+      "@file-index/*": ["../core/src/file-index/*"],
+      "@plugin": ["../../packages/plugin/src/index.ts"],
+      "@plugin/*": ["../../packages/plugin/src/*"],
+      "@memory": ["../../packages/memory/src/index.ts"],
+      "@memory/*": ["../../packages/memory/src/*"],
+      "@platform/*": ["../../packages/platform/src/platform/*"]
+    }
+  },
+  "include": ["src/**/*.ts"]
+}
