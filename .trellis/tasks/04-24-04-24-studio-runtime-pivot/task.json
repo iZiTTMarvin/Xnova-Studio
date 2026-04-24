@@ -20,11 +20,7 @@
   "subtasks": [],
   "children": [
     "04-24-04-24-runtime-package-extract",
-    "04-24-04-24-packages-apps-bootstrap",
-    "04-24-04-24-foundation-domain-packages",
     "04-24-04-24-capability-domain-packages",
-    "04-24-04-24-core-kernel-extract",
-    "04-24-04-24-engine-service-api",
     "04-24-04-24-studio-main-host-runtime-manager",
     "04-24-04-24-studio-preload-renderer-engine-migration",
     "04-24-04-24-cli-parity-verification-and-freeze"
