@@ -1,7 +1,7 @@
 # Design System — Xnova Studio
 
 ## Product Context
-- **这是什么**：`Xnova Studio` 是 `Xnova Code` 的 Electron 桌面宿主，目标是把 `cli/` 共享 runtime 与 `studio/` 桌面主壳收敛成同一套 `project-aware` 智能开发工作流。
+- **这是什么**：`Xnova Studio` 是 `Xnova Code` 当前唯一有效的 Electron 桌面宿主，目标是把共享 runtime 与桌面主壳收敛成同一套 `project-aware` 智能开发工作流。
 - **面向谁**：一类是你自己这样的高频重度使用者；另一类是不熟悉 `Claude Code`、`Codex` 等工具、但需要从 `0 → 1` 开发项目或接手现有项目继续开发的用户。
 - **所处领域**：AI Coding Agent / 桌面开发工具 / project-aware 工作台。
 - **项目类型**：Electron 桌面应用，主界面以聊天驱动，但底层数据模型以项目、会话、Agent、Mode、Model 为中心。
@@ -17,7 +17,7 @@
 - **方向**：`Industrial / Utilitarian` 与 `Quiet Premium` 的混合体。
 - **装饰级别**：`intentional`，保留渐变、玻璃感、阴影与大圆角，但整体必须服务于“安静工作台”而不是“展示型设计稿”。
 - **情绪关键词**：冷静、可信、专注、长期工作、略带未来感，但不过度科幻。
-- **参考基线**：本版不做外部竞品拼贴，直接以内核文档、`project-shell-v1` spec、现有 `studio/src/renderer` 骨架和“接近 Codex App Windows”的既定方向为准。
+- **参考基线**：本版不做外部竞品拼贴，直接以内核文档、`project-shell-v1` spec、现有 `apps/studio/src/renderer` 骨架和“接近 Codex App Windows”的既定方向为准。
 
 ## Safe Choices
 - **深色主壳 + 浅色文本**：桌面编码工具的高频使用场景决定深色壳体依然是最稳妥的默认选择，有利于聚焦消息流、上下文条与项目树。
@@ -231,7 +231,7 @@
 - 不要用营销文案语言覆盖真实技术状态。
 
 ## Implementation Notes
-- 当前 `studio/src/renderer/styles.css` 已完成 v1.1 视觉收敛：
+- 当前 `apps/studio/src/renderer/styles.css` 已完成 v1.1 视觉收敛：
   - 统一了完整的设计 token 体系（颜色、阴影、圆角、字号、间距）
   - Context Bar 已改为紧凑 HUD strip，不再是六张并排卡片
   - Mode Switch 已改为精致 pill segmented control
@@ -248,6 +248,6 @@
 ## Decisions Log
 | Date | Decision | Rationale |
 |------|----------|-----------|
-| 2026-04-23 | 初版设计系统建立 | 基于现有核心设计文档、前端 spec 与 `studio/src/renderer` 骨架，为 `Xnova Studio` 收敛成可执行的桌面界面基线 |
+| 2026-04-23 | 初版设计系统建立 | 基于现有核心设计文档、前端 spec 与 `apps/studio/src/renderer` 骨架，为 `Xnova Studio` 收敛成可执行的桌面界面基线 |
 | 2026-04-23 | 默认方向锁定为“工业工具感 + 安静高级感” | 既要贴近 `Codex App` 的工作氛围，又要保留 `Xnova` 自己更强的 `project-aware` 语义 |
 | 2026-04-23 | 首页坚持空白聊天优先，不回退 Overview | 让主产品叙事始终回到“直接开工”，而不是先看大盘 |

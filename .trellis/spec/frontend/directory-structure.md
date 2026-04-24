@@ -23,7 +23,7 @@ legacy 目录说明：
 
 - `cli/src/ui/`：终端 UI 参考，不再是主交付面
 - `cli/web/src/`：旧 Web 面板参考，不再承接新功能
-- 根 `studio/`：冻结旧目录，仅转发到 `apps/studio`
+- 根 `studio/`：已脱离 workspace 的历史快照，等待手动删除
 
 ## 宿主边界
 

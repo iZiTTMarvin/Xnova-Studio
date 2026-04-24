@@ -15,7 +15,7 @@
 - `apps/studio/src/main/studio-runtime-manager.ts` 是当前 host 持有 runtime / engine service 的唯一事实源：
   - runtime key = `workspaceRoot + cwd + agentId + sessionId(draft/session)`
   - `studio-runtime-inspector` 优先读取 manager 中的 live runtime snapshot，再回退到 config inspect
-- `cli/` 与根 `studio/` 都是 legacy 参考层，不再定义运行时边界。
+- 根 `cli/` 与根 `studio/` 都是脱离 workspace 的 legacy 快照，不再定义运行时边界，也不再提供运行入口。
 - package 消费者不得再以 `cli/src/**` 作为长期依赖入口；如果仍需吸收 legacy 能力，必须先收敛进 `packages/*`。
 
 ## 场景：Studio Main 必须通过 RuntimeManager 长生命周期持有 runtime / engine service

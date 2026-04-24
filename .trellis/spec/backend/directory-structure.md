@@ -23,10 +23,16 @@ Xnova-Code/
 │  └─ observability/   # session logger / token meter / metrics
 ├─ apps/
 │  ├─ studio/          # 当前唯一主宿主（main / preload / renderer）
-│  └─ cli/             # 兼容宿主 / 迁移适配，不定义核心边界
-├─ cli/                # 历史供体与迁移参考
-└─ studio/             # 冻结旧目录，仅脚本转发到 apps/studio
+│  └─ cli/             # 仅保留空位，当前不提供 CLI 产物
+├─ cli/                # 已脱离 workspace 的历史快照，等待手动删除
+└─ studio/             # 已脱离 workspace 的历史快照，等待手动删除
 ```
+
+补充约束：
+
+- `pnpm-workspace.yaml` 只允许包含 `apps/*` 与 `packages/*`
+- 根 `cli/` 与根 `studio/` 不得继续提供 `dev / build / test / pack` 入口
+- 任何新的宿主或产品入口都只能落在 `apps/*`
 
 ## 模块归属规则
 

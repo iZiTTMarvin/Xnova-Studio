@@ -42,7 +42,11 @@ describe('packaging and release prep', () => {
 
     expect(readme).toContain('pnpm --dir apps/studio pack:win')
     expect(readme).toContain('Xnova Studio')
+    expect(releaseNote).toContain('版本来源：`apps/studio/package.json`')
+    expect(releaseNote).toContain('生成命令：`pnpm --dir apps/studio pack:win`')
+    expect(releaseNote).toContain('目录验证命令：`pnpm --dir apps/studio pack:dir`')
+    expect(releaseNote).toContain('产物目录：`apps/studio/release/`')
     expect(releaseNote).toContain('Windows 安装包')
-    expect(releaseNote).toContain('release/')
+    expect(releaseNote).not.toContain('pnpm --dir studio')
   })
 })

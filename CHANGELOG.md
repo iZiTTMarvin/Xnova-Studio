@@ -1,4 +1,9 @@
 ## 2026-04-24
+- **工作区清理迁移**：正式移除根 `cli/` 与根 `studio/` 的工作区入口，统一主线为 `packages/* + apps/studio`
+  - `pnpm-workspace.yaml` 移除根 `cli`，根 `cli/package.json` 与根 `studio/package.json` 改为下线占位清单，不再暴露 `dev / build / test / pack` 入口
+  - `README.md`、`PROJECT-ARCHITECTURE.md`、`docs/release/xnova-studio-v1-trial.md`、`.trellis/spec/**` 统一改写为 `apps/studio` 唯一宿主叙事，并标明根 `cli/`、根 `studio/` 仅为待手动删除的历史快照
+  - 同步新增工作区清理回归测试，锁住 `workspace`、发布文档与 legacy 壳下线约束
+
 - **Studio Runtime Manager / CLI 冻结收口**：完成 main 长生命周期 runtime manager、renderer contract 收口与 CLI 对照归档
   - `apps/studio/src/main` 新增 `studio-runtime-manager`，按 `workspace / session / agent` 复用 runtime / engine service，`studio-runtime-inspector` 优先返回 live runtime snapshot，切回缓存会话时补历史恢复
   - `apps/studio/src/renderer` 移除 legacy `submitPrompt` / `shell.setCurrentPrimaryAgent` fallback，统一只走 shared bridge contract；`cli/README.md` 标记为冻结参考，并新增 CLI 能力对照矩阵
@@ -40,18 +45,18 @@
   - 新增 `apps/cli`、`packages/runtime`、`packages/core` 占位结构，不包含业务迁移实现；任务详情已归档至 `.trellis/tasks/04-24-04-24-packages-apps-bootstrap/`
 
 - **Studio Runtime Submit 修复**：补齐桌面宿主提交首轮消息的 history 契约
-  - `studio/src/main/studio-runtime-service.ts` 提交 shared runtime 时显式携带当前用户消息 `history` 与 `loggedUserContent`，修复 Provider 侧 `messages must not be empty`
-  - 更新 `studio/tests/studio-runtime-service.test.ts`、`studio/tests/studio-runtime-service-guard.test.ts`，锁住桌面宿主 submit 入参契约
+  - `apps/studio/src/main/studio-runtime-service.ts` 提交 shared runtime 时显式携带当前用户消息 `history` 与 `loggedUserContent`，修复 Provider 侧 `messages must not be empty`
+  - 更新 `apps/studio/tests/studio-runtime-service.test.ts`、`apps/studio/tests/studio-runtime-service-guard.test.ts`，锁住桌面宿主 submit 入参契约
   - 回写 `.trellis/spec/backend/runtime-boundary.md`，明确 host 直调 `runtime.submit` 时不得省略当前 user turn history；任务详情已归档至 `.trellis/tasks/04-24-studio-main-flow-repair/`
 
 - **Studio Runtime 打包修复**：修正 Electron main 对 `libsql` native 依赖的打包边界
-  - `studio/electron.vite.config.ts` 将 `libsql` 与 `@libsql/*` 设为 main bundle external，避免运行时落入 Rollup 的动态 require 陷阱
-  - `studio/package.json`、`studio/pnpm-lock.yaml` 显式补齐 `libsql` 运行时依赖与 `pnpm.onlyBuiltDependencies`，确保 Studio 自身携带 native 绑定
-  - 新增 `studio/tests/native-runtime-packaging.test.ts` 锁住 native 打包边界；任务详情已归档至 `.trellis/tasks/04-24-studio-main-flow-repair/`
+  - `apps/studio/electron.vite.config.ts` 将 `libsql` 与 `@libsql/*` 设为 main bundle external，避免运行时落入 Rollup 的动态 require 陷阱
+  - `apps/studio/package.json`、`apps/studio/pnpm-lock.yaml` 显式补齐 `libsql` 运行时依赖与 `pnpm.onlyBuiltDependencies`，确保 Studio 自身携带 native 绑定
+  - 新增 `apps/studio/tests/native-runtime-packaging.test.ts` 锁住 native 打包边界；任务详情已归档至 `.trellis/tasks/04-24-studio-main-flow-repair/`
 
 - **Studio 主链路修复**：补齐会话聊天视图、runtime 门禁与会话级模型选择
-  - `studio/src/renderer/**` 新增真实会话聊天流与会话级 Provider / Model 选择器，项目会话页可继续输入，不再只显示摘要卡片
-  - `studio/src/main/**`、`studio/src/preload/**`、`studio/src/shared/**` 打通 `providerId / sessionId / activeSession` 契约，并让未绑定 Workspace 时真正阻止提交
+  - `apps/studio/src/renderer/**` 新增真实会话聊天流与会话级 Provider / Model 选择器，项目会话页可继续输入，不再只显示摘要卡片
+  - `apps/studio/src/main/**`、`apps/studio/src/preload/**`、`apps/studio/src/shared/**` 打通 `providerId / sessionId / activeSession` 契约，并让未绑定 Workspace 时真正阻止提交
   - 顶部 `XForge` 点击改为明确提示“暂未开放”，同步补齐 `studio` 主链路回归测试；任务详情已归档至 `.trellis/tasks/04-24-studio-main-flow-repair/`
 
 - **运行时内核抽离**：按 copy-first 将核心编排层迁入 `packages/core`
@@ -71,12 +76,12 @@
   - `studio-shell-inspector` 增加标题回退：当 summary 缺失首条消息时，从首个 user 消息提取前 10 字作为会话标题；同时在 CLI `sessionLogger` 增加 `setCwd()` 以保证会话归属到当前项目
 
 - **Studio Shell · 项目入口壳层重构**：主壳从占位页升级为可操作项目入口
-  - `studio/src/renderer/pages/StudioHomePage.tsx` 将“新对话”改为项目级可编辑/可提交入口，并新增可筛选可跳转的搜索页、可切换主 Agent 的 Agents 页
-  - `studio/src/renderer/components/ProjectShellSidebar.tsx` 移除一级“聊天/设置”按钮，保留“新对话”首项，并将“设置”迁至左下角 utility 入口
+  - `apps/studio/src/renderer/pages/StudioHomePage.tsx` 将“新对话”改为项目级可编辑/可提交入口，并新增可筛选可跳转的搜索页、可切换主 Agent 的 Agents 页
+  - `apps/studio/src/renderer/components/ProjectShellSidebar.tsx` 移除一级“聊天/设置”按钮，保留“新对话”首项，并将“设置”迁至左下角 utility 入口
   - 新增 `StudioSettingsDialog` 与壳层局部样式文件，且补齐 `renderer-shell/sidebar-information-architecture/project-session-trees` 回归测试
 
 - **Studio Shell · Codex Layout 收口**：新对话页、模式入口与设置状态按最新视觉/语义要求重新对齐
-  - `studio/src/renderer/**` 将左侧首项调整为“新对话”，并把空白主工作面改成更接近 Codex App 的项目层布局，保留玻璃感、阴影与大圆角
+  - `apps/studio/src/renderer/**` 将左侧首项调整为“新对话”，并把空白主工作面改成更接近 Codex App 的项目层布局，保留玻璃感、阴影与大圆角
   - `Standard / XForge` 仅在主工作页显示；设置/工具等非编码页不再重复出现模式切换
   - 修正 `runtime not-ready` 被误判为 `disabled` 的状态映射，移除设置页“宿主桥接不可用”的误报，并补齐动态项目标题与回归测试
 
@@ -91,24 +96,24 @@
   - 新增 `CLAUDE.md` 设计协作约束，确保后续 UI 实现与评审都先对齐设计系统
 
 - **Phase 7 · Polish and Release**：桌面主壳完成恢复、错误态、边缘反馈、性能收口与发布准备
-  - `studio/src/renderer/**`、`studio/src/main/**` 与 `cli/src/**` 打通最近项目/会话/Mode/Agent/Model 恢复、结构化错误合同、memory / subagent 主流程反馈，以及大会话恢复的轻量摘要与性能采样
-  - `studio/package.json`、`studio/electron-builder.yml`、`README.md`、`docs/release/xnova-studio-v1-trial.md` 补齐 Windows 打包脚本、目录产物链路、版本信息与试用说明
-  - 完成 `pnpm -C cli test/typecheck`、`pnpm -C studio test/typecheck/build`、`pnpm -C studio pack:dir` 与 Electron smoke；`pack:win` 两次卡在外部 NSIS 二进制下载超时，已记录为当前残余风险
+  - `apps/studio/src/renderer/**`、`apps/studio/src/main/**` 与 `cli/src/**` 打通最近项目/会话/Mode/Agent/Model 恢复、结构化错误合同、memory / subagent 主流程反馈，以及大会话恢复的轻量摘要与性能采样
+  - `apps/studio/package.json`、`apps/studio/electron-builder.yml`、`README.md`、`docs/release/xnova-studio-v1-trial.md` 补齐 Windows 打包脚本、目录产物链路、版本信息与试用说明
+  - 完成当时的 legacy CLI 验证、`pnpm --dir apps/studio test/typecheck/build`、`pnpm --dir apps/studio pack:dir` 与 Electron smoke；`pack:win` 两次卡在外部 NSIS 二进制下载超时，已记录为当前残余风险
 
 - **Phase 7 · Residual Risk Cleanup**：补齐 Memory degraded 反馈与持久化安全 barrel 边界
-  - `studio/src/renderer/**` 新增 Memory 状态映射与建议动作，让 `degraded / bm25 / disabled` 在主工作流和设置页都以中文状态呈现，而不是直接暴露原始状态码
+  - `apps/studio/src/renderer/**` 新增 Memory 状态映射与建议动作，让 `degraded / bm25 / disabled` 在主工作流和设置页都以中文状态呈现，而不是直接暴露原始状态码
   - `cli/src/persistence/index.ts` 收口为 session JSONL 安全 barrel；`closeDb` 调用点改成 leaf import，并补 `index-boundary` 回归测试锁住 `db.ts` 不再经由 barrel 透出
-  - 重新验证 `pnpm -C cli test/typecheck`、`pnpm -C studio test/typecheck/build/pack:dir` 与 Electron smoke，确认修复未破坏 Phase 7 主链路
+  - 重新验证当时的 legacy CLI 链路、`pnpm --dir apps/studio test/typecheck/build/pack:dir` 与 Electron smoke，确认修复未破坏 Phase 7 主链路
 
 - **Phase 6 · Settings and Tools**：桌面主壳完成 Providers、Memory、MCP、Skills / Plugins 的 Phase 6 整合
-  - `studio/src/renderer/**` 新增 Settings / Tools 页面骨架、Provider 表单、Memory 状态卡片、MCP 状态卡片和 Skills / Plugins 状态卡片，统一走 preload bridge，不回退到旧 Web 壳
+  - `apps/studio/src/renderer/**` 新增 Settings / Tools 页面骨架、Provider 表单、Memory 状态卡片、MCP 状态卡片和 Skills / Plugins 状态卡片，统一走 preload bridge，不回退到旧 Web 壳
   - `cli/` 新增 Provider / Memory / MCP / Skills / Plugins 纯服务，打通 TOML、概览、管理入口与状态判定，并让旧 dashboard API 复用同一条服务逻辑
   - 补齐 CLI / Studio 的 Phase 6 回归测试、typecheck、build 与真实 Electron smoke；任务详情已归档至 `.trellis/tasks/04-23-phase6-settings-and-tools-verification/`
 
 ## 2026-04-22
 - **Phase 5 · Project-aware Shell**：桌面主壳从 Phase 4 最小状态页升级为 project-aware 入口
   - 冷启动默认进入空白聊天页或恢复最近工作会话，`Overview` 退出默认首页职责，并补齐路径失效/会话损坏降级反馈
-  - `studio/src/renderer/**` 落定一级导航、项目/聊天双 block、最近项目与会话树、子代理折叠树、scratchpad 分离、上下文条与顶部唯一 `Standard / XForge` 切换
+  - `apps/studio/src/renderer/**` 落定一级导航、项目/聊天双 block、最近项目与会话树、子代理折叠树、scratchpad 分离、上下文条与顶部唯一 `Standard / XForge` 切换
   - 新增 `shell.getSnapshot` 桥接与 `studio-shell-inspector`，并修复真实 Electron smoke 下 `persistence/index -> libsql` 动态依赖导致的 main process 崩溃
 
 ## 2026-04-22
@@ -120,8 +125,8 @@
 
 ## 2026-04-22
 - **Phase 4 · Electron Verification**：补齐 Phase 4 的自动化验收与 smoke harness
-  - 新增 `studio/src/main/smoke.ts` 与对应测试，用环境变量驱动 `getState -> openWorkspace -> runtime.inspect` 的最小 smoke 链路
-  - 完成验证回归：`pnpm -C studio test / typecheck / build`、`pnpm -C cli test -- tests/studio-bootstrap.test.ts`、`pnpm -C cli test -- src/runtime/__tests__/inspect-runtime.test.ts`、`pnpm -C cli typecheck`
+  - 新增 `apps/studio/src/main/smoke.ts` 与对应测试，用环境变量驱动 `getState -> openWorkspace -> runtime.inspect` 的最小 smoke 链路
+  - 完成验证回归：`pnpm --dir apps/studio test / typecheck / build`，以及当时的 legacy CLI bootstrap / runtime inspect / typecheck 验证
   - 任务详情已归档至 `.trellis/tasks/04-22-phase4-electron-verification/`
 
 - **Phase 4 · Renderer Minimal Shell**：落定最小 renderer 页面与四态可见反馈
@@ -138,20 +143,20 @@
 - **Phase 4 · Main Process Workspace**：收口 Electron 主进程宿主职责与 workspace 目录选择能力
   - 新增 `logger / lifecycle / window / workspace` 模块，主进程仅承载窗口、生命周期、目录选择与基础错误输出
   - 新增 `studio` 主进程测试，覆盖窗口复用与销毁、`whenReady` / `window-all-closed` / `activate`，以及取消选择、空路径、无效路径、异常路径
-  - 完成 `pnpm -C studio test`、`pnpm -C studio typecheck`、`pnpm -C studio build`
+  - 完成 `pnpm --dir apps/studio test`、`pnpm --dir apps/studio typecheck`、`pnpm --dir apps/studio build`
   - 任务详情已归档至 `.trellis/tasks/04-22-phase4-main-process-workspace/`
 
 ## 2026-04-22
 - **Phase 4 · Studio Bootstrap**：建立 Electron 独立宿主骨架与最小可验证基线
   - 新建 `studio/` 独立工程，落定 `main / preload / renderer` 入口、`electron-vite` 构建配置与 `dev / build / typecheck / test` 脚本
-  - 新增 `cli/tests/studio-bootstrap.test.ts` 与 `studio/tests/app-shell.test.ts`，锁定骨架文件存在性、边界约束与最小窗口装配辅助逻辑
-  - 完成最小验证：`pnpm test -- tests/studio-bootstrap.test.ts`、`pnpm -C studio test`、`pnpm -C studio typecheck`、`pnpm -C studio build`
+  - 新增 `cli/tests/studio-bootstrap.test.ts` 与 `apps/studio/tests/app-shell.test.ts`，锁定骨架文件存在性、边界约束与最小窗口装配辅助逻辑
+  - 完成最小验证：`pnpm test -- tests/studio-bootstrap.test.ts`、`pnpm --dir apps/studio test`、`pnpm --dir apps/studio typecheck`、`pnpm --dir apps/studio build`
   - 任务详情已归档至 `.trellis/tasks/04-22-phase4-studio-bootstrap/`
 
 - **Phase 3 · Agent System 返工收口**：补齐继承链与校验细节，消除最后一批 Phase 3 契约风险
   - `catalog.ts` 改为按依赖顺序解析 user agent 继承，避免受文件排序影响，并确保 `user > builtin` 覆盖场景下 `inherits` 不会错误退回内置版本
   - `parser.ts` 补上 `inherits` 的 agent id 格式校验；新增 `catalog.test.ts` 与 `agent-schema-v1.test.ts` 回归用例锁住继承顺序与非法引用格式
-  - 在 `cli/` 下重新验证：`pnpm vitest run`（199 passed / 3 todo）、`pnpm typecheck`、`cli/web pnpm build:check` 全部通过
+  - 在当时的 legacy CLI 工作树下重新验证：`pnpm vitest run`（199 passed / 3 todo）、`pnpm typecheck`、`cli/web pnpm build:check` 全部通过
   - 任务详情已归档至 `.trellis/tasks/04-22-phase3-agent-verification/`
 
 - **Phase 3 · Agent System 完整交付**：Agent 体系升级到 v1 设计要求，保持旧内置 agent 兼容可用
@@ -179,7 +184,7 @@
   - **fix-B（P0）**：`field-mapping.test.ts` 从 7 扩展到 17 用例，新增 user 层 `[agent]` / `[modes]` / `[features]` 单向 + round-trip 锁死防回潮
   - **fix-C（P3）**：`SettingsPage.tsx:426` / `providers/registry.ts` 2 处错误文案 / `bootstrap.ts` memory warning / `useChat.ts` 注释统一指向 `~/.xnovacode/config.toml`
   - 新增测试：`initializer.toml-first.test.ts`（5）/ `resolver.effective-merge.test.ts`（6）/ `main-chain.resolved-config.test.ts`（3）
-  - `pnpm -C cli typecheck` 0 error；`pnpm -C cli exec vitest run` → 121 passed / 5 skipped（较原 97 passed 新增 24 条阶段级测试）
+  - 当时的 legacy CLI `typecheck` 为 0 error；`vitest run` → 121 passed / 5 skipped（较原 97 passed 新增 24 条阶段级测试）
   - 红线守住：initializer 不存在任何 "备份+重写" silent reset；损坏 TOML / JSON 保留原文件；project.toml 损坏走 `warnings` 通道
   - 任务详情已归档至 `.trellis/tasks/04-21-phase2-config-migration/`、`.trellis/tasks/04-22-phase2-config-verification/`；交付确认见 `docs/implement/phase2-config-migration.md`（2026-04-23 版）
 
@@ -287,3 +292,4 @@
   - 新增 runtime boundary、config TOML migration、agent schema v1 三份 backend 专项 spec，并接入 backend index
   - 扩展 spec 验收测试，要求 backend index 显式纳入 3 份专项 spec
   - 重写仓库根 `.gitignore`，覆盖依赖、构建产物、本地运行态与 Trellis 本地工作区
+

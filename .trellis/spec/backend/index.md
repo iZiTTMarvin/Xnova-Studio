@@ -2,7 +2,7 @@
 
 > 适用范围：`packages/**` 中的运行时、编排内核、配置、持久化、Provider、Tools、Memory、MCP、Skills、Plugin、Platform、Observability 等后端与基础设施代码，以及 `apps/studio/src/main/**`、`apps/studio/src/preload/**` 的宿主适配代码。
 >
-> 当前状态：`packages/* + apps/studio` 主线已落地；`cli/` 与根 `studio/` 仅保留为历史供体与迁移参考。
+> 当前状态：`packages/* + apps/studio` 是唯一工作区主线；根 `cli/` 与根 `studio/` 已脱离 `pnpm workspace`，仅作为待手动删除的历史快照保留。
 
 ## 当前基线
 
@@ -13,7 +13,7 @@
 - `apps/studio` 是当前唯一主宿主：
   - `src/main/` 负责 Electron main host、权限、runtime 生命周期、服务装配
   - `src/preload/` 只负责安全桥、参数校验与 IPC 暴露
-- `apps/cli/`、`cli/` 与根 `studio/` 不再定义 backend 物理边界。需要复用 legacy 能力时，应先收敛进 `packages/*`，再由宿主消费。
+- `apps/cli/` 只保留宿主空位；根 `cli/` 与根 `studio/` 不再定义 backend 物理边界，也不再参与工作区验证。需要复用 legacy 能力时，应先收敛进 `packages/*`，再由宿主消费。
 - 任何从 `cli/src/commands/**`、旧 bridge、旧 host 迁出的业务能力，都必须优先改造成 `packages/runtime/src/engine-service-api.ts` 或对应领域 service，而不是把命令文件原样搬进宿主。
 
 ## 指南索引
