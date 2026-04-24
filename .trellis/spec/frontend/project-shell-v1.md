@@ -119,6 +119,7 @@ interface RuntimeSubmitRequest {
 - `SessionModelPicker` 必须位于 composer 附近，表示“当前会话要用哪个 provider / model”。
 - 选择结果必须进入 `RuntimeSubmitRequest.providerId / modelId`，而不是只改本地展示。
 - “默认模型”设置属于设置页；“当前会话模型”属于输入区附近，两者不能混淆。
+- renderer 只能调用 shared contract 中定义的 `runtime.submit(...)`；不得 fallback 到 legacy `submitPrompt`。
 
 #### Mode 切换
 
@@ -132,6 +133,7 @@ interface RuntimeSubmitRequest {
   - composer 发送按钮必须不可用
   - `submitPrompt()` 必须二次拦截，不能只靠视觉提示
 - 系统不得在“未就绪”状态下回退到错误目录偷偷执行。
+- 当前主 Agent 切换属于 renderer 会话偏好；不得依赖未固化的 `shell.setCurrentPrimaryAgent` 一类隐藏入口。
 
 ### 4. Validation & Error Matrix
 
@@ -144,6 +146,7 @@ interface RuntimeSubmitRequest {
 | provider / model 只在 UI 改了，submit 不携带 | 视为主链路缺陷，必须修 contract |
 | 会话视图只显示元数据，不显示消息流 | 视为 P0 不可用，必须回退 |
 | 工具过程只存在 main 日志，renderer 不显示 | 视为主链路缺口，必须补时间线呈现 |
+| renderer 通过 `submitPrompt` / `setCurrentPrimaryAgent` 等旧 fallback 路径工作 | 视为 contract 漂移，必须回到 shared bridge |
 
 ### 5. Good / Base / Bad Cases
 
@@ -169,6 +172,7 @@ interface RuntimeSubmitRequest {
   - `useStudioBridge` 的 workspace 门禁与 submit 契约透传
   - `ConversationTimeline` 对 persisted + live conversation 的渲染
   - `ModeSwitch` 点击 `XForge` 的提示行为
+  - `renderer-shell.test.tsx` / `use-studio-bridge-submit.test.tsx` 断言不再依赖 legacy fallback 语义
 - E2E / smoke：
   - 打开 workspace -> 发送消息 -> 收到流式回复与工具过程
   - 重启后恢复最近项目与会话

@@ -2,6 +2,7 @@ import {
   loadResolvedConfig,
   type ResolvedConfigResult,
 } from '@config/resolver.js'
+import { createEngineServiceApi } from '@xnova/runtime'
 import type {
   EngineServiceApi,
   PermissionRequest,
@@ -13,6 +14,13 @@ import type {
   RuntimeSubmitInput,
 } from '@xnova/runtime'
 import type { MainLogger } from './logger'
+import {
+  createStudioRuntimeManager,
+  type StudioRuntimeBridgeState,
+  type StudioManagedRuntimeEntry,
+  type StudioRuntimeManager,
+  type StudioRuntimeSelection,
+} from './studio-runtime-manager'
 import type {
   RuntimeSubmitRequest,
   RuntimeSubmitResult,
@@ -32,6 +40,7 @@ export interface StudioRuntimeService {
 export interface CreateStudioRuntimeServiceOptions {
   engineServiceApi?: Pick<EngineServiceApi, 'runtime'> &
     Partial<Pick<EngineServiceApi, 'sessionService'>>
+  runtimeManager?: StudioRuntimeManager
   createRuntimeFn?: (
     input: RuntimeConfigInput,
     bridge: RuntimeHostBridge,
@@ -43,14 +52,6 @@ export interface CreateStudioRuntimeServiceOptions {
   ) => Promise<PermissionResolution & { reason?: string }>
   fallbackCwd?: string
   logger?: Pick<MainLogger, 'info' | 'warn' | 'error'>
-}
-
-interface ActiveRuntimeHandle {
-  instance: RuntimeInstance
-  sessionId: string | null
-  cwd: string
-  workspaceRoot: string
-  agentId: string | null
 }
 
 const SAFE_READ_TOOL_NAMES = new Set([
@@ -157,36 +158,6 @@ function buildResumeHistory(
   }
 }
 
-function shouldReuseRuntime(
-  runtimeHandle: ActiveRuntimeHandle | null,
-  request: RuntimeSubmitRequest,
-  cwd: string,
-  workspaceRoot: string,
-): boolean {
-  if (!runtimeHandle) {
-    return false
-  }
-
-  if (runtimeHandle.cwd !== cwd || runtimeHandle.workspaceRoot !== workspaceRoot) {
-    return false
-  }
-
-  const nextAgentId = request.agentId?.trim() || null
-  if (runtimeHandle.agentId !== nextAgentId) {
-    return false
-  }
-
-  if (
-    request.sessionId &&
-    runtimeHandle.sessionId &&
-    request.sessionId !== runtimeHandle.sessionId
-  ) {
-    return false
-  }
-
-  return true
-}
-
 function toPermissionEventPayload(
   input: PermissionRequest,
   resolution?: PermissionResolution & { reason?: string },
@@ -247,7 +218,6 @@ async function defaultResolvePermission(
 export function createStudioRuntimeService(
   options: CreateStudioRuntimeServiceOptions = {},
 ): StudioRuntimeService {
-  const engineServiceApi = options.engineServiceApi
   const createRuntimeFn =
     options.createRuntimeFn ??
     (async (input: RuntimeConfigInput, bridge: RuntimeHostBridge) => {
@@ -267,28 +237,31 @@ export function createStudioRuntimeService(
       return undefined
     },
   }
-  let activeRuntime: ActiveRuntimeHandle | null = null
-  let runtimeEventSink: ((event: StudioRuntimeEvent) => void) | null = null
-  let runtimeHostState: StudioHostState = {
-    workspacePath: null,
-    lastSelection: null,
-  }
+  const runtimeManager =
+    options.runtimeManager ??
+    createStudioRuntimeManager({
+      createEngineServiceApiFn: (workspaceRoot) =>
+        (options.engineServiceApi as EngineServiceApi | undefined) ??
+        createEngineServiceApi({ cwd: workspaceRoot }),
+    })
 
-  const runtimeBridge: RuntimeHostBridge = {
+  const createRuntimeBridge = (
+    bridgeState: StudioRuntimeBridgeState,
+  ): RuntimeHostBridge => ({
     emit(event: RuntimeEvent) {
-      runtimeEventSink?.(toStudioRuntimeEvent(event))
+      bridgeState.eventSink?.(toStudioRuntimeEvent(event))
     },
     async requestPermission(input) {
-      runtimeEventSink?.({
+      bridgeState.eventSink?.({
         type: 'permission.request',
         timestamp: new Date().toISOString(),
         sessionId: input.sessionId,
         payload: toPermissionEventPayload(input),
       })
 
-      const resolution = await resolvePermissionFn(input, runtimeHostState)
+      const resolution = await resolvePermissionFn(input, bridgeState.hostState)
 
-      runtimeEventSink?.({
+      bridgeState.eventSink?.({
         type: 'permission.decision',
         timestamp: new Date().toISOString(),
         sessionId: input.sessionId,
@@ -303,7 +276,7 @@ export function createStudioRuntimeService(
         cancelled: true,
       }
     },
-  }
+  })
 
   return {
     async submit(request, hostState, emitRuntimeEvent) {
@@ -323,11 +296,12 @@ export function createStudioRuntimeService(
         }
       }
 
-      try {
-        runtimeEventSink = emitRuntimeEvent
-        runtimeHostState = hostState
+      let runtimeEntry: StudioManagedRuntimeEntry | null = null
 
+      try {
         const resolved = loadResolvedConfigFn(cwd)
+        const workspaceRoot = hostState.workspacePath ?? cwd
+        const engineServiceApi = runtimeManager.getEngineServiceApi(workspaceRoot)
         const runtimeConfig = {
           ...resolved.effective,
           ...(request.agentId
@@ -340,35 +314,28 @@ export function createStudioRuntimeService(
             : {}),
         }
 
-        if (engineServiceApi && request.providerId && request.modelId) {
+        if (request.providerId && request.modelId) {
           engineServiceApi.runtime.setModel({
             provider: request.providerId,
             model: request.modelId,
           })
         }
 
-        const workspaceRoot = hostState.workspacePath ?? cwd
-        const reuseRuntime = shouldReuseRuntime(activeRuntime, request, cwd, workspaceRoot)
-
-        if (!reuseRuntime) {
-          await activeRuntime?.instance.dispose()
-          const nextInstance = await createRuntimeFn(
-            {
-              cwd,
-              workspaceRoot,
-              config: runtimeConfig,
-              mode: 'standard',
-            },
-            runtimeBridge,
-          )
-          activeRuntime = {
-            instance: nextInstance,
-            sessionId: request.sessionId ?? null,
-            cwd,
-            workspaceRoot,
-            agentId: request.agentId?.trim() || null,
-          }
+        const selection: StudioRuntimeSelection = {
+          cwd,
+          workspaceRoot,
+          sessionId: request.sessionId?.trim() || null,
+          agentId: request.agentId?.trim() || null,
         }
+        const runtimeHandle = await runtimeManager.acquireRuntime({
+          selection,
+          config: runtimeConfig,
+          hostState,
+          emitRuntimeEvent,
+          createRuntimeFn,
+          createBridge: (bridgeState) => createRuntimeBridge(bridgeState),
+        })
+        runtimeEntry = runtimeHandle.entry
 
         for (const warning of resolved.warnings) {
           emitRuntimeEvent({
@@ -380,22 +347,25 @@ export function createStudioRuntimeService(
           })
         }
 
-        const restoredHistory = !reuseRuntime
+        const shouldHydrateHistory =
+          !runtimeHandle.reused || runtimeHandle.reactivated
+        const restoredHistory = shouldHydrateHistory
           ? buildResumeHistory(text, request, engineServiceApi, logger)
           : undefined
 
-        const runtimeInstance = activeRuntime!.instance
-        const turnResult = await runtimeInstance.submit({
+        const runtimeInstance = runtimeHandle.entry.instance
+        const runtimeSubmitInput: RuntimeSubmitInput = {
           text,
-          ...(reuseRuntime
-            ? {}
-            : {
+          ...(shouldHydrateHistory
+            ? {
                 history: restoredHistory ?? buildStudioRuntimeHistory(text),
-              }),
+              }
+            : {}),
           loggedUserContent: text,
           ...(request.providerId ? { provider: request.providerId } : {}),
           ...(request.modelId ? { model: request.modelId } : {}),
-        })
+        }
+        const turnResult = await runtimeInstance.submit(runtimeSubmitInput)
 
         if (turnResult.error) {
           return {
@@ -404,9 +374,7 @@ export function createStudioRuntimeService(
           }
         }
 
-        if (activeRuntime) {
-          activeRuntime.sessionId = turnResult.sessionId ?? activeRuntime.sessionId
-        }
+        runtimeManager.commitSession(runtimeHandle.entry, turnResult.sessionId)
 
         logger.info('runtime submit 完成', {
           cwd,
@@ -425,14 +393,14 @@ export function createStudioRuntimeService(
           error: `runtime submit 失败: ${message}`,
         }
       } finally {
-        runtimeEventSink = null
+        if (runtimeEntry) {
+          runtimeManager.releaseRuntime(runtimeEntry)
+        }
       }
     },
 
     async dispose() {
-      await activeRuntime?.instance.dispose()
-      activeRuntime = null
-      runtimeEventSink = null
+      await runtimeManager.dispose()
     },
   }
 }

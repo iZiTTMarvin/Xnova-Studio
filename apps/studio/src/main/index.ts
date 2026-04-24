@@ -10,10 +10,10 @@ import { createStudioMcpService } from './studio-mcp-service'
 import { createStudioSkillsPluginsService } from './studio-skills-plugins-service'
 import { createStudioShellInspector } from './studio-shell-inspector'
 import { createStudioRuntimeInspector } from './studio-runtime-inspector'
+import { createStudioRuntimeManager } from './studio-runtime-manager'
 import { createStudioRuntimeService } from './studio-runtime-service'
 import { createMainWindowManager } from './window'
 import { selectWorkspaceDirectory } from './workspace'
-import { createEngineServiceApi } from '@xnova/runtime'
 
 function waitForLogFlush(): Promise<void> {
   return new Promise((resolve) => {
@@ -23,10 +23,14 @@ function waitForLogFlush(): Promise<void> {
 
 const logger = createMainLogger()
 const smokeConfig = readSmokeConfig(process.env)
-const engineServiceApi = createEngineServiceApi()
-const runtimeInspector = createStudioRuntimeInspector()
+const runtimeManager = createStudioRuntimeManager()
+const runtimeInspector = createStudioRuntimeInspector({
+  getRuntimeSnapshot(hostState) {
+    return runtimeManager.getRuntimeSnapshot(hostState)
+  },
+})
 const runtimeService = createStudioRuntimeService({
-  engineServiceApi,
+  runtimeManager,
   logger,
 })
 const shellInspector = createStudioShellInspector({
@@ -36,17 +40,36 @@ const shellInspector = createStudioShellInspector({
 })
 const providerSettingsService = createStudioProviderSettingsService()
 const memoryService = createStudioMemoryService({
-  engineServiceApi,
+  resolveEngineServiceApi(hostState) {
+    const workspacePath = hostState.workspacePath?.trim()
+    return workspacePath
+      ? runtimeManager.getEngineServiceApi(workspacePath)
+      : undefined
+  },
 })
 const mcpService = createStudioMcpService({
-  engineServiceApi,
+  resolveEngineServiceApi(hostState) {
+    const workspacePath = hostState.workspacePath?.trim()
+    return workspacePath
+      ? runtimeManager.getEngineServiceApi(workspacePath)
+      : undefined
+  },
 })
 const skillsPluginsService = createStudioSkillsPluginsService({
-  engineServiceApi,
+  resolveEngineServiceApi(hostState) {
+    const workspacePath = hostState.workspacePath?.trim()
+    return workspacePath
+      ? runtimeManager.getEngineServiceApi(workspacePath)
+      : undefined
+  },
 })
 const mainWindowManager = createMainWindowManager({
   BrowserWindow,
   logger,
+})
+
+app.on('before-quit', () => {
+  void runtimeService.dispose()
 })
 
 registerStudioMainIpcHandlers({

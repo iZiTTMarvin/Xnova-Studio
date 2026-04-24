@@ -37,6 +37,9 @@ export interface StudioMemoryService {
 
 export interface CreateStudioMemoryServiceOptions {
   engineServiceApi?: Pick<EngineServiceApi, 'memoryService'>
+  resolveEngineServiceApi?: (
+    hostState: StudioHostState,
+  ) => Pick<EngineServiceApi, 'memoryService'> | undefined
   configManager?: ConfigManager
   readMemoryOverviewFn?: typeof readMemoryOverview
   rebuildMemoryIndexFn?: typeof rebuildMemoryIndex
@@ -50,6 +53,8 @@ export function createStudioMemoryService(
 
   return {
     async getOverview(hostState) {
+      const engineServiceApi =
+        options.resolveEngineServiceApi?.(hostState) ?? options.engineServiceApi
       if (engineServiceApi) {
         return toOverviewSnapshot(
           await engineServiceApi.memoryService.getOverview(hostState.workspacePath),
@@ -65,6 +70,8 @@ export function createStudioMemoryService(
       )
     },
     async rebuild(hostState) {
+      const engineServiceApi =
+        options.resolveEngineServiceApi?.(hostState) ?? options.engineServiceApi
       if (engineServiceApi) {
         return toRebuildResult(
           await engineServiceApi.memoryService.rebuildIndex(hostState.workspacePath),

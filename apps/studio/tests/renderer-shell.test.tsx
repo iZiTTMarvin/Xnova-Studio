@@ -17,8 +17,7 @@ function createBridge(options?: {
   runtimeEvent?: unknown
   memoryOverview?: unknown
   shellSnapshot?: unknown
-  runtimeSubmitPrompt?: (text: string) => Promise<void>
-  shellSetCurrentPrimaryAgent?: (agentId: string) => Promise<void>
+  runtimeSubmit?: (input: unknown) => Promise<unknown>
 }) {
   const getState = vi.fn(async () => ({
     workspacePath: null,
@@ -49,7 +48,13 @@ function createBridge(options?: {
       }
       return () => {}
     },
-    ...(options?.runtimeSubmitPrompt ? { submitPrompt: options.runtimeSubmitPrompt } : {}),
+    submit: vi.fn(async (input) =>
+      options?.runtimeSubmit
+        ? options.runtimeSubmit(input)
+        : {
+            ok: true as const,
+            sessionId: 'session-1',
+          }),
   }
 
   const shellApi = {
@@ -74,9 +79,6 @@ function createBridge(options?: {
       issues: [],
       warnings: [],
     }),
-    ...(options?.shellSetCurrentPrimaryAgent
-      ? { setCurrentPrimaryAgent: options.shellSetCurrentPrimaryAgent }
-      : {}),
   }
 
   return {
@@ -197,14 +199,17 @@ describe('renderer project-aware shell', () => {
     expect(screen.queryByText('Overview')).toBeNull()
   })
 
-  it('新对话输入可编辑，并在 bridge 提供 submitPrompt 时触发提交', async () => {
-    const runtimeSubmitPrompt = vi.fn(async () => undefined)
+  it('新对话输入可编辑，并通过 runtime.submit 新 contract 触发提交', async () => {
+    const runtimeSubmit = vi.fn(async () => ({
+      ok: true as const,
+      sessionId: 'session-1',
+    }))
     ;(window as Window & { xnovaStudio?: unknown }).xnovaStudio = createBridge({
       hostState: {
         workspacePath: 'D:/workspace/demo',
         lastSelection: null,
       },
-      runtimeSubmitPrompt,
+      runtimeSubmit,
     })
 
     render(<App />)
@@ -214,7 +219,14 @@ describe('renderer project-aware shell', () => {
     fireEvent.click(screen.getByRole('button', { name: '发送提示词' }))
 
     await waitFor(() => {
-      expect(runtimeSubmitPrompt).toHaveBeenCalledWith('实现项目脚手架并补测试')
+      expect(runtimeSubmit).toHaveBeenCalledWith({
+        text: '实现项目脚手架并补测试',
+        projectPath: 'D:/workspace/demo',
+        sessionId: null,
+        agentId: null,
+        providerId: 'anthropic',
+        modelId: 'claude-sonnet-4-6',
+      })
     })
   })
 
@@ -285,9 +297,7 @@ describe('renderer project-aware shell', () => {
   })
 
   it('Agents 页展示可用主 Agent，并支持切换当前 Agent', async () => {
-    const shellSetCurrentPrimaryAgent = vi.fn(async () => undefined)
     ;(window as Window & { xnovaStudio?: unknown }).xnovaStudio = createBridge({
-      shellSetCurrentPrimaryAgent,
       shellSnapshot: {
         startup: {
           recentProject: null,
@@ -317,9 +327,6 @@ describe('renderer project-aware shell', () => {
     expect(screen.getByRole('button', { name: '切换到 planner' })).toBeTruthy()
 
     fireEvent.click(screen.getByRole('button', { name: '切换到 planner' }))
-    await waitFor(() => {
-      expect(shellSetCurrentPrimaryAgent).toHaveBeenCalledWith('planner')
-    })
     expect(screen.getByText('当前 Agent: planner')).toBeTruthy()
   })
 

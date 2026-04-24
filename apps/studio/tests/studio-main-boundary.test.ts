@@ -6,6 +6,13 @@ const repoRoot = 'D:\\visual_ProgrammingSoftware\\毕设and简历Projects\\Xnova
 const studioRoot = join(repoRoot, 'apps', 'studio')
 
 describe('studio main boundary', () => {
+  it('main 入口应通过 runtime manager 持有运行时，而不是直接创建裸 engineServiceApi', () => {
+    const source = readFileSync(join(studioRoot, 'src/main/index.ts'), 'utf-8')
+
+    expect(source).toContain('createStudioRuntimeManager')
+    expect(source).not.toContain('createEngineServiceApi(')
+  })
+
   it('main 层关键服务不应再直接 import cli/src', () => {
     const files = [
       'src/main/studio-runtime-service.ts',

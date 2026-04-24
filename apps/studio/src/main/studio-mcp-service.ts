@@ -44,6 +44,9 @@ export interface StudioMcpService {
 
 export interface CreateStudioMcpServiceOptions {
   engineServiceApi?: Pick<EngineServiceApi, 'mcpService'>
+  resolveEngineServiceApi?: (
+    hostState: StudioHostState,
+  ) => Pick<EngineServiceApi, 'mcpService'> | undefined
   readMcpOverviewFn?: typeof readMcpOverview
   addMcpServerFn?: typeof addMcpServer
   deleteMcpServerFn?: typeof deleteMcpServer
@@ -52,19 +55,22 @@ export interface CreateStudioMcpServiceOptions {
 export function createStudioMcpService(
   options: CreateStudioMcpServiceOptions = {},
 ): StudioMcpService {
-  const engineServiceApi = options.engineServiceApi
   const readOverview = options.readMcpOverviewFn ?? readMcpOverview
   const addServer = options.addMcpServerFn ?? addMcpServer
   const deleteServer = options.deleteMcpServerFn ?? deleteMcpServer
 
   return {
-    async getOverview() {
+    async getOverview(hostState) {
+      const engineServiceApi =
+        options.resolveEngineServiceApi?.(hostState) ?? options.engineServiceApi
       if (engineServiceApi) {
         return toOverviewSnapshot(await engineServiceApi.mcpService.getOverview())
       }
       return toOverviewSnapshot(await readOverview())
     },
-    async addServer(input) {
+    async addServer(input, hostState) {
+      const engineServiceApi =
+        options.resolveEngineServiceApi?.(hostState) ?? options.engineServiceApi
       if (engineServiceApi) {
         return toMutationResult(
           await engineServiceApi.mcpService.addServer({
@@ -80,7 +86,9 @@ export function createStudioMcpService(
         }),
       )
     },
-    async deleteServer(name) {
+    async deleteServer(name, hostState) {
+      const engineServiceApi =
+        options.resolveEngineServiceApi?.(hostState) ?? options.engineServiceApi
       if (engineServiceApi) {
         return toMutationResult(await engineServiceApi.mcpService.deleteServer(name))
       }

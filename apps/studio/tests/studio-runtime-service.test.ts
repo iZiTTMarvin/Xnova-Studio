@@ -250,6 +250,222 @@ describe('studio runtime service', () => {
     expect(runtimeInstance.dispose).not.toHaveBeenCalled()
   })
 
+  it('切换到其他会话后再返回已存在会话时，应复用缓存 runtime 并补历史恢复', async () => {
+    const runtimeA: RuntimeInstance = {
+      submit: vi
+        .fn()
+        .mockResolvedValueOnce({
+          text: 'session-1 first',
+          thinking: '',
+          stopReason: 'end_turn',
+          llmCallCount: 1,
+          toolCallCount: 0,
+          usage: {
+            inputTokens: 1,
+            outputTokens: 1,
+            cacheReadTokens: 0,
+            cacheWriteTokens: 0,
+          },
+          aborted: false,
+          historyCompacted: false,
+          sessionId: 'session-1',
+        })
+        .mockResolvedValueOnce({
+          text: 'session-1 second',
+          thinking: '',
+          stopReason: 'end_turn',
+          llmCallCount: 1,
+          toolCallCount: 0,
+          usage: {
+            inputTokens: 1,
+            outputTokens: 1,
+            cacheReadTokens: 0,
+            cacheWriteTokens: 0,
+          },
+          aborted: false,
+          historyCompacted: false,
+          sessionId: 'session-1',
+        }),
+      abort: vi.fn(),
+      dispose: vi.fn(async () => undefined),
+      getSnapshot: vi.fn(() => ({
+        sessionId: 'session-1',
+        isRunning: false,
+        provider: 'openai',
+        model: 'gpt-4o',
+        warnings: [],
+      })),
+    }
+    const runtimeB: RuntimeInstance = {
+      submit: vi.fn(async () => ({
+        text: 'session-2 first',
+        thinking: '',
+        stopReason: 'end_turn',
+        llmCallCount: 1,
+        toolCallCount: 0,
+        usage: {
+          inputTokens: 1,
+          outputTokens: 1,
+          cacheReadTokens: 0,
+          cacheWriteTokens: 0,
+        },
+        aborted: false,
+        historyCompacted: false,
+        sessionId: 'session-2',
+      })),
+      abort: vi.fn(),
+      dispose: vi.fn(async () => undefined),
+      getSnapshot: vi.fn(() => ({
+        sessionId: 'session-2',
+        isRunning: false,
+        provider: 'openai',
+        model: 'gpt-4o',
+        warnings: [],
+      })),
+    }
+
+    const createRuntimeFn = vi
+      .fn()
+      .mockImplementationOnce(async () => runtimeA)
+      .mockImplementationOnce(async () => runtimeB)
+    const loadResolvedConfigFn = vi.fn(() => ({
+      effective: {
+        defaultProvider: 'openai',
+        defaultModel: 'gpt-4o',
+        providers: {},
+      },
+      source: {},
+      warnings: [],
+    }))
+    const engineServiceApi = {
+      runtime: {
+        setModel: vi.fn(() => ({
+          provider: 'openai',
+          model: 'gpt-4o',
+        })),
+        getModelSelection: vi.fn(() => ({
+          provider: 'openai',
+          model: 'gpt-4o',
+        })),
+        compactContext: vi.fn(async () => ({
+          ok: false as const,
+          reason: 'empty-history' as const,
+          message: 'No messages to compact.',
+        })),
+        getContextSnapshot: vi.fn(() => ({
+          provider: 'openai',
+          model: 'gpt-4o',
+          strategy: 'full-replace',
+          historyLength: 0,
+          totalWindow: 128000,
+          outputReserve: 16384,
+          effectiveWindow: 111616,
+          lastInputTokens: 0,
+          usedPercentage: 0,
+          remaining: 111616,
+          level: 'normal' as const,
+        })),
+      },
+      sessionService: {
+        listSessions: vi.fn(() => []),
+        listBranches: vi.fn(() => []),
+        loadSession: vi.fn((sessionId: string) => ({
+          sessionId,
+          leafEventUuid: 'leaf-1',
+          cwd: 'D:/workspace/demo',
+          provider: 'openai',
+          model: 'gpt-4o',
+          messages: [
+            {
+              id: 'user-1',
+              role: 'user' as const,
+              content: '历史用户消息',
+            },
+            {
+              id: 'assistant-1',
+              role: 'assistant' as const,
+              content: '历史助手消息',
+            },
+          ],
+        })),
+        resumeSession: vi.fn(),
+        forkFromEvent: vi.fn(),
+        clearConversation: vi.fn(),
+        getCurrentSessionId: vi.fn(() => 'session-1'),
+      },
+    }
+
+    const service = createStudioRuntimeService({
+      createRuntimeFn,
+      loadResolvedConfigFn,
+      engineServiceApi,
+    })
+    const hostState = {
+      workspacePath: 'D:/workspace/demo',
+      lastSelection: null,
+    }
+
+    await expect(
+      service.submit(
+        {
+          text: 'session-1 first',
+          projectPath: 'D:/workspace/demo',
+          sessionId: null,
+        },
+        hostState,
+        vi.fn(),
+      ),
+    ).resolves.toEqual({
+      ok: true,
+      sessionId: 'session-1',
+    })
+
+    await expect(
+      service.submit(
+        {
+          text: 'session-2 first',
+          projectPath: 'D:/workspace/demo',
+          sessionId: 'session-2',
+        },
+        hostState,
+        vi.fn(),
+      ),
+    ).resolves.toEqual({
+      ok: true,
+      sessionId: 'session-2',
+    })
+
+    await expect(
+      service.submit(
+        {
+          text: 'session-1 second',
+          projectPath: 'D:/workspace/demo',
+          sessionId: 'session-1',
+        },
+        hostState,
+        vi.fn(),
+      ),
+    ).resolves.toEqual({
+      ok: true,
+      sessionId: 'session-1',
+    })
+
+    expect(createRuntimeFn).toHaveBeenCalledTimes(2)
+    expect(runtimeA.submit).toHaveBeenNthCalledWith(
+      2,
+      expect.objectContaining({
+        text: 'session-1 second',
+        history: [
+          { role: 'user', content: '历史用户消息' },
+          { role: 'assistant', content: '历史助手消息' },
+          { role: 'user', content: 'session-1 second' },
+        ],
+      }),
+    )
+    expect(runtimeA.dispose).not.toHaveBeenCalled()
+    expect(runtimeB.dispose).not.toHaveBeenCalled()
+  })
+
   it('默认权限策略不应无条件放行危险工具', async () => {
     let runtimeBridge: RuntimeHostBridge | null = null
 

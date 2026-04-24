@@ -87,4 +87,53 @@ describe('studio runtime inspector', () => {
       ],
     })
   })
+
+  it('存在活跃 runtime snapshot 时应优先返回真实运行时快照', async () => {
+    const inspector = createStudioRuntimeInspector({
+      configManager: {
+        load() {
+          return {
+            defaultProvider: 'openai',
+            defaultModel: 'gpt-4o',
+            providers: {},
+          }
+        },
+        getLastWarnings() {
+          return ['config.toml parse error']
+        },
+      },
+      getRuntimeSnapshot() {
+        return {
+          sessionId: 'session-42',
+          isRunning: true,
+          provider: 'openai',
+          model: 'gpt-4.1-mini',
+          warnings: ['memory degraded'],
+        }
+      },
+    } as never)
+
+    await expect(
+      inspector.inspect(
+        { refresh: true },
+        {
+          workspacePath: 'D:/workspace/demo',
+          lastSelection: null,
+        },
+      ),
+    ).resolves.toEqual({
+      ok: true,
+      status: 'ready',
+      snapshot: {
+        sessionId: 'session-42',
+        isRunning: true,
+        provider: 'openai',
+        model: 'gpt-4.1-mini',
+        warnings: ['memory degraded'],
+      },
+      workspacePath: 'D:/workspace/demo',
+      configWarnings: ['config.toml parse error'],
+      issues: [],
+    })
+  })
 })

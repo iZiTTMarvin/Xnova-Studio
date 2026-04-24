@@ -3,7 +3,7 @@
   "name": "04-24-studio-runtime-pivot",
   "title": "Studio 运行时主线切换与 CLI 能力抽离",
   "description": "",
-  "status": "planning",
+  "status": "completed",
   "dev_type": null,
   "scope": null,
   "package": null,
@@ -11,7 +11,7 @@
   "creator": "xuhaochen",
   "assignee": "xuhaochen",
   "createdAt": "2026-04-24",
-  "completedAt": null,
+  "completedAt": "2026-04-24",
   "branch": null,
   "base_branch": "main",
   "worktree_path": null,
@@ -20,10 +20,7 @@
   "subtasks": [],
   "children": [
     "04-24-04-24-runtime-package-extract",
-    "04-24-04-24-capability-domain-packages",
-    "04-24-04-24-studio-main-host-runtime-manager",
-    "04-24-04-24-studio-preload-renderer-engine-migration",
-    "04-24-04-24-cli-parity-verification-and-freeze"
+    "04-24-04-24-capability-domain-packages"
   ],
   "parent": null,
   "relatedFiles": [],

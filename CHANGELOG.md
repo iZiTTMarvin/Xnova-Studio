@@ -1,4 +1,9 @@
 ## 2026-04-24
+- **Studio Runtime Manager / CLI 冻结收口**：完成 main 长生命周期 runtime manager、renderer contract 收口与 CLI 对照归档
+  - `apps/studio/src/main` 新增 `studio-runtime-manager`，按 `workspace / session / agent` 复用 runtime / engine service，`studio-runtime-inspector` 优先返回 live runtime snapshot，切回缓存会话时补历史恢复
+  - `apps/studio/src/renderer` 移除 legacy `submitPrompt` / `shell.setCurrentPrimaryAgent` fallback，统一只走 shared bridge contract；`cli/README.md` 标记为冻结参考，并新增 CLI 能力对照矩阵
+  - 根级 `pnpm typecheck`、`pnpm test`、`pnpm build` 已通过；任务详情已归档至 `.trellis/tasks/archive/2026-04/04-24-04-24-studio-runtime-pivot/`，矩阵文档见 `.trellis/tasks/archive/2026-04/04-24-04-24-cli-parity-verification-and-freeze/parity-matrix.md`
+
 - **Studio Runtime 边界收口**：清零 `runtime/main` 对 `cli/src` 的核心直连并补齐宿主会话生命周期
   - `packages/runtime` 改为通过 package alias 消费 `config/core/mcp/memory/persistence/providers/skills/observability/plugin`，并把 `cleanup-service / event-bus / image-store / message-utils / hooks / file-index` 补齐到 `packages/core`
   - `apps/studio` 的 main 层、`electron.vite`、`vitest`、`tsconfig` 全面改接 `packages/*`；`runtime.submit` 新增 `sessionId` 契约，主进程改为复用会话级 runtime，并为权限请求加入显式策略与审计事件

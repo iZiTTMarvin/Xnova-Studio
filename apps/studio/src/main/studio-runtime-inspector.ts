@@ -2,6 +2,7 @@ import { ConfigManager, type CCodeConfig } from '@config/config-manager.js'
 import {
   inspectRuntimeConfig,
   type RuntimeInspectSnapshot,
+  type RuntimeSnapshot,
 } from '@xnova/runtime'
 import type {
   RuntimeInspectRequest,
@@ -19,6 +20,9 @@ export interface StudioRuntimeInspector {
 export interface CreateStudioRuntimeInspectorOptions {
   configManager?: Pick<ConfigManager, 'load' | 'getLastWarnings'>
   inspectRuntimeConfig?: (input: { config: CCodeConfig }) => RuntimeInspectSnapshot
+  getRuntimeSnapshot?: (
+    hostState: StudioHostState,
+  ) => RuntimeSnapshot | RuntimeInspectSnapshot | null
 }
 
 export function createStudioRuntimeInspector(
@@ -30,9 +34,12 @@ export function createStudioRuntimeInspector(
   return {
     async inspect(_request, hostState) {
       try {
-        const snapshot = runtimeInspector({
-          config: configManager.load(),
-        })
+        const liveRuntimeSnapshot = options.getRuntimeSnapshot?.(hostState)
+        const snapshot =
+          liveRuntimeSnapshot ??
+          runtimeInspector({
+            config: configManager.load(),
+          })
         const configWarnings = configManager.getLastWarnings()
         const issues =
           hostState.workspacePath === null

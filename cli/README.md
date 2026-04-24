@@ -2,6 +2,8 @@
 
 **开源多模型 AI 编程 CLI 助手** — 支持 GLM / Claude / DeepSeek / GPT / Gemini / Ollama 及任意 OpenAI 兼容模型
 
+> 冻结说明（2026-04-24）：`cli/` 当前仅保留为历史供体与参考实现。项目主线已经切换到 `packages/* + apps/studio`，后续新能力与主链路验收以 `apps/studio` 为准。本 README 保留旧 CLI 叙事，可能包含已冻结的命令/UI 说明。
+
 > **X** = **X**nova（新星）· **Code**（代码）
 
 [![npm](https://img.shields.io/npm/v/xnova-cli)](https://www.npmjs.com/package/xnova-cli)

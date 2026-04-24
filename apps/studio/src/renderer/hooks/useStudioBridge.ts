@@ -785,21 +785,6 @@ export function useStudioBridge() {
     if (selectedProjectPath) {
       writeProjectWorkPreference(selectedProjectPath, { agentId })
     }
-
-    // TODO: bridge contract 尚未固化 setCurrentPrimaryAgent，先走约定调用点。
-    const shellApi = bridge?.shell as
-      | { setCurrentPrimaryAgent?: (nextAgentId: string) => Promise<void> }
-      | undefined
-
-    if (!shellApi?.setCurrentPrimaryAgent) {
-      return
-    }
-
-    try {
-      await shellApi.setCurrentPrimaryAgent(agentId)
-    } catch (error) {
-      setShellError(getErrorMessage(error))
-    }
   }
 
   const submitPrompt = async (text: string): Promise<SubmitPromptResult> => {
@@ -838,28 +823,22 @@ export function useStudioBridge() {
     const projectPath = selectedProjectPath ?? hostState.workspacePath ?? null
 
     try {
-      const runtimeApi = bridge.runtime as typeof bridge.runtime & {
-        submitPrompt?: (content: string) => Promise<void>
+      if (typeof bridge.runtime.submit !== 'function') {
+        setRuntimeStatus('error')
+        setRuntimeError('runtime.submit 不可用。')
+        return {
+          ok: false,
+          error: 'runtime.submit 不可用。',
+        }
       }
-      const submitResult =
-        typeof runtimeApi.submit === 'function'
-          ? await runtimeApi.submit({
-              text: prompt,
-              projectPath,
-              sessionId: selectedSessionId,
-              agentId: currentAgentId,
-              providerId: currentProviderId,
-              modelId: currentModelId,
-            })
-          : typeof runtimeApi.submitPrompt === 'function'
-            ? await runtimeApi.submitPrompt(prompt).then(() => ({
-                ok: true as const,
-                sessionId: null,
-              }))
-            : {
-                ok: false as const,
-                error: 'runtime.submit 不可用。',
-              }
+      const submitResult = await bridge.runtime.submit({
+        text: prompt,
+        projectPath,
+        sessionId: selectedSessionId,
+        agentId: currentAgentId,
+        providerId: currentProviderId,
+        modelId: currentModelId,
+      })
       if (!submitResult.ok) {
         setRuntimeStatus('error')
         setRuntimeError(submitResult.error)

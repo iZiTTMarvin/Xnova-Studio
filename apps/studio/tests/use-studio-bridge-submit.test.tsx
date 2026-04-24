@@ -1,5 +1,6 @@
 // @vitest-environment jsdom
 
+import { useState } from 'react'
 import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { useStudioBridge } from '../src/renderer/hooks/useStudioBridge'
@@ -82,14 +83,24 @@ function createShellSnapshot(sessionId: string | null) {
 
 function HookHarness() {
   const bridgeState = useStudioBridge()
+  const [submitResult, setSubmitResult] = useState('')
 
   return (
     <div>
-      <button onClick={() => void bridgeState.submitPrompt('  分析当前项目结构  ')}>
+      <button
+        onClick={() => {
+          void bridgeState
+            .submitPrompt('  分析当前项目结构  ')
+            .then((result) => {
+              setSubmitResult(result.ok ? 'ok' : (result.error ?? 'error'))
+            })
+        }}
+      >
         提交
       </button>
       <div data-testid="shell-status">{bridgeState.shellStatus}</div>
       <div data-testid="submitting">{bridgeState.isSubmitting ? 'yes' : 'no'}</div>
+      <div data-testid="submit-result">{submitResult}</div>
     </div>
   )
 }
@@ -191,5 +202,70 @@ describe('useStudioBridge runtime submit', () => {
       refresh: true,
     })
     expect(screen.getByTestId('submitting').textContent).toBe('no')
+  })
+
+  it('缺少 runtime.submit 时不再 fallback 到 legacy submitPrompt 语义', async () => {
+    const legacySubmitPrompt = vi.fn(async () => undefined)
+
+    ;(window as Window & { xnovaStudio?: unknown }).xnovaStudio = {
+      host: {
+        getState: vi.fn(async () => ({
+          workspacePath: 'D:/workspace/demo',
+          lastSelection: null,
+        })),
+        openWorkspace: vi.fn(async () => ({
+          selection: {
+            ok: true as const,
+            code: 'selected' as const,
+            path: 'D:/workspace/demo',
+          },
+          state: {
+            workspacePath: 'D:/workspace/demo',
+            lastSelection: null,
+          },
+        })),
+        onStateChanged: () => () => {},
+      },
+      runtime: {
+        inspect: vi.fn(async () => createRuntimeInspectResult()),
+        submitPrompt: legacySubmitPrompt,
+        onEvent: () => () => {},
+      },
+      shell: {
+        getSnapshot: vi.fn(async () => createShellSnapshot(null)),
+      },
+      settings: {
+        getProviderSettings: vi.fn(),
+        saveProviderSettings: vi.fn(),
+        testProviderConnection: vi.fn(),
+      },
+      memory: {
+        getOverview: vi.fn(),
+        rebuild: vi.fn(),
+      },
+      mcp: {
+        getOverview: vi.fn(),
+        addServer: vi.fn(),
+        deleteServer: vi.fn(),
+      },
+      skillsPlugins: {
+        getOverview: vi.fn(),
+      },
+    }
+
+    render(<HookHarness />)
+
+    await waitFor(() => {
+      expect(screen.getByTestId('shell-status').textContent).toBe('ready')
+    })
+
+    fireEvent.click(screen.getByRole('button', { name: '提交' }))
+
+    await waitFor(() => {
+      expect(screen.getByTestId('submit-result').textContent).toBe(
+        'runtime.submit 不可用。',
+      )
+    })
+    expect(legacySubmitPrompt).not.toHaveBeenCalled()
   })
 })

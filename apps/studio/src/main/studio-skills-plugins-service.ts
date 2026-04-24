@@ -20,17 +20,21 @@ export interface StudioSkillsPluginsService {
 
 export interface CreateStudioSkillsPluginsServiceOptions {
   engineServiceApi?: Pick<EngineServiceApi, 'skillsService'>
+  resolveEngineServiceApi?: (
+    hostState: StudioHostState,
+  ) => Pick<EngineServiceApi, 'skillsService'> | undefined
   readSkillsPluginsOverviewFn?: typeof readSkillsPluginsOverview
 }
 
 export function createStudioSkillsPluginsService(
   options: CreateStudioSkillsPluginsServiceOptions = {},
 ): StudioSkillsPluginsService {
-  const engineServiceApi = options.engineServiceApi
   const readOverview = options.readSkillsPluginsOverviewFn ?? readSkillsPluginsOverview
 
   return {
-    async getOverview() {
+    async getOverview(hostState) {
+      const engineServiceApi =
+        options.resolveEngineServiceApi?.(hostState) ?? options.engineServiceApi
       if (engineServiceApi) {
         return toOverview(await engineServiceApi.skillsService.getOverview())
       }

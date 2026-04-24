@@ -12,8 +12,100 @@
   - `src/main/` 负责 host 生命周期、权限、IPC handler、runtime 复用
   - `src/preload/` 负责安全桥
   - `src/renderer/` 只负责展示与交互
+- `apps/studio/src/main/studio-runtime-manager.ts` 是当前 host 持有 runtime / engine service 的唯一事实源：
+  - runtime key = `workspaceRoot + cwd + agentId + sessionId(draft/session)`
+  - `studio-runtime-inspector` 优先读取 manager 中的 live runtime snapshot，再回退到 config inspect
 - `cli/` 与根 `studio/` 都是 legacy 参考层，不再定义运行时边界。
 - package 消费者不得再以 `cli/src/**` 作为长期依赖入口；如果仍需吸收 legacy 能力，必须先收敛进 `packages/*`。
+
+## 场景：Studio Main 必须通过 RuntimeManager 长生命周期持有 runtime / engine service
+
+### 1. Scope / Trigger
+
+- 触发条件：
+  - 修改 `apps/studio/src/main/index.ts`
+  - 修改 `apps/studio/src/main/studio-runtime-service.ts`
+  - 修改 `apps/studio/src/main/studio-runtime-inspector.ts`
+  - 新增或修改 main 侧 runtime / host bridge / engine service 装配
+- 这是 `main` 宿主持有边界；如果这里退化成“入口文件现拼 runtime”，Studio 主链路会重新掉回临时拼接态。
+
+### 2. Signatures
+
+```ts
+interface StudioRuntimeSelection {
+  cwd: string
+  workspaceRoot: string
+  sessionId: string | null
+  agentId: string | null
+}
+
+interface StudioRuntimeManager {
+  getEngineServiceApi(workspaceRoot: string): EngineServiceApi
+  acquireRuntime(input: {
+    selection: StudioRuntimeSelection
+    hostState: StudioHostState
+    emitRuntimeEvent: (event: StudioRuntimeEvent) => void
+  }): Promise<{ reused: boolean; reactivated: boolean }>
+  commitSession(entry: StudioManagedRuntimeEntry, sessionId: string | null): void
+  getRuntimeSnapshot(hostState: StudioHostState): RuntimeSnapshot | null
+  dispose(): Promise<void>
+}
+```
+
+### 3. Contracts
+
+- `main/index.ts` 不得再直接 `createEngineServiceApi()` 然后散落传给多个 service；统一通过 `studio-runtime-manager` 获取。
+- runtime / engine service 由 `main` 长生命周期持有；renderer 永远只看 bridge contract。
+- 切回已缓存 session 时，可以复用 runtime handle，但提交前必须重新补历史恢复，避免 shared runtime 的全局 context 漂移到别的 session。
+- `studio-runtime-inspector` 必须优先读 live runtime snapshot；只有当前 workspace 没有活跃 runtime 时，才允许回退到 config inspect。
+
+### 4. Validation & Error Matrix
+
+| 条件 | 处理方式 |
+|---|---|
+| `main/index.ts` 直接 `createEngineServiceApi()` 并手工传递给 runtime service | 视为 host 收口失败，必须回退到 RuntimeManager |
+| Studio host 只保留单个 `activeRuntime`，切 session / workspace 就销毁旧实例 | 视为长生命周期持有缺失，必须改为 manager cache |
+| 切回已缓存 session 但不补历史恢复 | 视为高风险上下文串线，必须补 hydrate history |
+| inspector 只返回 config snapshot，不返回 live runtime snapshot | 视为运行时观测失真，必须修复 |
+
+### 5. Good / Base / Bad Cases
+
+- Good：
+  - `studio-runtime-manager.ts` 统一持有 runtime / engine service
+  - `studio-runtime-service.ts` 只负责 submit contract、history hydrate、permission bridge
+  - `studio-runtime-inspector.ts` 优先透出 live snapshot
+- Base：
+  - 至少保证 workspace / session / agent 级复用不再退化成每轮临时拼接
+- Bad：
+  - 在 `index.ts` 里直接 new runtime / engine service 再传来传去
+  - 多 session 间共享了错误的 context history
+
+### 6. Tests Required
+
+- 单元测试：
+  - `studio-runtime-service.test.ts` 断言跨 session 切回时复用缓存 runtime 并补历史恢复
+  - `studio-runtime-inspector.test.ts` 断言 live runtime snapshot 优先生效
+  - `studio-main-boundary.test.ts` 断言 `main/index.ts` 走 RuntimeManager，而不是裸 `createEngineServiceApi()`
+- 集成测试：
+  - `studio-main-flow-regression.test.tsx` 断言打开 workspace -> submit -> 恢复会话主链路仍成立
+
+### 7. Wrong vs Correct
+
+#### Wrong
+
+```ts
+const engineServiceApi = createEngineServiceApi()
+const runtimeService = createStudioRuntimeService({ engineServiceApi })
+```
+
+#### Correct
+
+```ts
+const runtimeManager = createStudioRuntimeManager()
+const runtimeService = createStudioRuntimeService({ runtimeManager })
+```
+
+把 runtime / engine service 的长生命周期收回 `main`，而不是让入口文件继续临时拼接。
 
 ## 场景：定义 shared runtime / host / renderer contract
 
@@ -299,6 +391,7 @@ await runtime.submit({
 - renderer 必须把当前 `sessionId / agentId / providerId / modelId` 一并送入 submit 契约。
 - host 若直接调用 runtime，必须显式构造当前用户消息 history；不能只传 `text`。
 - runtime 事件必须持续回流到 renderer，用于展示 live assistant text、thinking、tool events、warning、error。
+- renderer / preload / host 只允许调用 shared contract 中已声明的方法；不得 fallback 到 legacy `runtime.submitPrompt` 等未声明入口。
 
 ### 4. Validation & Error Matrix
 
@@ -309,6 +402,7 @@ await runtime.submit({
 | submit 未携带当前 `providerId / modelId` | 视为会话模型选择失效 |
 | host 直接调 runtime.submit 但 history 为空 | Provider 侧可能报 `messages must not be empty`，必须修装配 |
 | runtime 事件未透传到 renderer | 视为聊天主视图不完整，必须修复 |
+| renderer 通过 undocumented fallback 调 `runtime.submitPrompt` 获得“成功” | 视为 legacy 语义回潮，必须回退到 shared contract |
 
 ### 5. Good / Base / Bad Cases
 
@@ -476,6 +570,7 @@ const nativeRuntimeExternals = ['libsql', /^@libsql\//]
   - `packages/core/src/bootstrap.ts`
   - `packages/core/src/context-manager.ts`
 - Studio host 层：
+  - `apps/studio/src/main/studio-runtime-manager.ts`
   - `apps/studio/src/main/studio-runtime-service.ts`
   - `apps/studio/src/main/studio-runtime-inspector.ts`
   - `apps/studio/src/shared/studio-bridge-contract.ts`
