@@ -6,7 +6,7 @@
   "author": "Xnova Studio Team",
   "main": "./dist/main/index.js",
   "scripts": {
-    "dev": "electron-vite dev",
+    "dev": "node scripts/dev.js",
     "build": "electron-vite build",
     "preview": "electron-vite preview",
     "pack:dir": "pnpm build && electron-builder --config electron-builder.yml --dir --publish never",

@@ -134,9 +134,24 @@
 }
 
 .composer-feedback {
-  margin-top: 12px;
+  margin-top: 10px;
   color: var(--warning);
   font-size: 13px;
+  line-height: 1.5;
+}
+
+.composer-floating {
+  position: absolute;
+  bottom: 12px;
+  left: 20px;
+  right: 20px;
+  z-index: 10;
+  margin-top: 0;
+  pointer-events: none;
+}
+
+.composer-floating .composer-shell {
+  pointer-events: auto;
 }
 
 .conversation-stage-main {

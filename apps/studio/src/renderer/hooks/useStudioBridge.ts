@@ -849,60 +849,72 @@ export function useStudioBridge() {
         return { ok: false, error: submitResult.error }
       }
 
-      const snapshot = await bridge.shell.getSnapshot(
-        buildShellRequest(
-          projectPath,
-          submitResult.sessionId === null ? undefined : submitResult.sessionId,
-        ),
-      )
-      const selection = {
-        ...(projectPath === undefined ? {} : { projectPath }),
-        ...(submitResult.sessionId === null
-          ? {}
-          : { sessionId: submitResult.sessionId }),
-      }
-      const nextProjectPath = resolveProjectPathFromSnapshot(snapshot, selection)
-      const nextStartupRoute = resolveStartupRoute({
-        recentProject: snapshot.startup.recentProject,
-        recentSession: snapshot.startup.recentSession,
-      })
-      const storedPreference = readProjectWorkPreference(nextProjectPath)
-      const restored = resolveWorkPreferenceRestore({
-        projectPath: nextProjectPath,
-        startupSessionId:
-          submitResult.sessionId ??
-          (nextStartupRoute.kind === 'restore-session' &&
-          nextStartupRoute.projectPath === nextProjectPath
-            ? nextStartupRoute.sessionId
-            : null),
-        sessions: snapshot.projectSessions,
-        defaults: snapshot.defaults,
-        storedPreference,
-      })
+      // 提交成功后立即返回，避免 getSnapshot/inspectRuntime 的异常影响 UI
+      // 后续状态刷新通过异步任务完成，即使失败也不应阻止输入框清空
+      const refreshStateAsync = async (): Promise<void> => {
+        try {
+          const snapshot = await bridge.shell.getSnapshot(
+            buildShellRequest(
+              projectPath,
+              submitResult.sessionId === null ? undefined : submitResult.sessionId,
+            ),
+          )
+          const selection = {
+            ...(projectPath === undefined ? {} : { projectPath }),
+            ...(submitResult.sessionId === null
+              ? {}
+              : { sessionId: submitResult.sessionId }),
+          }
+          const nextProjectPath = resolveProjectPathFromSnapshot(snapshot, selection)
+          const nextStartupRoute = resolveStartupRoute({
+            recentProject: snapshot.startup.recentProject,
+            recentSession: snapshot.startup.recentSession,
+          })
+          const storedPreference = readProjectWorkPreference(nextProjectPath)
+          const restored = resolveWorkPreferenceRestore({
+            projectPath: nextProjectPath,
+            startupSessionId:
+              submitResult.sessionId ??
+              (nextStartupRoute.kind === 'restore-session' &&
+              nextStartupRoute.projectPath === nextProjectPath
+                ? nextStartupRoute.sessionId
+                : null),
+            sessions: snapshot.projectSessions,
+            defaults: snapshot.defaults,
+            storedPreference,
+          })
 
-      setShellSnapshot(snapshot)
-      setShellStatus('ready')
-      setSelectedProjectPath(nextProjectPath)
-      setSelectedSessionId(submitResult.sessionId ?? restored.sessionId)
-      setCurrentMode(restored.mode)
-      setCurrentAgentId(restored.agentId)
-      setCurrentProviderId(
-        snapshot.activeSession?.providerId ?? snapshot.defaults.providerId ?? null,
-      )
-      setCurrentModelId(restored.modelId)
-      setRecoveryState({
-        status: resolveDisplayRecoveryStatus(nextStartupRoute, restored.status),
-        sources: restored.sources,
-        projectDefaults: restored.projectDefaults,
-      })
-      setLiveConversation({
-        pendingUserText: null,
-        assistantText: '',
-        thinkingText: '',
-        toolEvents: [],
-        systemMessages: [],
-      })
-      await inspectRuntime(bridge, true)
+          setShellSnapshot(snapshot)
+          setShellStatus('ready')
+          setSelectedProjectPath(nextProjectPath)
+          setSelectedSessionId(submitResult.sessionId ?? restored.sessionId)
+          setCurrentMode(restored.mode)
+          setCurrentAgentId(restored.agentId)
+          setCurrentProviderId(
+            snapshot.activeSession?.providerId ?? snapshot.defaults.providerId ?? null,
+          )
+          setCurrentModelId(restored.modelId)
+          setRecoveryState({
+            status: resolveDisplayRecoveryStatus(nextStartupRoute, restored.status),
+            sources: restored.sources,
+            projectDefaults: restored.projectDefaults,
+          })
+          setLiveConversation({
+            pendingUserText: null,
+            assistantText: '',
+            thinkingText: '',
+            toolEvents: [],
+            systemMessages: [],
+          })
+          await inspectRuntime(bridge, true)
+        } catch (error) {
+          console.error('submitPrompt 后台状态刷新失败', error)
+          setShellStatus('error')
+          setShellError(getErrorMessage(error))
+        }
+      }
+
+      void refreshStateAsync()
       return { ok: true }
     } catch (error) {
       const message = getErrorMessage(error)

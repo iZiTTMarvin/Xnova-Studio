@@ -1,5 +1,5 @@
 import { v7 as uuidv7, v4 as uuidv4 } from 'uuid'
-import { execSync } from 'node:child_process'
+import { spawnSync } from 'node:child_process'
 
 /** 将 cwd 路径转为文件系统安全的目录名（与 Claude Code 一致） */
 export function toProjectSlug(cwd: string): string {
@@ -37,7 +37,16 @@ export function extractSessionId(filename: string): string {
 /** 获取当前 git 分支名，失败返回 'unknown' */
 export function getGitBranch(cwd: string): string {
   try {
-    return execSync('git rev-parse --abbrev-ref HEAD', { cwd, encoding: 'utf-8', timeout: 3000 }).trim()
+    const result = spawnSync('git', ['rev-parse', '--abbrev-ref', 'HEAD'], {
+      cwd,
+      encoding: 'utf-8',
+      timeout: 3000,
+      stdio: ['pipe', 'pipe', 'ignore'],
+    })
+    if (result.status !== 0 || result.error) {
+      return 'unknown'
+    }
+    return result.stdout.trim()
   } catch {
     return 'unknown'  // 非 git 仓库或 git 未安装，预期行为
   }

@@ -377,6 +377,9 @@ export function StudioHomePage() {
           <IconSend />
         </button>
       </div>
+      {composerFeedback ? (
+        <p className="composer-feedback">{composerFeedback}</p>
+      ) : null}
     </div>
   )
 
@@ -424,13 +427,20 @@ export function StudioHomePage() {
     }
 
     setComposerFeedback(null)
-    const result = await submitPrompt(nextText)
-    if (!result.ok) {
-      setComposerFeedback(result.error ?? '提交失败')
-      return
+    setComposerInput('') // 发送后立即清空输入框，提升 UX
+    try {
+      const result = await submitPrompt(nextText)
+      if (!result.ok) {
+        setComposerFeedback(result.error ?? '提交失败')
+        setComposerInput(nextText) // 发送失败时恢复内容，方便用户修改重发
+        return
+      }
+      setActiveNavId('projects')
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error)
+      setComposerFeedback(`发送异常: ${message}`)
+      setComposerInput(nextText) // 异常时恢复输入内容
     }
-    setComposerInput('')
-    setActiveNavId('projects')
   }
 
   const searchContent = (
@@ -638,15 +648,11 @@ export function StudioHomePage() {
           session={activeSessionDetail}
           liveConversation={liveConversation}
         />
-
-        <div className="composer-context-shell composer-context-shell-session">
-          {composerArea}
-        </div>
       </section>
 
-      {composerFeedback ? (
-        <p className="composer-feedback">{composerFeedback}</p>
-      ) : null}
+      <div className="composer-context-shell composer-context-shell-session composer-floating">
+        {composerArea}
+      </div>
     </section>
   ) : (
     <section className="blank-chat-stage blank-chat-stage-codex">
@@ -689,10 +695,6 @@ export function StudioHomePage() {
           </div>
         </button>
       </div>
-
-      {composerFeedback ? (
-        <p className="composer-feedback">{composerFeedback}</p>
-      ) : null}
     </section>
   )
 
