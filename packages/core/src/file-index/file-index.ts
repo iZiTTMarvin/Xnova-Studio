@@ -1,7 +1,7 @@
 import fg from 'fast-glob'
 import { Fzf } from 'fzf'
 import type { Ignore } from 'ignore'
-import { createIgnoreFilter } from './ignore-rules.js'
+import { createIgnoreFilter, FILE_INDEX_GLOB_IGNORE_PATTERNS } from './ignore-rules.js'
 import type { SearchResult, DirEntry } from './types.js'
 import { dbg } from '../debug.js'
 
@@ -20,6 +20,8 @@ export class FileIndex {
       allFiles = await fg('**/*', {
         cwd: this.cwd,
         dot: false,
+        followSymbolicLinks: false,
+        ignore: FILE_INDEX_GLOB_IGNORE_PATTERNS,
         onlyFiles: true,
         suppressErrors: true,
       })

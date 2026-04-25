@@ -75,6 +75,11 @@ export function ProviderSettingsCard(props: ProviderSettingsCardProps) {
     () => providers.find((provider) => provider.id === selectedProviderId) ?? null,
     [providers, selectedProviderId],
   )
+  const normalizedNewModel = newModelDraft.trim()
+  const canAddModel =
+    Boolean(selectedProvider) &&
+    normalizedNewModel.length > 0 &&
+    !(selectedProvider?.models ?? []).includes(normalizedNewModel)
 
   useEffect(() => {
     setProviderNameDraft(selectedProvider?.id ?? '')
@@ -111,7 +116,11 @@ export function ProviderSettingsCard(props: ProviderSettingsCardProps) {
       return
     }
 
-    const normalized = newModelDraft.trim()
+    const normalized = normalizedNewModel
+    if (!normalized || selectedProvider.models.includes(normalized)) {
+      return
+    }
+
     updateSelectedProvider((provider) => ({
       ...provider,
       models: [...provider.models, normalized],
@@ -318,6 +327,7 @@ export function ProviderSettingsCard(props: ProviderSettingsCardProps) {
                       type="button"
                       className="secondary-button"
                       onClick={addModel}
+                      disabled={!canAddModel}
                     >
                       添加模型
                     </button>
@@ -343,41 +353,45 @@ export function ProviderSettingsCard(props: ProviderSettingsCardProps) {
 
                 {modelEditorOpen ? (
                   <div className="provider-model-list">
-                    {selectedProvider.models.map((model, index) => (
-                      <div key={`${selectedProvider.id}-model-${index}`} className="provider-model-row">
-                        <input
-                          aria-label={`模型 #${index + 1}`}
-                          value={model}
-                          onChange={(event) => {
-                            const value = event.target.value
-                            updateSelectedProvider((provider) => ({
-                              ...provider,
-                              models: provider.models.map((item, itemIndex) =>
-                                itemIndex === index ? value : item,
-                              ),
-                            }))
-                          }}
-                          onBlur={() => {
-                            updateSelectedProvider((provider) => ({
-                              ...provider,
-                              models: normalizeModelItems(provider.models),
-                            }))
-                          }}
-                        />
-                        <button
-                          type="button"
-                          className="secondary-button"
-                          onClick={() => {
-                            updateSelectedProvider((provider) => ({
-                              ...provider,
-                              models: provider.models.filter((_, itemIndex) => itemIndex !== index),
-                            }))
-                          }}
-                        >
-                          {`删除模型 #${index + 1}`}
-                        </button>
-                      </div>
-                    ))}
+                    {selectedProvider.models.length > 0 ? (
+                      selectedProvider.models.map((model, index) => (
+                        <div key={`${selectedProvider.id}-model-${index}`} className="provider-model-row">
+                          <input
+                            aria-label={`模型 #${index + 1}`}
+                            value={model}
+                            onChange={(event) => {
+                              const value = event.target.value
+                              updateSelectedProvider((provider) => ({
+                                ...provider,
+                                models: provider.models.map((item, itemIndex) =>
+                                  itemIndex === index ? value : item,
+                                ),
+                              }))
+                            }}
+                            onBlur={() => {
+                              updateSelectedProvider((provider) => ({
+                                ...provider,
+                                models: normalizeModelItems(provider.models),
+                              }))
+                            }}
+                          />
+                          <button
+                            type="button"
+                            className="secondary-button"
+                            onClick={() => {
+                              updateSelectedProvider((provider) => ({
+                                ...provider,
+                                models: provider.models.filter((_, itemIndex) => itemIndex !== index),
+                              }))
+                            }}
+                          >
+                            {`删除模型 #${index + 1}`}
+                          </button>
+                        </div>
+                      ))
+                    ) : (
+                      <p className="provider-model-empty">暂无模型，请先输入模型 ID 后添加。</p>
+                    )}
                   </div>
                 ) : null}
 

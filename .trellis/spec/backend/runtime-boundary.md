@@ -163,6 +163,8 @@ function createRuntime(
 - Tool registry、MCP、Skills、Memory、Plugin 等底层能力装配
 - Session / context / subagent / event 生命周期
 - 配置解析后的消费
+- `RuntimeConfigInput.cwd` 是运行时唯一权威工作目录；`bootstrapAll()`、`AgentLoop`、ToolContext、Memory、Git context、项目级 hooks / instructions 都必须显式消费该 cwd，不得在 Studio/Electron 主链路中回退依赖 `process.cwd()`。
+- runtime bootstrap 中的文件索引必须在 glob 阶段跳过 `node_modules`、`dist`、`build`、`.git` 等重型目录，并禁止跟随符号链接；不得先全量扫描再用 ignore 过滤。
 
 #### Host 负责什么
 
@@ -201,6 +203,8 @@ function createRuntime(
 | renderer 直接触达 `fs` / shell / provider secrets / tool execution | 必须通过 host/runtime 桥接，不允许直连 |
 | Studio host 每次 submit 都销毁再重建 runtime，导致会话上下文丢失 | 视为主链路缺陷，必须改为按 session / cwd / agent 复用 |
 | host 对权限请求无条件放行 | 视为安全红线，至少要有显式 allow / deny 策略与审计事件 |
+| Studio submit 配置了 workspace，但 runtime/core 仍使用 Electron 启动目录 `process.cwd()` | 视为主链路缺陷，必须把 cwd 从 host contract 透传到 runtime/core/tool context |
+| 文件索引扫描没有在 `fast-glob` 阶段忽略重型目录或仍跟随符号链接 | 视为 P0 性能缺陷，必须补回归测试后修复 |
 
 ### 5. Good / Base / Bad Cases
 
@@ -220,6 +224,8 @@ function createRuntime(
   - runtime factory 输入输出
   - host bridge 事件分发
   - preload 参数透传与类型约束
+  - `createRuntime()` 必须断言 `bootstrapAll(input.cwd)` 与 `AgentLoop` config.cwd 透传
+  - 文件索引必须断言 glob ignore 与 `followSymbolicLinks: false`
 - 集成测试：
   - Studio host 通过 shared contract 调用 runtime
   - runtime 事件能够到达 renderer 订阅层

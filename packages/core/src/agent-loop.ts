@@ -142,6 +142,8 @@ export type AgentEvent =
 }
 
 export interface AgentConfig {
+    /** 当前运行时工作目录。Studio/Electron 不应依赖全局 process.cwd()。 */
+    cwd?: string | undefined
     model: string
     /** provider 名称，记录到 llm_start 事件 */
     provider: string
@@ -784,7 +786,7 @@ function buildToolContext(
     toolCallId?: string,
 ): import('@tools/core/types.js').ToolContext {
     const ctx: import('@tools/core/types.js').ToolContext = {
-        cwd: process.cwd(),
+        cwd: config.cwd ?? process.cwd(),
         provider,
         providerName: config.provider,
         model: config.model,

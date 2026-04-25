@@ -12,6 +12,7 @@ import type {
   RuntimeHostBridge,
   RuntimeInstance,
   RuntimeSubmitInput,
+  RuntimeTurnResult,
 } from '@xnova/runtime'
 import type { MainLogger } from './logger'
 import {
@@ -51,6 +52,7 @@ export interface CreateStudioRuntimeServiceOptions {
     hostState: StudioHostState,
   ) => Promise<PermissionResolution & { reason?: string }>
   fallbackCwd?: string
+  submitTimeoutMs?: number
   logger?: Pick<MainLogger, 'info' | 'warn' | 'error'>
 }
 
@@ -226,6 +228,7 @@ export function createStudioRuntimeService(
     })
   const loadResolvedConfigFn = options.loadResolvedConfigFn ?? loadResolvedConfig
   const resolvePermissionFn = options.resolvePermissionFn ?? defaultResolvePermission
+  const submitTimeoutMs = options.submitTimeoutMs ?? 60_000
   const logger = options.logger ?? {
     info() {
       return undefined
@@ -365,7 +368,37 @@ export function createStudioRuntimeService(
           ...(request.providerId ? { provider: request.providerId } : {}),
           ...(request.modelId ? { model: request.modelId } : {}),
         }
-        const turnResult = await runtimeInstance.submit(runtimeSubmitInput)
+
+        // 防止 LLM 或启动链路无限挂起，避免 IPC 一直等待。
+        logger.info('runtimeInstance.submit 开始', {
+          provider: request.providerId,
+          model: request.modelId,
+          cwd,
+        })
+        let turnResult: RuntimeTurnResult
+        try {
+          turnResult = await new Promise<RuntimeTurnResult>((resolve, reject) => {
+            const timer = setTimeout(() => {
+              logger.warn('runtimeInstance.submit 超时，调用 abort', { timeoutMs: submitTimeoutMs })
+              runtimeInstance.abort()
+              reject(new Error(`LLM 请求超过 ${submitTimeoutMs / 1000} 秒未响应，已自动中断。请检查网络连接、API Key 或 baseURL 配置。`))
+            }, submitTimeoutMs)
+            runtimeInstance.submit(runtimeSubmitInput)
+              .then((result) => {
+                clearTimeout(timer)
+                resolve(result)
+              })
+              .catch((err) => {
+                clearTimeout(timer)
+                reject(err)
+              })
+          })
+        } catch (error) {
+          logger.error('runtimeInstance.submit 异常或超时', error)
+          throw error
+        }
+
+        logger.info('runtimeInstance.submit 返回', { hasError: Boolean(turnResult.error) })
 
         if (turnResult.error) {
           return {

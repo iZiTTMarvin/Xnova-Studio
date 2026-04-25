@@ -1,3 +1,24 @@
+## 2026-04-25
+- **全面代码审查与改进计划**：完成全项目架构审查、OpenCowork 对比分析，产出分阶段改进计划
+  - 产出 `IMPROVEMENT-PLAN.md`：18 项改进清单，按 P0/P1/P2/P3 四级优先级排序
+  - 产出 `CODEX-PROMPT.md`：给 Codex 的完整 Trellis 工作流提示词，逐步拆解执行改进项
+  - 核心诊断: 引擎层设计成熟但体验层残缺（权限弹窗、用户交互、Markdown 渲染缺失）
+
+- **Runtime 历史同步修复**：修复 Studio 第二轮消息触发 provider `messages must not be empty` 的主链路缺陷
+  - `createRuntime()` 在收到显式 history 时先同步 `ContextManager`，不再让首轮恢复态和后续轮次的上下文事实源分叉
+  - 无显式 history 的 submit 现在会先补写当前用户消息，再进入 `AgentLoop`，避免复用 runtime 时把空消息数组发给 provider
+  - 新增 runtime 集成回归测试，覆盖“首轮恢复历史后继续追问”的场景
+
+- **Runtime 主链路修复**：修复 Studio 发送消息卡在 bootstrap 并最终 OOM 的问题
+  - 文件索引在 glob 阶段跳过重型目录并禁止跟随符号链接，避免扫描 `node_modules/dist/build`
+  - Studio runtime 将真实 workspace cwd 透传到 `bootstrapAll`、`AgentLoop` 与工具上下文
+  - 任务详情见 `.trellis/tasks/04-25-rescue-studio-runtime-ux/`
+
+- **Studio 关键体验修复**：补齐设置与会话主工作面的基础可用性反馈
+  - 模型设置支持空列表添加并禁用无效添加，设置弹窗视觉层级更清晰
+  - 会话页稳定显示恢复状态、Memory 降级建议、子 Agent 停止反馈，并避免聊天滚动在降级 DOM 中崩溃
+  - 任务详情见 `.trellis/tasks/04-25-rescue-studio-runtime-ux/`
+
 ## 2026-04-24
 - **工作区清理迁移**：正式移除根 `cli/` 与根 `studio/` 的工作区入口，统一主线为 `packages/* + apps/studio`
   - `pnpm-workspace.yaml` 移除根 `cli`，根 `cli/package.json` 与根 `studio/package.json` 改为下线占位清单，不再暴露 `dev / build / test / pack` 入口

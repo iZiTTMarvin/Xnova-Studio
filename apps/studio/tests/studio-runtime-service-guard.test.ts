@@ -135,4 +135,52 @@ describe('studio runtime service guards', () => {
     expect(createRuntimeFn).not.toHaveBeenCalled()
     expect(loadResolvedConfigFn).not.toHaveBeenCalled()
   })
+
+  it('runtime submit 超时时会调用 abort 并返回用户可见错误', async () => {
+    const runtimeInstance: RuntimeInstance = {
+      submit: vi.fn((): Promise<never> => new Promise(() => {})),
+      abort: vi.fn(),
+      dispose: vi.fn(async () => undefined),
+      getSnapshot: vi.fn(() => ({
+        sessionId: null,
+        isRunning: true,
+        provider: 'openai',
+        model: 'gpt-4.1-mini',
+        warnings: [],
+      })),
+    }
+
+    const service = createStudioRuntimeService({
+      createRuntimeFn: vi.fn(async () => runtimeInstance),
+      loadResolvedConfigFn: vi.fn(() => ({
+        effective: {
+          defaultProvider: 'openai',
+          defaultModel: 'gpt-4.1-mini',
+          providers: {},
+        },
+        source: {},
+        warnings: [],
+      })),
+      submitTimeoutMs: 5,
+    })
+
+    await expect(
+      service.submit(
+        {
+          text: '继续当前项目',
+          projectPath: 'D:/workspace/demo',
+        },
+        {
+          workspacePath: 'D:/workspace/demo',
+          lastSelection: null,
+        },
+        vi.fn(),
+      ),
+    ).resolves.toEqual({
+      ok: false,
+      error: expect.stringContaining('LLM 请求超过 0.005 秒未响应'),
+    })
+
+    expect(runtimeInstance.abort).toHaveBeenCalledTimes(1)
+  })
 })

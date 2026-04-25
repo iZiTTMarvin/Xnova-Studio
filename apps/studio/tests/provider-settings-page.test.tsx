@@ -121,10 +121,13 @@ describe('provider settings dialog', () => {
       target: { value: 'https://openrouter.ai/api/v1' },
     })
 
-    fireEvent.click(screen.getByRole('button', { name: '添加模型' }))
-    fireEvent.change(screen.getByLabelText('模型 #1'), {
+    const addModelButton = screen.getByRole('button', { name: '添加模型' }) as HTMLButtonElement
+    expect(addModelButton.disabled).toBe(true)
+    fireEvent.change(screen.getByLabelText('新增模型'), {
       target: { value: 'openai/gpt-4.1-mini' },
     })
+    expect(addModelButton.disabled).toBe(false)
+    fireEvent.click(addModelButton)
 
     fireEvent.click(screen.getByRole('button', { name: '测试连接' }))
 

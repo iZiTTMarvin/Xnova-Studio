@@ -54,6 +54,24 @@ const BUILTIN_IGNORE_PATTERNS: string[] = [
   '*.xlsx',
 ]
 
+function toFastGlobIgnorePatterns(pattern: string): string[] {
+  const normalized = pattern.replace(/\\/g, '/')
+  if (normalized.includes('*')) {
+    return [normalized, `**/${normalized}`]
+  }
+
+  return [
+    normalized,
+    `${normalized}/**`,
+    `**/${normalized}`,
+    `**/${normalized}/**`,
+  ]
+}
+
+export const FILE_INDEX_GLOB_IGNORE_PATTERNS: string[] = [
+  ...new Set(BUILTIN_IGNORE_PATTERNS.flatMap(toFastGlobIgnorePatterns)),
+]
+
 function readFileSafe(filePath: string): string {
   try {
     return readFileSync(filePath, 'utf-8')

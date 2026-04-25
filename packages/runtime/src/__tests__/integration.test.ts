@@ -31,8 +31,29 @@ const mocks = vi.hoisted(() => {
   const bindTokenMeter = vi.fn()
   const consumeTokenEvent = vi.fn()
 
-  const prepareHistory = vi.fn(async (history: unknown) => ({ history, compacted: false }))
-  const getHistoryRef = vi.fn(() => [])
+  const prepareHistory = vi.fn(async (history: unknown, _provider?: unknown, _options?: unknown) => ({
+    history,
+    compacted: false,
+  }))
+  const historyStore: unknown[] = []
+  const getHistoryRef = vi.fn(() => historyStore)
+  const replaceHistory = vi.fn((history: unknown[]) => {
+    historyStore.length = 0
+    historyStore.push(...history)
+  })
+  const pushUser = vi.fn((content: string) => {
+    historyStore.push({ role: 'user', content })
+  })
+  const pushUserContent = vi.fn((content: unknown[]) => {
+    historyStore.push({ role: 'user', content })
+  })
+  const clearHistory = vi.fn(() => {
+    historyStore.length = 0
+  })
+  const restoreHistory = vi.fn((history: unknown[]) => {
+    historyStore.length = 0
+    historyStore.push(...history)
+  })
   const contextState = {
     usedPercentage: 0.42,
     lastInputTokens: 2048,
@@ -67,7 +88,13 @@ const mocks = vi.hoisted(() => {
     bindTokenMeter,
     consumeTokenEvent,
     prepareHistory,
+    historyStore,
     getHistoryRef,
+    replaceHistory,
+    pushUser,
+    pushUserContent,
+    clearHistory,
+    restoreHistory,
     contextState,
     getOrCreateProvider,
     agentLoopRun,
@@ -86,6 +113,11 @@ vi.mock('@xnova/core', () => ({
   hookManager: { name: 'hook-manager' },
   contextManager: {
     prepare: mocks.prepareHistory,
+    replaceHistory: mocks.replaceHistory,
+    pushUser: mocks.pushUser,
+    pushUserContent: mocks.pushUserContent,
+    clearHistory: mocks.clearHistory,
+    restoreHistory: mocks.restoreHistory,
     getHistoryRef: mocks.getHistoryRef,
   },
   contextTracker: {
@@ -127,6 +159,7 @@ function makeConfig() {
 describe('createRuntime() — 集成门面', () => {
   beforeEach(() => {
     vi.clearAllMocks()
+    mocks.historyStore.length = 0
     mocks.agentLoopRun.mockImplementation(async function* () {
       yield { type: 'text', text: 'Hello' }
       yield { type: 'tool_start', toolName: 'bash', toolCallId: 'tool-1', args: { command: 'pwd' } }
@@ -175,7 +208,7 @@ describe('createRuntime() — 集成门面', () => {
       loggedUserContent: '你好',
     })
 
-    expect(mocks.bootstrapAll).toHaveBeenCalledTimes(1)
+    expect(mocks.bootstrapAll).toHaveBeenCalledWith('D:/workspace')
     expect(mocks.ensureSession).toHaveBeenCalledWith('openai', 'gpt-4o')
     expect(mocks.bindTokenMeter).toHaveBeenCalledWith('session-1', 'openai', 'gpt-4o')
     expect(mocks.logUserMessage).toHaveBeenCalledWith('你好')
@@ -200,6 +233,13 @@ describe('createRuntime() — 集成门面', () => {
     )
     expect(mocks.registerMcpTools).toHaveBeenCalledWith(mocks.getRegistry.mock.results[0]!.value)
     expect(mocks.AgentLoopMock).toHaveBeenCalledTimes(1)
+    expect(mocks.AgentLoopMock).toHaveBeenCalledWith(
+      expect.any(Object),
+      expect.any(Object),
+      expect.objectContaining({
+        cwd: 'D:/workspace',
+      }),
+    )
     expect(result).toEqual(expect.objectContaining({
       text: 'Hello',
       thinking: '',
@@ -232,5 +272,70 @@ describe('createRuntime() — 集成门面', () => {
     })
 
     expect(mocks.ensureMcpInitialized).toHaveBeenCalledTimes(1)
+  })
+
+  it('首轮显式 history 提交后，后续 submit 会把当前用户消息追加到同步后的上下文', async () => {
+    mocks.agentLoopRun.mockImplementation(async function* (history: Array<{ role: string; content: unknown }>) {
+      const lastUserMessage = [...history].reverse().find((message) => message.role === 'user')
+      history.push({
+        role: 'assistant',
+        content: `reply:${String(lastUserMessage?.content ?? '')}`,
+      })
+      yield { type: 'text', text: 'Hello' }
+      yield {
+        type: 'llm_done',
+        inputTokens: 10,
+        outputTokens: 20,
+        cacheReadTokens: 0,
+        cacheWriteTokens: 0,
+        stopReason: 'end_turn',
+        ttftMs: 50,
+        e2eMs: 80,
+        tps: 25,
+      }
+      yield { type: 'done', reason: 'complete' }
+    })
+
+    const bridge: RuntimeHostBridge = {
+      emit: () => {},
+      requestPermission: async () => ({ allow: true }),
+    }
+
+    const runtime = await createRuntime({
+      cwd: 'D:/workspace',
+      config: makeConfig(),
+      mode: 'standard',
+    }, bridge)
+
+    await runtime.submit({
+      text: '第一问',
+      history: [{ role: 'user', content: '第一问' }],
+      loggedUserContent: '第一问',
+    })
+
+    await runtime.submit({
+      text: '第二问',
+      loggedUserContent: '第二问',
+    })
+
+    expect(mocks.restoreHistory).toHaveBeenCalledWith([
+      { role: 'user', content: '第一问' },
+    ])
+    expect(mocks.prepareHistory).toHaveBeenCalledTimes(2)
+    const secondHistory = mocks.prepareHistory.mock.calls[1]?.[0] as Array<{
+      role: string
+      content: unknown
+    }>
+    const secondOptions = mocks.prepareHistory.mock.calls[1]?.[2]
+
+    expect(secondHistory.slice(0, 3)).toEqual([
+      { role: 'user', content: '第一问' },
+      { role: 'assistant', content: 'reply:第一问' },
+      { role: 'user', content: '第二问' },
+    ])
+    expect(secondOptions).toEqual(expect.objectContaining({
+      model: 'claude-sonnet-4-5',
+      systemPrompt: 'system prompt\n\nprimary agent prompt',
+    }))
   })
 })

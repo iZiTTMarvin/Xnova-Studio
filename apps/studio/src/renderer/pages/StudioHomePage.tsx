@@ -398,6 +398,23 @@ export function StudioHomePage() {
     actionMessage: memoryOverview.actionMessage,
   })
 
+  const recoveryNotice = recoveryStatus.kind !== 'empty' ? (
+    <div className="notice-bar">
+      <strong>恢复:</strong>
+      {' '}
+      <span>{recoveryStatus.message}</span>
+      {canRestoreProjectDefaults ? (
+        <button
+          type="button"
+          className="ghost-button"
+          onClick={restoreProjectDefaults}
+        >
+          回到项目推荐值
+        </button>
+      ) : null}
+    </div>
+  ) : null
+
   const searchResult = useMemo(() => {
     const keyword = normalizeKeyword(searchKeyword)
     const projects = (shellSnapshot?.recentProjects ?? []).filter((project) => {
@@ -798,32 +815,52 @@ export function StudioHomePage() {
 
         {shouldShowMemoryFeedback ? (
           <div className="notice-bar notice-bar-warning">
-            <strong>Memory {memoryFeedback.statusLabel}:</strong>
+            <strong>Memory</strong>
             {' '}
-            {memoryFeedback.statusMessage}
+            <span>{memoryFeedback.statusLabel}</span>
+            <span>:</span>
+            {' '}
+            <span>{memoryFeedback.statusMessage}</span>
+            {memoryFeedback.actionHint ? (
+              <>
+                {' '}
+                <span>{`建议动作: ${memoryFeedback.actionHint}`}</span>
+              </>
+            ) : null}
           </div>
         ) : null}
+
+        {liveSubagentFeedback ? (
+          <div className="notice-bar notice-bar-warning">
+            <strong>{liveSubagentFeedback.message}</strong>
+            {liveSubagentFeedback.partialResult ? (
+              <>
+                {' '}
+                <span>{liveSubagentFeedback.partialResult}</span>
+              </>
+            ) : null}
+          </div>
+        ) : null}
+
+        {sessionSubagentFeedback.length > 0 ? (
+          <div className="notice-bar notice-bar-warning">
+            <strong>子 Agent 状态:</strong>
+            {' '}
+            <span>
+              {sessionSubagentFeedback
+                .map((subagent) => subagent.stateMessage ?? getSubagentStatusLabel(subagent.status))
+                .join(' · ')}
+            </span>
+          </div>
+        ) : null}
+
+        {recoveryNotice}
 
         {isConversationView ? (
           content
         ) : (
           <div className="main-scroll-area">
             {content}
-
-            {recoveryStatus.kind !== 'empty' ? (
-              <div className="notice-bar" style={{ marginTop: 12, borderRadius: 8 }}>
-                <span>恢复: {recoveryStatus.message}</span>
-                {canRestoreProjectDefaults ? (
-                  <button
-                    type="button"
-                    className="ghost-button"
-                    onClick={restoreProjectDefaults}
-                  >
-                    回到推荐值
-                  </button>
-                ) : null}
-              </div>
-            ) : null}
           </div>
         )}
       </main>

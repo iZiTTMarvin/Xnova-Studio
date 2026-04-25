@@ -94,7 +94,11 @@ export function ConversationTimeline(props: ConversationTimelineProps) {
     props.liveConversation.systemMessages.length > 0
 
   useEffect(() => {
-    bottomRef.current?.scrollIntoView({ behavior: 'smooth' })
+    const bottomElement = bottomRef.current
+    if (typeof bottomElement?.scrollIntoView !== 'function') {
+      return
+    }
+    bottomElement.scrollIntoView({ behavior: 'smooth' })
   }, [
     persistedMessages.length,
     props.liveConversation.assistantText,

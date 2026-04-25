@@ -141,14 +141,16 @@ export function getSkillsSystemPrompt(): string {
 export const hookManager = new HookManager()
 
 let hooksDiscovered = false
+let hooksDiscoveredCwd: string | null = null
 
 /**
  * 发现所有 hooks（从插件包 + 项目级 + 用户级，幂等）。
  * 需要在 ensureSkillsDiscovered() 之后调用，因为依赖插件目录列表。
  */
-export async function ensureHooksDiscovered(): Promise<void> {
-  if (hooksDiscovered) return
+export async function ensureHooksDiscovered(cwd = process.cwd()): Promise<void> {
+  if (hooksDiscovered && hooksDiscoveredCwd === cwd) return
   hooksDiscovered = true
+  hooksDiscoveredCwd = cwd
 
   // 1. 从已发现的插件包中收集 hooks
   for (const pluginDir of skillStore.getPluginDirs()) {
@@ -161,7 +163,7 @@ export async function ensureHooksDiscovered(): Promise<void> {
   }
 
   // 2. 项目级
-  await hookManager.discoverFromFile(join(process.cwd(), '.xnovacode', 'hooks.json'), 'project')
+  await hookManager.discoverFromFile(join(cwd, '.xnovacode', 'hooks.json'), 'project')
 
   // 3. 用户级
   await hookManager.discoverFromFile(join(homedir(), '.xnovacode', 'hooks.json'), 'user')
@@ -171,11 +173,11 @@ export async function ensureHooksDiscovered(): Promise<void> {
  * 执行 SessionStart hooks，返回合并的 additionalContext。
  * @param trigger 触发子类型：'startup' | 'resume' | 'compact'
  */
-export async function runSessionStartHooks(trigger: string): Promise<string> {
+export async function runSessionStartHooks(trigger: string, cwd = process.cwd()): Promise<string> {
   const results = await hookManager.run('SessionStart', {
     trigger,
     env: {
-      XNOVACODE_CWD: process.cwd(),
+      XNOVACODE_CWD: cwd,
       XNOVACODE_TRIGGER: trigger,
     },
   })
@@ -200,23 +202,28 @@ export async function runSessionStartHooks(trigger: string): Promise<string> {
 // ═══ 文件索引（@ Mention 用） ═══
 
 /** 模块级 FileIndex 实例 */
-export const fileIndex = new FileIndex(process.cwd())
+export let fileIndex = new FileIndex(process.cwd())
 
 let fileIndexReady = false
 let fileWatcher: FileWatcher | null = null
+let fileIndexCwd = process.cwd()
 
 /**
  * 初始化文件索引：全量扫描 + 启动监听（幂等）。
  * 异步执行，不阻塞首帧渲染。
  */
-export async function ensureFileIndexReady(): Promise<void> {
-  if (fileIndexReady) return
+export async function ensureFileIndexReady(cwd = process.cwd()): Promise<void> {
+  if (fileIndexReady && fileIndexCwd === cwd) return
+  fileWatcher?.stop()
+  fileWatcher = null
+  fileIndex = new FileIndex(cwd)
+  fileIndexCwd = cwd
   fileIndexReady = true
 
   await fileIndex.scan()
 
-  const ig = createIgnoreFilter(process.cwd())
-  fileWatcher = new FileWatcher(process.cwd(), fileIndex, ig)
+  const ig = createIgnoreFilter(cwd)
+  fileWatcher = new FileWatcher(cwd, fileIndex, ig)
   fileWatcher.start()
 }
 
@@ -243,14 +250,16 @@ export { pluginRegistry }
 // ═══ 指令文件（CCODE.md / CLAUDE.md） ═══
 
 let cachedInstructions: LoadedInstruction[] | null = null
+let cachedInstructionsCwd: string | null = null
 
 /**
  * 加载多层级指令文件（幂等，只加载一次）。
  * 会话期间不热更新，重启生效。
  */
-export function ensureInstructionsLoaded(): void {
-  if (cachedInstructions != null) return
-  cachedInstructions = loadInstructions(process.cwd())
+export function ensureInstructionsLoaded(cwd = process.cwd()): void {
+  if (cachedInstructions != null && cachedInstructionsCwd === cwd) return
+  cachedInstructions = loadInstructions(cwd)
+  cachedInstructionsCwd = cwd
 }
 
 /** 获取指令文件的 system prompt 段落 */
@@ -272,17 +281,16 @@ const GIT_CONTEXT_TIMEOUT_MS = 3000
  * 收集当前工作目录的 Git 上下文信息，供 LLM 在首轮对话时了解仓库状态。
  * 非 Git 仓库或超时均降级返回提示文案，不会抛异常。
  */
-async function collectGitContext(): Promise<string> {
+async function collectGitContext(cwd = process.cwd()): Promise<string> {
   // 用 Promise.race 实现超时，避免 execa v9 + AbortController 的兼容问题
   const timeout = new Promise<string>((resolve) =>
     setTimeout(() => resolve('## Git 状态\nGit 信息收集超时，请手动调用 git status 查看。'), GIT_CONTEXT_TIMEOUT_MS),
   )
-  return Promise.race([doCollectGitContext(), timeout])
+  return Promise.race([doCollectGitContext(cwd), timeout])
 }
 
-async function doCollectGitContext(): Promise<string> {
+async function doCollectGitContext(cwd: string): Promise<string> {
   try {
-    const cwd = process.cwd()
     const opts = { cwd, reject: false } as const
 
     // 1. 检查是否在 Git 仓库内
@@ -329,6 +337,7 @@ async function doCollectGitContext(): Promise<string> {
 // ═══ System Prompt 一次构建 ═══
 
 let cachedSystemPrompt: string | undefined
+let cachedSystemPromptCwd: string | null = null
 
 /** System Prompt 各段元信息 */
 export interface SystemPromptSection {
@@ -349,8 +358,8 @@ let cachedSections: SystemPromptSection[] = []
  * @param memoryContext 记忆系统冷启动上下文（可选）
  * @param gitContext Git 仓库上下文（可选，非 git 仓库或超时时为 undefined）
  */
-export function buildSystemPrompt(hookContext: string, memoryContext?: string, gitContext?: string): void {
-  if (cachedSystemPrompt !== undefined) return
+export function buildSystemPrompt(cwd: string, hookContext: string, memoryContext?: string, gitContext?: string): void {
+  if (cachedSystemPrompt !== undefined && cachedSystemPromptCwd === cwd) return
 
   const instructionsPrompt = getInstructionsPrompt()
   const skillsPrompt = getSkillsSystemPrompt()
@@ -419,6 +428,7 @@ export function buildSystemPrompt(hookContext: string, memoryContext?: string, g
   const parts = [behaviorGuidance, instructionsPrompt, skillsPrompt, hookContext, memoryContext, gitContext].filter(Boolean)
   if (behaviorGuidance) cachedSections.unshift({ name: 'Behavior', charLength: behaviorGuidance.length })
   cachedSystemPrompt = parts.length > 0 ? parts.join('\n\n') : undefined
+  cachedSystemPromptCwd = cwd
 }
 
 /** 获取已缓存的 system prompt（未构建时返回 undefined） */
@@ -527,7 +537,7 @@ export interface BootstrapTimings {
   total: number
 }
 
-let bootstrapPromise: Promise<BootstrapResult> | null = null
+const bootstrapPromises = new Map<string, Promise<BootstrapResult>>()
 
 /** 是否 dev 模式（tsx 直接跑 .ts 文件） */
 export const isDevMode = (process.argv[1] ?? '').endsWith('.ts')
@@ -547,10 +557,12 @@ export const isDevMode = (process.argv[1] ?? '').endsWith('.ts')
  *
  * MCP 不在此编排内 — 通过 startMcpBackground() 后台静默加载。
  */
-export function bootstrapAll(): Promise<BootstrapResult> {
-  if (bootstrapPromise) return bootstrapPromise
+export function bootstrapAll(cwd = process.cwd()): Promise<BootstrapResult> {
+  const runtimeCwd = cwd.trim() || process.cwd()
+  const cached = bootstrapPromises.get(runtimeCwd)
+  if (cached) return cached
 
-  bootstrapPromise = (async (): Promise<BootstrapResult> => {
+  const bootstrapPromise = (async (): Promise<BootstrapResult> => {
     const t0 = performance.now()
     const timings: Record<string, number> = {}
 
@@ -566,21 +578,21 @@ export function bootstrapAll(): Promise<BootstrapResult> {
         timings['skills'] = performance.now() - t
 
         t = performance.now()
-        ensureInstructionsLoaded()
+        ensureInstructionsLoaded(runtimeCwd)
         timings['instructions'] = performance.now() - t
 
         t = performance.now()
-        await ensureHooksDiscovered()
+        await ensureHooksDiscovered(runtimeCwd)
         timings['hooks'] = performance.now() - t
 
         t = performance.now()
-        hookContext = await runSessionStartHooks('startup')
+        hookContext = await runSessionStartHooks('startup', runtimeCwd)
         timings['sessionStartHooks'] = performance.now() - t
       })(),
       // 链 B'：文件索引扫描（磁盘 IO，完全独立）
       (async () => {
         const t = performance.now()
-        await ensureFileIndexReady()
+        await ensureFileIndexReady(runtimeCwd)
         timings['fileIndex'] = performance.now() - t
       })(),
       // 链 C'：Runtime Plugin 发现与激活（独立于 Skills/Hooks）
@@ -592,7 +604,7 @@ export function bootstrapAll(): Promise<BootstrapResult> {
       // 链 D'：MemoryManager 同步阶段（扫描文件 + BM25，毫秒级）
       (async () => {
         const t = performance.now()
-        await ensureMemoryInitialized()
+        await ensureMemoryInitialized(runtimeCwd)
         timings['memory'] = performance.now() - t
       })(),
       // 链 E'：Shell 快照创建（完全独立，后续 bash 命令 source 快照跳过 login shell）
@@ -604,7 +616,7 @@ export function bootstrapAll(): Promise<BootstrapResult> {
       // 链 F'：Git 上下文收集（非 git 仓库返回提示，超时降级）
       (async () => {
         const t = performance.now()
-        gitContext = await collectGitContext()
+        gitContext = await collectGitContext(runtimeCwd)
         timings['gitContext'] = performance.now() - t
       })(),
     ])
@@ -614,9 +626,9 @@ export function bootstrapAll(): Promise<BootstrapResult> {
     const t = performance.now()
     let memoryContext: string | undefined
     if (memoryManagerInstance) {
-      memoryContext = await memoryManagerInstance.getRelevantContext(process.cwd())
+      memoryContext = await memoryManagerInstance.getRelevantContext(runtimeCwd)
     }
-    buildSystemPrompt(hookContext, memoryContext || undefined, gitContext || undefined)
+    buildSystemPrompt(runtimeCwd, hookContext, memoryContext || undefined, gitContext || undefined)
     timings['systemPrompt'] = performance.now() - t
 
     // 后台：增量 embed（不阻塞启动和首次对话）
@@ -638,12 +650,15 @@ export function bootstrapAll(): Promise<BootstrapResult> {
     }
   })()
 
+  bootstrapPromises.set(runtimeCwd, bootstrapPromise)
+
   return bootstrapPromise
 }
 
 // ═══ 记忆系统初始化 ═══
 
 let memoryInitialized = false
+let memoryCwd: string | null = null
 /** 启动过程中收集的警告（在 UI 中显示） */
 const bootstrapWarnings: string[] = []
 
@@ -651,14 +666,15 @@ const bootstrapWarnings: string[] = []
  * 初始化 MemoryManager（幂等）。
  * 读取主配置文件（config.toml，兼容 legacy config.json）中的 memory 配置，构建 MemoryManager 实例。
  */
-async function ensureMemoryInitialized(): Promise<void> {
-  if (memoryInitialized) return
+async function ensureMemoryInitialized(cwd = process.cwd()): Promise<void> {
+  if (memoryInitialized && memoryCwd === cwd) return
   memoryInitialized = true
+  memoryCwd = cwd
 
   try {
     // Phase 2 fix-A：记忆系统启动期读 resolved config，
     // 让 project.toml 能影响运行时（例如未来项目级 features.memory 开关）。
-    const config = loadEffectiveRuntimeConfig(process.cwd())
+    const config = loadEffectiveRuntimeConfig(cwd)
     const memoryConfig = config.memory
 
     // memory.enabled 默认 false
@@ -713,7 +729,7 @@ async function ensureMemoryInitialized(): Promise<void> {
     }
 
     memoryManagerInstance = new MemoryManager({
-      cwd: process.cwd(),
+      cwd,
       embedding,
       vectorStore,
     })

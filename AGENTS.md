@@ -42,3 +42,12 @@ Keep this managed block so 'trellis update' can refresh the instructions.
 - **根因**: Node.js `execSync` 在命令失败时默认将子进程 stderr 转发到父进程 stderr，即使被 try/catch 捕获。
 - **方案**: 将 `execSync` 替换为 `spawnSync`，并显式设置 `stdio: ['pipe', 'pipe', 'ignore']`，完全阻止 stderr 泄漏。
 - **文件**: `packages/persistence/src/persistence/session-utils.ts`
+
+### Runtime Submit 卡死与 OOM 修复 (2026-04-25)
+- **问题**: 发送消息后停在 `[create-runtime] submit start`，60 秒后超时，随后 Electron 主进程 V8 OOM。
+- **根因**: 卡点位于 `bootstrapAll()`，尚未进入 Provider stream；`FileIndex.scan()` 先全量扫描再过滤 `node_modules`，并可能跟随 pnpm 符号链接深层递归，同时 Studio 未把用户选择的 workspace cwd 传入 bootstrap/tool 上下文。
+- **方案**:
+  1. 文件索引在 `fast-glob` 阶段直接忽略重型目录，并禁止跟随符号链接。
+  2. `createRuntime()` 将 Studio 的真实 `cwd` 传给 `bootstrapAll()` 与 `AgentLoop`，工具上下文不再默认落到 Electron 启动目录。
+  3. `studio-runtime-service.ts` 保留可测超时保护，超时后调用 `abort()` 并向前端返回明确错误。
+- **文件**: `packages/core/src/file-index/*`, `packages/core/src/bootstrap.ts`, `packages/core/src/agent-loop.ts`, `packages/runtime/src/create-runtime.ts`, `apps/studio/src/main/studio-runtime-service.ts`

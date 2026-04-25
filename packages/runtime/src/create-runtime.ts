@@ -36,10 +36,27 @@ import type {
   RuntimeConfigInput,
   RuntimeHostBridge,
   RuntimeInstance,
-  RuntimeSnapshot,
   RuntimeSubmitInput,
+  RuntimeSnapshot,
   RuntimeTurnResult,
 } from './types.js'
+
+function syncContextHistoryForSubmit(
+  submitInput: RuntimeSubmitInput,
+) {
+  if (submitInput.history) {
+    contextManager.restoreHistory(submitInput.history)
+    return contextManager.getHistoryRef()
+  }
+
+  if (Array.isArray(submitInput.loggedUserContent)) {
+    contextManager.pushUserContent(submitInput.loggedUserContent)
+  } else {
+    contextManager.pushUser(submitInput.text)
+  }
+
+  return contextManager.getHistoryRef()
+}
 
 /**
  * 创建一个 RuntimeInstance。
@@ -85,7 +102,7 @@ export async function createRuntime(
       result.stopReason = 'end_turn'
 
       try {
-        const bootstrapResult = await bootstrapAll()
+        const bootstrapResult = await bootstrapAll(input.cwd)
         warnings = [...bootstrapResult.warnings]
         agentCatalog.ensureInitialized()
 
@@ -115,7 +132,7 @@ export async function createRuntime(
           getSystemPrompt(),
           primaryAgent.agent.getSystemPrompt(),
         ].filter(Boolean).join('\n\n') || undefined
-        const rawHistory = submitInput.history ?? contextManager.getHistoryRef()
+        const rawHistory = syncContextHistoryForSubmit(submitInput)
         const { history, compacted } = await contextManager.prepare(
           rawHistory,
           activeProvider as never,
@@ -127,6 +144,7 @@ export async function createRuntime(
         result.historyCompacted = compacted
 
         const loop = new AgentLoop(activeProvider as never, registry, {
+          cwd: input.cwd,
           model: modelName,
           provider: providerName,
           signal: abortController.signal,

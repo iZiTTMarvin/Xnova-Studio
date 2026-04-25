@@ -1,7 +1,7 @@
 .provider-settings-shell {
   display: flex;
   flex-direction: column;
-  gap: 12px;
+  gap: 14px;
   min-height: 0;
 }
 
@@ -25,15 +25,15 @@
 
 .provider-settings-panels {
   display: grid;
-  grid-template-columns: 220px minmax(0, 1fr);
-  gap: 12px;
+  grid-template-columns: 232px minmax(0, 1fr);
+  gap: 14px;
   min-height: 0;
 }
 
 .provider-platform-list {
   border: 1px solid var(--border-subtle);
-  border-radius: 12px;
-  background: color-mix(in srgb, var(--bg-panel) 92%, transparent);
+  border-radius: var(--radius-lg);
+  background: rgba(8, 12, 20, 0.34);
   padding: 8px;
   display: flex;
   flex-direction: column;
@@ -44,8 +44,8 @@
 
 .provider-platform-item {
   border: 1px solid var(--border-subtle);
-  border-radius: 10px;
-  background: transparent;
+  border-radius: var(--radius-md);
+  background: rgba(18, 24, 34, 0.56);
   color: inherit;
   text-align: left;
   padding: 10px;
@@ -53,6 +53,12 @@
   flex-direction: column;
   gap: 4px;
   cursor: pointer;
+  transition: background 140ms ease, border-color 140ms ease, transform 140ms ease;
+}
+
+.provider-platform-item:hover {
+  border-color: var(--border-hover);
+  background: rgba(24, 31, 43, 0.74);
 }
 
 .provider-platform-item strong {
@@ -71,9 +77,9 @@
 
 .provider-platform-detail {
   border: 1px solid var(--border-subtle);
-  border-radius: 12px;
-  background: color-mix(in srgb, var(--bg-panel) 92%, transparent);
-  padding: 12px;
+  border-radius: var(--radius-lg);
+  background: rgba(18, 24, 34, 0.72);
+  padding: 14px;
   display: flex;
   flex-direction: column;
   gap: 12px;
@@ -86,6 +92,8 @@
   align-items: center;
   justify-content: flex-end;
   gap: 8px;
+  padding-bottom: 12px;
+  border-bottom: 1px solid var(--border-subtle);
 }
 
 .provider-form-grid {
@@ -139,6 +147,16 @@
   gap: 8px;
 }
 
+.provider-model-empty {
+  margin: 0;
+  padding: 12px;
+  border: 1px dashed var(--border-subtle);
+  border-radius: var(--radius-md);
+  color: var(--text-muted);
+  background: rgba(8, 12, 20, 0.26);
+  font-size: 13px;
+}
+
 .provider-model-row {
   display: flex;
   align-items: center;
@@ -162,9 +180,10 @@
 .provider-add-dialog {
   width: min(380px, calc(100% - 24px));
   border: 1px solid var(--border-subtle);
-  border-radius: 12px;
-  background: var(--bg-panel);
-  padding: 14px;
+  border-radius: var(--radius-lg);
+  background: color-mix(in srgb, var(--bg-panel-strong) 96%, black 4%);
+  box-shadow: var(--shadow-elevated);
+  padding: 16px;
   display: flex;
   flex-direction: column;
   gap: 10px;

@@ -1,0 +1,7 @@
+{"file": ".trellis/workflow.md", "reason": "Project workflow and conventions"}
+{"file": ".trellis/spec/backend/index.md", "reason": "Backend development guide"}
+{"file": ".trellis/spec/frontend/index.md", "reason": "Frontend development guide"}
+{"file": ".trellis/spec/backend/runtime-boundary.md", "reason": "runtime submit 主链路与 host/runtime 边界"}
+{"file": ".trellis/spec/frontend/project-shell-v1.md", "reason": "聊天主链路、模型选择与 runtime-ready 门禁"}
+{"file": ".trellis/spec/backend/error-handling.md", "reason": "submit 超时、provider 错误与用户可见错误"}
+{"file": ".trellis/spec/backend/logging-guidelines.md", "reason": "provider/runtime 诊断日志脱敏"}

@@ -26,6 +26,7 @@ export type {
   RuntimeSubmitInput,
   RuntimeAttachment,
   RuntimeSnapshot,
+  RuntimeTurnResult,
   RuntimeConfigInput,
   RuntimeHostBridge,
   RuntimeInstance,

@@ -21,6 +21,21 @@ test('迁移核心文件应已落地到 packages/core/src', () => {
   }
 })
 
+test('文件索引扫描必须在 glob 阶段跳过重型目录并禁止跟随符号链接', () => {
+  const content = readFileSync(resolve(CORE_DIR, 'file-index', 'file-index.ts'), 'utf-8')
+
+  assert.equal(
+    content.includes('ignore: FILE_INDEX_GLOB_IGNORE_PATTERNS'),
+    true,
+    'FileIndex.scan 必须把内置忽略规则传给 fast-glob，避免先扫描 node_modules 再过滤导致 OOM',
+  )
+  assert.equal(
+    content.includes('followSymbolicLinks: false'),
+    true,
+    'FileIndex.scan 必须禁止跟随符号链接，避免 pnpm/node_modules 链接结构造成深层递归',
+  )
+})
+
 test('迁移核心文件不应引入 renderer/CLI UI 依赖', () => {
   const forbiddenPatterns = ['@ui/', '@commands/', '@server/', "from 'ink'", 'from "ink"']
   for (const file of requiredFiles) {
