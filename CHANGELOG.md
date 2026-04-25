@@ -1,3 +1,13 @@
+## 2026-04-26
+- **Studio submit 超时修复**：修复正常对话被 60 秒固定总时长 watchdog 误杀的问题
+  - `studio-runtime-service` 改为按“连续无新进展”续期 watchdog，并在首个 runtime 进展后切换到更长静默窗口，避免长思考模型被 60 秒误杀
+  - `useStudioBridge` 新增系统错误去重，避免同一条 `runtime submit` 失败消息在界面中重复显示
+  - 回归测试补齐 `studio-runtime-service-guard` 与 `use-studio-bridge-submit`，并通过 `pnpm --filter xnova-studio test` 与根级 `pnpm typecheck`
+- **Studio 首轮对话可见性修复**：修复新项目首轮发送后仍停留在空白入口页的问题
+  - `StudioHomePage` 在首轮 submit 尚未持久化 session 时也会直接显示 `ConversationTimeline`，并立即切到项目会话语义
+  - 新增 `renderer-shell` 回归测试，锁住“消息已发出但 session 尚未落盘”时的对话可见性
+  - 任务详情见 `.trellis/tasks/04-26-runtime-submit-timeout-retry-fix/`
+
 ## 2026-04-25
 - **Studio 对话交互 UX 优化**：参考 Claude Code App / Codex CLI 范式，全面升级消息流交互体验
   - ThinkingBlock：可折叠思考块 + CSS spinner + 秒数计时 + 实时流式内容展示 + 完成后自动折叠

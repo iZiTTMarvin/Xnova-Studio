@@ -101,6 +101,9 @@ function HookHarness() {
       <div data-testid="shell-status">{bridgeState.shellStatus}</div>
       <div data-testid="submitting">{bridgeState.isSubmitting ? 'yes' : 'no'}</div>
       <div data-testid="submit-result">{submitResult}</div>
+      <div data-testid="system-messages">
+        {bridgeState.liveConversation.systemMessages.join('|')}
+      </div>
     </div>
   )
 }
@@ -267,5 +270,96 @@ describe('useStudioBridge runtime submit', () => {
       )
     })
     expect(legacySubmitPrompt).not.toHaveBeenCalled()
+  })
+
+  it('submit 失败时同一条系统错误不会重复显示两次', async () => {
+    let runtimeEventHandler: ((event: {
+      type: string
+      timestamp: string
+      payload?: Record<string, unknown>
+    }) => void) | null = null
+    const submitError =
+      'runtime submit 失败: LLM 请求连续 60 秒没有新的运行进展，已自动中断。请检查网络连接、API Key、baseURL 配置，或稍后重试。'
+
+    ;(window as Window & { xnovaStudio?: unknown }).xnovaStudio = {
+      host: {
+        getState: vi.fn(async () => ({
+          workspacePath: 'D:/workspace/demo',
+          lastSelection: null,
+        })),
+        openWorkspace: vi.fn(async () => ({
+          selection: {
+            ok: true as const,
+            code: 'selected' as const,
+            path: 'D:/workspace/demo',
+          },
+          state: {
+            workspacePath: 'D:/workspace/demo',
+            lastSelection: null,
+          },
+        })),
+        onStateChanged: () => () => {},
+      },
+      runtime: {
+        inspect: vi.fn(async () => createRuntimeInspectResult()),
+        submit: vi.fn(async () => {
+          runtimeEventHandler?.({
+            type: 'runtime.error',
+            timestamp: '2026-04-26T00:00:00.000Z',
+            payload: {
+              message: submitError,
+            },
+          })
+          return {
+            ok: false as const,
+            error: submitError,
+          }
+        }),
+        onEvent: (listener: (event: {
+          type: string
+          timestamp: string
+          payload?: Record<string, unknown>
+        }) => void) => {
+          runtimeEventHandler = listener
+          return () => {
+            runtimeEventHandler = null
+          }
+        },
+      },
+      shell: {
+        getSnapshot: vi.fn(async () => createShellSnapshot(null)),
+      },
+      settings: {
+        getProviderSettings: vi.fn(),
+        saveProviderSettings: vi.fn(),
+        testProviderConnection: vi.fn(),
+      },
+      memory: {
+        getOverview: vi.fn(),
+        rebuild: vi.fn(),
+      },
+      mcp: {
+        getOverview: vi.fn(),
+        addServer: vi.fn(),
+        deleteServer: vi.fn(),
+      },
+      skillsPlugins: {
+        getOverview: vi.fn(),
+      },
+    }
+
+    render(<HookHarness />)
+
+    await waitFor(() => {
+      expect(screen.getByTestId('shell-status').textContent).toBe('ready')
+    })
+
+    fireEvent.click(screen.getByRole('button', { name: '提交' }))
+
+    await waitFor(() => {
+      expect(screen.getByTestId('submit-result').textContent).toBe(submitError)
+    })
+
+    expect(screen.getByTestId('system-messages').textContent).toBe(submitError)
   })
 })

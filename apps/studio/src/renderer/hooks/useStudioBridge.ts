@@ -66,6 +66,13 @@ function getErrorMessage(error: unknown): string {
   return error instanceof Error ? error.message : String(error)
 }
 
+function appendSystemMessageUnique(
+  messages: string[],
+  message: string,
+): string[] {
+  return messages.at(-1) === message ? messages : [...messages, message]
+}
+
 function buildShellRequest(
   projectPath?: string | null,
   sessionId?: string | null,
@@ -575,7 +582,10 @@ export function useStudioBridge() {
             return message
               ? {
                   ...current,
-                  systemMessages: [...current.systemMessages, message],
+                  systemMessages: appendSystemMessageUnique(
+                    current.systemMessages,
+                    message,
+                  ),
                 }
               : current
           }
@@ -901,7 +911,10 @@ export function useStudioBridge() {
         setRuntimeError(submitResult.error)
         setLiveConversation((current) => ({
           ...current,
-          systemMessages: [...current.systemMessages, submitResult.error],
+          systemMessages: appendSystemMessageUnique(
+            current.systemMessages,
+            submitResult.error,
+          ),
         }))
         return { ok: false, error: submitResult.error }
       }
@@ -981,7 +994,10 @@ export function useStudioBridge() {
       setShellError(message)
       setLiveConversation((current) => ({
         ...current,
-        systemMessages: [...current.systemMessages, message],
+        systemMessages: appendSystemMessageUnique(
+          current.systemMessages,
+          message,
+        ),
       }))
       return { ok: false, error: message }
     } finally {
@@ -1007,7 +1023,10 @@ export function useStudioBridge() {
       setRuntimeError(message)
       setLiveConversation((current) => ({
         ...current,
-        systemMessages: [...current.systemMessages, message],
+        systemMessages: appendSystemMessageUnique(
+          current.systemMessages,
+          message,
+        ),
       }))
     }
   }
@@ -1030,7 +1049,10 @@ export function useStudioBridge() {
       setRuntimeError(message)
       setLiveConversation((current) => ({
         ...current,
-        systemMessages: [...current.systemMessages, message],
+        systemMessages: appendSystemMessageUnique(
+          current.systemMessages,
+          message,
+        ),
       }))
     }
   }

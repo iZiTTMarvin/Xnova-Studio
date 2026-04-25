@@ -112,6 +112,7 @@ interface RuntimeSubmitRequest {
   - thinking 文本
   - 工具开始 / 结束事件
   - system warning / error
+- 首轮 submit 尚未落盘出 `activeSession` 时，只要 `liveConversation` 已经存在待发送消息、流式内容或系统错误，renderer 也必须直接进入会话视图；不得继续停留在空白项目入口页。
 - 不能只显示会话标题、项目路径、分支和消息条数，而不显示“对话本身”。
 
 #### 模型选择器
@@ -145,6 +146,7 @@ interface RuntimeSubmitRequest {
 | 用户点击 `XForge` | 弹出“暂未开放”提示，不切换成假可用状态 |
 | provider / model 只在 UI 改了，submit 不携带 | 视为主链路缺陷，必须修 contract |
 | 会话视图只显示元数据，不显示消息流 | 视为 P0 不可用，必须回退 |
+| 首轮消息已经发出，但因为 `activeSession` 尚未持久化而仍停留在空白入口页 | 视为 P0 可见性缺陷，必须立即展示 `liveConversation` |
 | 工具过程只存在 main 日志，renderer 不显示 | 视为主链路缺口，必须补时间线呈现 |
 | renderer 通过 `submitPrompt` / `setCurrentPrimaryAgent` 等旧 fallback 路径工作 | 视为 contract 漂移，必须回到 shared bridge |
 
@@ -172,6 +174,7 @@ interface RuntimeSubmitRequest {
   - `useStudioBridge` 的 workspace 门禁与 submit 契约透传
   - `ConversationTimeline` 对 persisted + live conversation 的渲染
   - `ModeSwitch` 点击 `XForge` 的提示行为
+  - `renderer-shell.test.tsx` 断言首轮 submit 尚未生成持久化 session 时，仍会立即显示对话流
   - `renderer-shell.test.tsx` / `use-studio-bridge-submit.test.tsx` 断言不再依赖 legacy fallback 语义
 - E2E / smoke：
   - 打开 workspace -> 发送消息 -> 收到流式回复与工具过程

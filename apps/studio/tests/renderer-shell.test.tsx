@@ -230,6 +230,34 @@ describe('renderer project-aware shell', () => {
     })
   })
 
+  it('首轮提交尚未生成持久化 session 时，仍会立即进入可见对话流', async () => {
+    const runtimeSubmit = vi.fn(
+      () =>
+        new Promise(() => {
+          return undefined
+        }),
+    )
+    ;(window as Window & { xnovaStudio?: unknown }).xnovaStudio = createBridge({
+      hostState: {
+        workspacePath: 'D:/workspace/demo',
+        lastSelection: null,
+      },
+      runtimeSubmit,
+    })
+
+    render(<App />)
+
+    const input = await screen.findByRole('textbox', { name: '项目级新对话输入' })
+    fireEvent.change(input, { target: { value: '实现项目脚手架并补测试' } })
+    fireEvent.click(screen.getByRole('button', { name: '发送提示词' }))
+
+    await waitFor(() => {
+      expect(screen.getByRole('region', { name: '项目会话聊天流' })).toBeTruthy()
+    })
+    expect(screen.getByText('实现项目脚手架并补测试')).toBeTruthy()
+    expect(screen.queryByText('绑定项目目录')).toBeNull()
+  })
+
   it('收到用户问题请求时会弹出对话框，并通过桥接回传答案', async () => {
     const baseBridge = createBridge({
       hostState: {

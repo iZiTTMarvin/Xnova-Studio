@@ -214,6 +214,103 @@ function createUserInputRequestId(): string {
   return `user-question-${Date.now()}-${userInputRequestSequence}`
 }
 
+function createSubmitActivityWatchdog(
+  input: {
+    initialTimeoutMs: number
+    postProgressTimeoutMs: number
+    onTimeout(state: {
+      timeoutMs: number
+      hasSeenProgress: boolean
+    }): void
+  },
+): {
+  start(): void
+  touch(): void
+  suspend(): void
+  resume(): void
+  clear(): void
+} {
+  const initialTimeoutMs = Math.max(0, input.initialTimeoutMs)
+  const postProgressTimeoutMs = Math.max(initialTimeoutMs, input.postProgressTimeoutMs)
+
+  if (initialTimeoutMs <= 0 && postProgressTimeoutMs <= 0) {
+    return {
+      start() {
+        return undefined
+      },
+      touch() {
+        return undefined
+      },
+      suspend() {
+        return undefined
+      },
+      resume() {
+        return undefined
+      },
+      clear() {
+        return undefined
+      },
+    }
+  }
+
+  let timer: ReturnType<typeof setTimeout> | null = null
+  let suspended = false
+  let hasSeenProgress = false
+
+  const getTimeoutMs = () =>
+    hasSeenProgress ? postProgressTimeoutMs : initialTimeoutMs
+
+  const schedule = () => {
+    if (suspended) {
+      return
+    }
+
+    const timeoutMs = getTimeoutMs()
+    if (timeoutMs <= 0) {
+      return
+    }
+
+    if (timer) {
+      clearTimeout(timer)
+    }
+    timer = setTimeout(() => {
+      timer = null
+      input.onTimeout({
+        timeoutMs,
+        hasSeenProgress,
+      })
+    }, timeoutMs)
+  }
+
+  return {
+    start() {
+      schedule()
+    },
+    touch() {
+      hasSeenProgress = true
+      schedule()
+    },
+    suspend() {
+      suspended = true
+      if (timer) {
+        clearTimeout(timer)
+        timer = null
+      }
+    },
+    resume() {
+      suspended = false
+      schedule()
+    },
+    clear() {
+      suspended = true
+      if (timer) {
+        clearTimeout(timer)
+        timer = null
+      }
+    },
+  }
+}
+
 function createPermissionMemoryKey(
   input: PermissionRequest,
   hostState: StudioHostState,
@@ -399,6 +496,7 @@ export function createStudioRuntimeService(
     })
   const loadResolvedConfigFn = options.loadResolvedConfigFn ?? loadResolvedConfig
   const submitTimeoutMs = options.submitTimeoutMs ?? 60_000
+  const submitPostProgressTimeoutMs = Math.max(submitTimeoutMs, 10 * 60_000)
   const permissionRequestTimeoutMs = options.permissionRequestTimeoutMs ?? 30_000
   const userInputRequestTimeoutMs = options.userInputRequestTimeoutMs ?? 60_000
   const logger = options.logger ?? {
@@ -514,9 +612,11 @@ export function createStudioRuntimeService(
     bridgeState: StudioRuntimeBridgeState,
   ): RuntimeHostBridge => ({
     emit(event: RuntimeEvent) {
+      bridgeState.submitActivity?.touch()
       bridgeState.eventSink?.(toStudioRuntimeEvent(event))
     },
     async requestPermission(input) {
+      bridgeState.submitActivity?.touch()
       bridgeState.eventSink?.({
         type: 'permission.request',
         timestamp: new Date().toISOString(),
@@ -524,8 +624,15 @@ export function createStudioRuntimeService(
         payload: toPermissionEventPayload(input),
       })
 
-      const resolution = await resolvePermissionFn(input, bridgeState.hostState)
+      bridgeState.submitActivity?.suspend()
+      let resolution: PermissionResolution & { reason?: string }
+      try {
+        resolution = await resolvePermissionFn(input, bridgeState.hostState)
+      } finally {
+        bridgeState.submitActivity?.resume()
+      }
 
+      bridgeState.submitActivity?.touch()
       bridgeState.eventSink?.({
         type: 'permission.decision',
         timestamp: new Date().toISOString(),
@@ -536,7 +643,13 @@ export function createStudioRuntimeService(
       return resolution
     },
     async requestUserInput(input) {
-      return requestUserInputFromRenderer(toUserQuestionDialogRequest(input))
+      bridgeState.submitActivity?.touch()
+      bridgeState.submitActivity?.suspend()
+      try {
+        return await requestUserInputFromRenderer(toUserQuestionDialogRequest(input))
+      } finally {
+        bridgeState.submitActivity?.resume()
+      }
     },
   })
 
@@ -673,19 +786,59 @@ export function createStudioRuntimeService(
         let turnResult: RuntimeTurnResult
         try {
           turnResult = await new Promise<RuntimeTurnResult>((resolve, reject) => {
-            const timer = setTimeout(() => {
-              logger.warn('runtimeInstance.submit 超时，调用 abort', { timeoutMs: submitTimeoutMs })
-              runtimeInstance.abort()
-              reject(new Error(`LLM 请求超过 ${submitTimeoutMs / 1000} 秒未响应，已自动中断。请检查网络连接、API Key 或 baseURL 配置。`))
-            }, submitTimeoutMs)
-            runtimeInstance.submit(runtimeSubmitInput)
+            let settled = false
+            const finish = (callback: () => void) => {
+              if (settled) {
+                return
+              }
+              settled = true
+              runtimeHandle.entry.bridgeState.submitActivity = null
+              submitActivity.clear()
+              callback()
+            }
+            const submitActivity = createSubmitActivityWatchdog({
+              initialTimeoutMs: submitTimeoutMs,
+              postProgressTimeoutMs: submitPostProgressTimeoutMs,
+              onTimeout: ({ timeoutMs, hasSeenProgress }) => {
+                logger.warn('runtimeInstance.submit 长时间无进展，调用 abort', {
+                  timeoutMs,
+                  hasSeenProgress,
+                  stage: hasSeenProgress ? 'post-progress' : 'initial',
+                  cwd,
+                  provider: request.providerId,
+                  model: request.modelId,
+                })
+                runtimeInstance.abort()
+                finish(() => {
+                  reject(
+                    new Error(
+                      `LLM 请求连续 ${timeoutMs / 1000} 秒没有新的运行进展，已自动中断。请检查网络连接、API Key、baseURL 配置，或稍后重试。`,
+                    ),
+                  )
+                })
+              },
+            })
+            runtimeHandle.entry.bridgeState.submitActivity = submitActivity
+            submitActivity.start()
+            let submitPromise: Promise<RuntimeTurnResult>
+            try {
+              submitPromise = runtimeInstance.submit(runtimeSubmitInput)
+            } catch (error) {
+              finish(() => {
+                reject(error)
+              })
+              return
+            }
+            submitPromise
               .then((result) => {
-                clearTimeout(timer)
-                resolve(result)
+                finish(() => {
+                  resolve(result)
+                })
               })
               .catch((err) => {
-                clearTimeout(timer)
-                reject(err)
+                finish(() => {
+                  reject(err)
+                })
               })
           })
         } catch (error) {

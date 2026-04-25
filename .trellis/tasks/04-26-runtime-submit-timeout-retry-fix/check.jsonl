@@ -1,0 +1,5 @@
+{"file": ".agents/skills/trellis-finish-work/SKILL.md", "reason": "Finish work checklist"}
+{"file": ".agents/skills/trellis-check/SKILL.md", "reason": "Code quality check spec"}
+{"file": "apps/studio/tests/studio-runtime-service-guard.test.ts", "reason": "watchdog 回归测试"}
+{"file": "apps/studio/tests/use-studio-bridge-submit.test.tsx", "reason": "renderer submit 错误显示回归测试"}
+{"file": "apps/studio/tests/renderer-shell.test.tsx", "reason": "首轮提交无持久化 session 时的对话可见性回归测试"}

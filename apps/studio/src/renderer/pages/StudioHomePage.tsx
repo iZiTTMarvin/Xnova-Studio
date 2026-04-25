@@ -334,6 +334,12 @@ export function StudioHomePage() {
     shellSnapshot?.activeSession?.sessionId === activeSession?.sessionId
       ? (shellSnapshot?.activeSession ?? null)
       : null
+  const hasVisibleLiveConversation =
+    liveConversation.pendingUserText !== null ||
+    liveConversation.assistantText.length > 0 ||
+    liveConversation.thinkingText.length > 0 ||
+    liveConversation.toolEvents.length > 0 ||
+    liveConversation.systemMessages.length > 0
 
   const composerArea = (
     <div className="composer-shell composer-shell-codex">
@@ -451,6 +457,7 @@ export function StudioHomePage() {
 
     setComposerFeedback(null)
     setComposerInput('') // 发送后立即清空输入框，提升 UX
+    setActiveNavId('projects')
     try {
       const result = await submitPrompt(nextText)
       if (!result.ok) {
@@ -458,7 +465,6 @@ export function StudioHomePage() {
         setComposerInput(nextText) // 发送失败时恢复内容，方便用户修改重发
         return
       }
-      setActiveNavId('projects')
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error)
       setComposerFeedback(`发送异常: ${message}`)
@@ -647,23 +653,31 @@ export function StudioHomePage() {
         </div>
       </section>
     </section>
-  ) : activeSession ? (
+  ) : activeSession || hasVisibleLiveConversation ? (
     <section className="workspace-surface">
       {workContextBar}
       <section className="conversation-stage conversation-stage-main">
         <div className="conversation-header">
           <div>
             <p className="section-eyebrow">
-              {startupRoute.kind === 'restore-session' ? '已恢复最近工作会话' : '项目会话'}
+              {activeSession
+                ? (startupRoute.kind === 'restore-session' ? '已恢复最近工作会话' : '项目会话')
+                : '正在开始新的项目会话'}
             </p>
-            <h2>{activeSession.title}</h2>
+            <h2>{activeSession?.title ?? `${workspaceHeadingName ?? '当前项目'} · 新会话`}</h2>
           </div>
           <div className="conversation-header-meta">
-            <span className="mini-pill mono">{activeSession.projectPath}</span>
             <span className="mini-pill mono">
-              {activeSession.gitBranch ?? shellSnapshot?.defaults.branch ?? 'unknown'}
+              {activeSession?.projectPath ?? selectedProjectPath ?? hostState.workspacePath ?? '未绑定项目'}
             </span>
-            <span className="mini-pill">{activeSession.messageCount} 条消息</span>
+            <span className="mini-pill mono">
+              {activeSession?.gitBranch ?? shellSnapshot?.defaults.branch ?? 'unknown'}
+            </span>
+            {activeSession ? (
+              <span className="mini-pill">{activeSession.messageCount} 条消息</span>
+            ) : (
+              <span className="mini-pill">{isSubmitting ? '运行中' : '待持久化'}</span>
+            )}
           </div>
         </div>
 
@@ -722,7 +736,7 @@ export function StudioHomePage() {
   )
 
   const isConversationView = activeNavId !== 'search' && activeNavId !== 'agents' && activeNavId !== 'tools'
-    && (selectedSubagentEntry != null || activeSession != null)
+    && (selectedSubagentEntry != null || activeSession != null || hasVisibleLiveConversation)
 
   const content = activeNavId === 'search'
     ? searchContent

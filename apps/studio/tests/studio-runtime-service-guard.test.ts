@@ -3,6 +3,7 @@ import { createStudioRuntimeService } from '../src/main/studio-runtime-service'
 import type {
   RuntimeHostBridge,
   RuntimeInstance,
+  RuntimeTurnResult,
 } from '@xnova/runtime'
 
 describe('studio runtime service guards', () => {
@@ -178,9 +179,210 @@ describe('studio runtime service guards', () => {
       ),
     ).resolves.toEqual({
       ok: false,
-      error: expect.stringContaining('LLM 请求超过 0.005 秒未响应'),
+      error: expect.stringContaining('连续 0.005 秒没有新的运行进展'),
     })
 
     expect(runtimeInstance.abort).toHaveBeenCalledTimes(1)
+  })
+
+  it('runtime 持续输出事件时不会被固定总时长 watchdog 误杀', async () => {
+    vi.useFakeTimers()
+    let runtimeBridge: RuntimeHostBridge | null = null
+
+    try {
+      const runtimeInstance: RuntimeInstance = {
+        submit: vi.fn(
+          () =>
+            new Promise<RuntimeTurnResult>((resolve) => {
+              setTimeout(() => {
+                runtimeBridge?.emit({
+                  type: 'text_delta',
+                  timestamp: '2026-04-26T00:00:01.000Z',
+                  sessionId: 'session-3',
+                  payload: {
+                    text: '正在分析',
+                  },
+                })
+              }, 3)
+
+              setTimeout(() => {
+                runtimeBridge?.emit({
+                  type: 'thinking',
+                  timestamp: '2026-04-26T00:00:02.000Z',
+                  sessionId: 'session-3',
+                  payload: {
+                    text: '继续处理中',
+                  },
+                })
+              }, 6)
+
+              setTimeout(() => {
+                resolve({
+                  text: '分析完成',
+                  thinking: '继续处理中',
+                  stopReason: 'end_turn',
+                  llmCallCount: 1,
+                  toolCallCount: 0,
+                  usage: {
+                    inputTokens: 10,
+                    outputTokens: 12,
+                    cacheReadTokens: 0,
+                    cacheWriteTokens: 0,
+                  },
+                  aborted: false,
+                  historyCompacted: false,
+                  sessionId: 'session-3',
+                })
+              }, 10)
+            }),
+        ),
+        abort: vi.fn(),
+        dispose: vi.fn(async () => undefined),
+        getSnapshot: vi.fn(() => ({
+          sessionId: 'session-3',
+          isRunning: true,
+          provider: 'openai',
+          model: 'gpt-4.1-mini',
+          warnings: [],
+        })),
+      }
+
+      const service = createStudioRuntimeService({
+        createRuntimeFn: vi.fn(async (_input, bridge) => {
+          runtimeBridge = bridge
+          return runtimeInstance
+        }),
+        loadResolvedConfigFn: vi.fn(() => ({
+          effective: {
+            defaultProvider: 'openai',
+            defaultModel: 'gpt-4.1-mini',
+            providers: {},
+          },
+          source: {},
+          warnings: [],
+        })),
+        submitTimeoutMs: 5,
+      })
+
+      const emittedEvents: string[] = []
+      const submitPromise = service.submit(
+        {
+          text: '继续当前项目',
+          projectPath: 'D:/workspace/demo',
+        },
+        {
+          workspacePath: 'D:/workspace/demo',
+          lastSelection: null,
+        },
+        (event) => {
+          emittedEvents.push(event.type)
+        },
+      )
+
+      await vi.advanceTimersByTimeAsync(12)
+
+      await expect(submitPromise).resolves.toEqual({
+        ok: true,
+        sessionId: 'session-3',
+      })
+      expect(runtimeInstance.abort).not.toHaveBeenCalled()
+      expect(emittedEvents).toEqual(['text_delta', 'thinking'])
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+
+  it('收到首个进展后，较长静默不会立刻被短 watchdog 误杀', async () => {
+    vi.useFakeTimers()
+    let runtimeBridge: RuntimeHostBridge | null = null
+
+    try {
+      const runtimeInstance: RuntimeInstance = {
+        submit: vi.fn(
+          () =>
+            new Promise<RuntimeTurnResult>((resolve) => {
+              setTimeout(() => {
+                runtimeBridge?.emit({
+                  type: 'thinking',
+                  timestamp: '2026-04-26T00:00:01.000Z',
+                  sessionId: 'session-4',
+                  payload: {
+                    text: '正在整理方案',
+                  },
+                })
+              }, 2)
+
+              setTimeout(() => {
+                resolve({
+                  text: '方案整理完成',
+                  thinking: '正在整理方案',
+                  stopReason: 'end_turn',
+                  llmCallCount: 1,
+                  toolCallCount: 0,
+                  usage: {
+                    inputTokens: 10,
+                    outputTokens: 12,
+                    cacheReadTokens: 0,
+                    cacheWriteTokens: 0,
+                  },
+                  aborted: false,
+                  historyCompacted: false,
+                  sessionId: 'session-4',
+                })
+              }, 20)
+            }),
+        ),
+        abort: vi.fn(),
+        dispose: vi.fn(async () => undefined),
+        getSnapshot: vi.fn(() => ({
+          sessionId: 'session-4',
+          isRunning: true,
+          provider: 'minimax',
+          model: 'MiniMax-M2.7',
+          warnings: [],
+        })),
+      }
+
+      const service = createStudioRuntimeService({
+        createRuntimeFn: vi.fn(async (_input, bridge) => {
+          runtimeBridge = bridge
+          return runtimeInstance
+        }),
+        loadResolvedConfigFn: vi.fn(() => ({
+          effective: {
+            defaultProvider: 'minimax',
+            defaultModel: 'MiniMax-M2.7',
+            providers: {},
+          },
+          source: {},
+          warnings: [],
+        })),
+        submitTimeoutMs: 5,
+      })
+
+      const submitPromise = service.submit(
+        {
+          text: '继续当前项目',
+          projectPath: 'D:/workspace/demo',
+          providerId: 'minimax',
+          modelId: 'MiniMax-M2.7',
+        },
+        {
+          workspacePath: 'D:/workspace/demo',
+          lastSelection: null,
+        },
+        vi.fn(),
+      )
+
+      await vi.advanceTimersByTimeAsync(25)
+
+      await expect(submitPromise).resolves.toEqual({
+        ok: true,
+        sessionId: 'session-4',
+      })
+      expect(runtimeInstance.abort).not.toHaveBeenCalled()
+    } finally {
+      vi.useRealTimers()
+    }
   })
 })

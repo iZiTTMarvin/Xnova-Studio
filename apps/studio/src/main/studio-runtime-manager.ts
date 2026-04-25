@@ -21,6 +21,13 @@ export interface StudioRuntimeSelection {
 export interface StudioRuntimeBridgeState {
   hostState: StudioHostState
   eventSink: ((event: StudioRuntimeEvent) => void) | null
+  submitActivity: {
+    start(): void
+    touch(): void
+    suspend(): void
+    resume(): void
+    clear(): void
+  } | null
 }
 
 export interface StudioManagedRuntimeEntry {
@@ -124,6 +131,7 @@ export function createStudioRuntimeManager(
       const bridgeState: StudioRuntimeBridgeState = {
         hostState: optionsInput.hostState,
         eventSink: optionsInput.emitRuntimeEvent,
+        submitActivity: null,
       }
       const engineServiceApi = getEngineServiceApi(optionsInput.selection.workspaceRoot)
       const instance = await optionsInput.createRuntimeFn(
@@ -154,6 +162,7 @@ export function createStudioRuntimeManager(
 
     releaseRuntime(entry) {
       entry.bridgeState.eventSink = null
+      entry.bridgeState.submitActivity = null
     },
 
     commitSession(entry, sessionId) {

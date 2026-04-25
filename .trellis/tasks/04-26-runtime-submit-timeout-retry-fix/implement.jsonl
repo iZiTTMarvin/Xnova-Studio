@@ -1,0 +1,6 @@
+{"file": ".trellis/workflow.md", "reason": "Project workflow and conventions"}
+{"file": ".trellis/spec/backend/index.md", "reason": "Backend development guide"}
+{"file": ".trellis/spec/frontend/index.md", "reason": "Frontend development guide"}
+{"file": "apps/studio/src/main/studio-runtime-service.ts", "reason": "submit watchdog 与 runtime 事件进展联动"}
+{"file": "apps/studio/src/renderer/hooks/useStudioBridge.ts", "reason": "submit 错误去重与 liveConversation 状态"}
+{"file": "apps/studio/src/renderer/pages/StudioHomePage.tsx", "reason": "首轮 submit 时 liveConversation 可见性与会话视图切换"}

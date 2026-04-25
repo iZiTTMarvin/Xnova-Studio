@@ -529,6 +529,10 @@ await runtime.submit({
 - renderer 必须把当前 `sessionId / agentId / providerId / modelId` 一并送入 submit 契约。
 - host 若直接调用 runtime，必须显式构造当前用户消息 history；不能只传 `text`。
 - runtime 事件必须持续回流到 renderer，用于展示 live assistant text、thinking、tool events、warning、error。
+- host 的 submit watchdog 只能按“连续无新进展”计时：收到 `text_delta / thinking / tool_* / warning / error` 等 runtime 事件，或进入权限/用户提问交互后，都必须续期或切换到对应交互超时；不得把整轮对话按固定总时长直接截断。
+- watchdog 必须区分阶段：
+  - 首个 runtime 进展出现前，可使用较短门限拦截真正的启动/请求挂死
+  - 首个进展出现后，必须切换到更长的静默门限，避免长思考模型或 provider 的大段推理被 60 秒误杀
 - renderer / preload / host 只允许调用 shared contract 中已声明的方法；不得 fallback 到 legacy `runtime.submitPrompt` 等未声明入口。
 
 ### 4. Validation & Error Matrix
@@ -540,6 +544,8 @@ await runtime.submit({
 | submit 未携带当前 `providerId / modelId` | 视为会话模型选择失效 |
 | host 直接调 runtime.submit 但 history 为空 | Provider 侧可能报 `messages must not be empty`，必须修装配 |
 | runtime 事件未透传到 renderer | 视为聊天主视图不完整，必须修复 |
+| 对话持续有流式进展，但 host 仍在固定总时长后强制 abort | 视为 submit watchdog 误杀，必须改为按无进展续期 |
+| 已收到首个 `thinking/text/tool` 进展，但后续因较长静默又被 60 秒短门限 abort | 视为分阶段 watchdog 缺失，必须放宽 post-progress 门限 |
 | renderer 通过 undocumented fallback 调 `runtime.submitPrompt` 获得“成功” | 视为 legacy 语义回潮，必须回退到 shared contract |
 
 ### 5. Good / Base / Bad Cases
@@ -559,6 +565,7 @@ await runtime.submit({
 - 单元测试：
   - `useStudioBridge` 的门禁逻辑
   - `studio-runtime-service` 的 cwd / history / model 透传
+  - `studio-runtime-service-guard.test.ts` 断言“无进展时仍会 abort、持续进展不会误杀、首进展后较长静默也不会被短门限误杀”
 - 集成测试：
   - 绑定 workspace -> 选择模型 -> 发送消息 -> 收到事件 -> 会话刷新
 - 回归测试：
