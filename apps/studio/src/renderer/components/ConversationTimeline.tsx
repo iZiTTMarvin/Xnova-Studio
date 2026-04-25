@@ -1,8 +1,11 @@
-import { useEffect, useRef } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import type {
   StudioActiveSessionDetail,
   StudioConversationMessage,
 } from '../../shared/studio-bridge-contract'
+import { IconChevronRight, IconChevronDown, IconCheck, IconCross } from './Icons'
+import { getToolDisplayLabel } from '../utils/tool-display-utils'
+import { MarkdownContent } from '../utils/markdown-renderer'
 
 interface LiveConversationState {
   pendingUserText: string | null
@@ -25,63 +28,239 @@ export interface ConversationTimelineProps {
   liveConversation: LiveConversationState
 }
 
-function renderToolEventSummary(
-  toolEvent: NonNullable<StudioConversationMessage['toolEvents']>[number],
-) {
-  const argsText = Object.keys(toolEvent.args ?? {}).length > 0
-    ? JSON.stringify(toolEvent.args, null, 2)
-    : '无参数'
+// ============================================================
+// ThinkingBlock — 可折叠思考块（Claude 风格）
+// ============================================================
+
+interface ThinkingBlockProps {
+  text: string
+  /** 是否处于实时流式状态 */
+  isLive: boolean
+}
+
+function ThinkingBlock(props: ThinkingBlockProps) {
+  const [isCollapsed, setIsCollapsed] = useState(false)
+  const [elapsedSeconds, setElapsedSeconds] = useState(0)
+  const startTimeRef = useRef(Date.now())
+  const wasLiveRef = useRef(props.isLive)
+
+  // 计时器：仅在 isLive 时运行
+  useEffect(() => {
+    if (!props.isLive) {
+      return
+    }
+    startTimeRef.current = Date.now()
+    const timer = window.setInterval(() => {
+      setElapsedSeconds(Math.floor((Date.now() - startTimeRef.current) / 1000))
+    }, 1000)
+    return () => window.clearInterval(timer)
+  }, [props.isLive])
+
+  // 从 live → 非 live 时自动折叠
+  useEffect(() => {
+    if (wasLiveRef.current && !props.isLive) {
+      setIsCollapsed(true)
+    }
+    wasLiveRef.current = props.isLive
+  }, [props.isLive])
+
+  const displayTime = props.isLive
+    ? `${elapsedSeconds}s`
+    : `${elapsedSeconds}s`
 
   return (
-    <div key={toolEvent.toolCallId} className="conversation-tool-event">
-      <div className="conversation-tool-header">
-        <strong>{toolEvent.toolName}</strong>
-        {toolEvent.success === undefined ? null : (
-          <span>{toolEvent.success ? '成功' : '失败'}</span>
-        )}
+    <div className={`thinking-block ${isCollapsed ? 'thinking-block--collapsed' : ''}`}>
+      <button
+        type="button"
+        className="thinking-block-header"
+        onClick={() => setIsCollapsed((prev) => !prev)}
+        aria-expanded={!isCollapsed}
+        aria-label="展开/折叠思考过程"
+      >
+        <span className="thinking-block-chevron">
+          {isCollapsed ? <IconChevronRight /> : <IconChevronDown />}
+        </span>
+        {props.isLive ? <span className="spinner" /> : null}
+        <span className="thinking-block-title">
+          {props.isLive ? '思考中…' : '思考过程'}
+        </span>
+        <span className="thinking-block-timer">⏱ {displayTime}</span>
+      </button>
+      <div className="thinking-block-content">
+        <div className="thinking-block-text">{props.text}</div>
       </div>
-      <div className="conversation-tool-meta mono">{argsText}</div>
-      {toolEvent.resultSummary ? (
-        <div className="conversation-tool-result">{toolEvent.resultSummary}</div>
+    </div>
+  )
+}
+
+// ============================================================
+// ToolCallRow — 紧凑工具调用行（Claude Code 风格）
+// ============================================================
+
+interface ToolCallRowProps {
+  toolName: string
+  args: Record<string, unknown>
+  status: 'running' | 'done'
+  success?: boolean | undefined
+  durationMs?: number | undefined
+  resultSummary?: string | undefined
+}
+
+function ToolCallRow(props: ToolCallRowProps) {
+  const [isExpanded, setIsExpanded] = useState(false)
+  const display = getToolDisplayLabel(props.toolName, props.args)
+  const isRunning = props.status === 'running'
+  const isSuccess = props.status === 'done' && props.success !== false
+  const isError = props.status === 'done' && props.success === false
+
+  const durationText = props.durationMs !== undefined
+    ? `${(props.durationMs / 1000).toFixed(1)}s`
+    : null
+
+  return (
+    <div className={`tool-call-row ${isRunning ? 'tool-call-row--running' : 'tool-call-row--done'}`}>
+      <button
+        type="button"
+        className="tool-call-row-main"
+        onClick={() => setIsExpanded((prev) => !prev)}
+        aria-expanded={isExpanded}
+      >
+        {/* 状态指示器 */}
+        <span className="tool-call-status">
+          {isRunning ? (
+            <span className="spinner" />
+          ) : isSuccess ? (
+            <IconCheck className="tool-call-icon-success" />
+          ) : isError ? (
+            <IconCross className="tool-call-icon-error" />
+          ) : (
+            <IconCheck className="tool-call-icon-success" />
+          )}
+        </span>
+
+        {/* 动词 + 目标 */}
+        <span className={`tool-call-verb ${!isRunning ? 'tool-call-verb--done' : ''}`}>
+          {display.verb}
+        </span>
+        {display.target ? (
+          <span className="tool-call-target">{display.target}</span>
+        ) : null}
+
+        {/* 耗时 */}
+        {durationText ? (
+          <span className="tool-call-duration">{durationText}</span>
+        ) : null}
+
+        {/* 展开箭头 */}
+        <span className="tool-call-expand-chevron">
+          {isExpanded ? <IconChevronDown /> : <IconChevronRight />}
+        </span>
+      </button>
+
+      {/* 展开详情 */}
+      {isExpanded ? (
+        <div className="tool-call-details">
+          {Object.keys(props.args).length > 0 ? (
+            <div className="tool-call-detail-section">
+              <span className="tool-call-detail-label">参数</span>
+              <pre className="tool-call-detail-code">{JSON.stringify(props.args, null, 2)}</pre>
+            </div>
+          ) : null}
+          {props.resultSummary ? (
+            <div className="tool-call-detail-section">
+              <span className="tool-call-detail-label">结果</span>
+              <div className="tool-call-detail-result">{props.resultSummary}</div>
+            </div>
+          ) : null}
+        </div>
       ) : null}
     </div>
   )
 }
 
+// ============================================================
+// 渲染持久化消息
+// ============================================================
+
+function renderPersistedToolEvents(
+  toolEvents: NonNullable<StudioConversationMessage['toolEvents']>,
+) {
+  return (
+    <div className="tool-call-group">
+      {toolEvents.map((toolEvent) => (
+        <ToolCallRow
+          key={toolEvent.toolCallId}
+          toolName={toolEvent.toolName}
+          args={toolEvent.args ?? {}}
+          status="done"
+          success={toolEvent.success}
+          durationMs={toolEvent.durationMs}
+          resultSummary={toolEvent.resultSummary}
+        />
+      ))}
+    </div>
+  )
+}
+
 function renderPersistedMessage(message: StudioConversationMessage) {
+  // 工具调用消息
   if (message.toolEvents && message.toolEvents.length > 0) {
     return (
       <article
         key={message.id}
         className="conversation-message conversation-message-system"
       >
-        <div className="conversation-message-label">工具执行</div>
-        <div className="conversation-tool-list">
-          {message.toolEvents.map((toolEvent) => renderToolEventSummary(toolEvent))}
-        </div>
+        {renderPersistedToolEvents(message.toolEvents)}
       </article>
     )
   }
 
+  // 用户消息
+  if (message.role === 'user') {
+    return (
+      <article
+        key={message.id}
+        className="conversation-message conversation-message-user"
+      >
+        <div className="conversation-message-label">你</div>
+        <div className="conversation-message-body">{message.content}</div>
+      </article>
+    )
+  }
+
+  // 助手消息
+  if (message.role === 'assistant') {
+    return (
+      <article
+        key={message.id}
+        className="conversation-message conversation-message-assistant"
+      >
+        <div className="conversation-message-label">Xnova</div>
+        <div className="conversation-message-body">
+          <MarkdownContent text={message.content} />
+        </div>
+        {message.thinking ? (
+          <ThinkingBlock text={message.thinking} isLive={false} />
+        ) : null}
+      </article>
+    )
+  }
+
+  // 系统消息
   return (
     <article
       key={message.id}
-      className={`conversation-message conversation-message-${message.role}`}
+      className="conversation-message conversation-message-system"
     >
-      <div className="conversation-message-label">
-        {message.role === 'user'
-          ? '你'
-          : message.role === 'assistant'
-            ? 'Xnova'
-            : '系统'}
-      </div>
+      <div className="conversation-message-label">系统</div>
       <div className="conversation-message-body">{message.content}</div>
-      {message.thinking ? (
-        <div className="conversation-message-thinking">{message.thinking}</div>
-      ) : null}
     </article>
   )
 }
+
+// ============================================================
+// ConversationTimeline — 主时间线
+// ============================================================
 
 export function ConversationTimeline(props: ConversationTimelineProps) {
   const bottomRef = useRef<HTMLDivElement>(null)
@@ -120,6 +299,7 @@ export function ConversationTimeline(props: ConversationTimelineProps) {
     <section className="conversation-timeline" aria-label="项目会话聊天流">
       {persistedMessages.map((message) => renderPersistedMessage(message))}
 
+      {/* 实时用户消息 */}
       {props.liveConversation.pendingUserText ? (
         <article className="conversation-message conversation-message-user conversation-message-live">
           <div className="conversation-message-label">你</div>
@@ -129,41 +309,49 @@ export function ConversationTimeline(props: ConversationTimelineProps) {
         </article>
       ) : null}
 
-      {props.liveConversation.toolEvents.length > 0 ? (
-        <article className="conversation-message conversation-message-system conversation-message-live">
-          <div className="conversation-message-label">运行中</div>
-          <div className="conversation-tool-list">
-            {props.liveConversation.toolEvents.map((toolEvent) =>
-              renderToolEventSummary(toolEvent),
-            )}
-          </div>
-        </article>
-      ) : null}
-
+      {/* 实时思考块 */}
       {props.liveConversation.thinkingText ? (
-        <article className="conversation-message conversation-message-system conversation-message-live">
-          <div className="conversation-message-label">思考中</div>
-          <div className="conversation-message-thinking">
-            {props.liveConversation.thinkingText}
-          </div>
-        </article>
+        <ThinkingBlock
+          text={props.liveConversation.thinkingText}
+          isLive={true}
+        />
       ) : null}
 
+      {/* 实时工具调用 */}
+      {props.liveConversation.toolEvents.length > 0 ? (
+        <div className="tool-call-group tool-call-group--live">
+          {props.liveConversation.toolEvents.map((toolEvent) => (
+            <ToolCallRow
+              key={toolEvent.toolCallId}
+              toolName={toolEvent.toolName}
+              args={toolEvent.args}
+              status={toolEvent.status}
+              success={toolEvent.success}
+              durationMs={toolEvent.durationMs}
+              resultSummary={toolEvent.resultSummary}
+            />
+          ))}
+        </div>
+      ) : null}
+
+      {/* 实时 AI 回复 + 打字光标 */}
       {props.liveConversation.assistantText ? (
         <article className="conversation-message conversation-message-assistant conversation-message-live">
           <div className="conversation-message-label">Xnova</div>
           <div className="conversation-message-body">
-            {props.liveConversation.assistantText}
+            <MarkdownContent text={props.liveConversation.assistantText} />
+            <span className="typing-cursor">▋</span>
           </div>
         </article>
       ) : null}
 
+      {/* 实时系统消息 */}
       {props.liveConversation.systemMessages.map((message, index) => (
         <article
           key={`live-system-${message.slice(0, 20)}-${index}`}
           className="conversation-message conversation-message-system conversation-message-live"
         >
-          <div className="conversation-message-label">系统</div>
+          <div className="conversation-message-label">⚠️ 系统</div>
           <div className="conversation-message-body">{message}</div>
         </article>
       ))}

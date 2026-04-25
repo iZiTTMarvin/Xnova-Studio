@@ -3,6 +3,7 @@ import type {
   StudioProjectSessionSummary,
   StudioShellDefaults,
 } from '../../shared/studio-bridge-contract'
+import type { ContextState } from '../hooks/useStudioBridge'
 
 export interface WorkContext {
   projectPath: string | null
@@ -11,6 +12,7 @@ export interface WorkContext {
   modelId: string | null
   mode: StudioModeId
   contextUsageLabel: string | null
+  contextState: ContextState | null
   runningSubagents: number
 }
 
@@ -22,6 +24,7 @@ export interface WorkContextInput {
   modelId: string | null
   mode: StudioModeId
   contextUsageLabel: string | null
+  contextState?: ContextState | null
 }
 
 export function resolveWorkContext(input: WorkContextInput): WorkContext {
@@ -32,8 +35,10 @@ export function resolveWorkContext(input: WorkContextInput): WorkContext {
     modelId: input.modelId ?? input.activeSession?.modelId ?? input.defaults?.modelId ?? null,
     mode: input.mode,
     contextUsageLabel: input.contextUsageLabel,
+    contextState: input.contextState ?? null,
     runningSubagents:
       input.activeSession?.subagents.filter((subagent) => subagent.status === 'running').length ??
       0,
   }
 }
+

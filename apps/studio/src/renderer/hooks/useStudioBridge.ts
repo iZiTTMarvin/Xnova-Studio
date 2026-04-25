@@ -39,6 +39,13 @@ interface SubmitPromptResult {
   error?: string
 }
 
+export interface ContextState {
+  usedPercentage: number
+  lastInputTokens: number
+  effectiveWindow: number
+  level: 'normal' | 'warning' | 'critical' | 'overflow'
+}
+
 interface LiveConversationState {
   pendingUserText: string | null
   assistantText: string
@@ -148,6 +155,12 @@ export function useStudioBridge() {
     toolEvents: [],
     systemMessages: [],
   })
+  const [contextState, setContextState] = useState<ContextState>({
+    usedPercentage: 0,
+    lastInputTokens: 0,
+    effectiveWindow: 128_000,
+    level: 'normal',
+  })
   const [recoveryState, setRecoveryState] = useState<RecoveryState>({
     status: {
       kind: 'empty',
@@ -218,10 +231,14 @@ export function useStudioBridge() {
         agentId: currentAgentId,
         modelId: currentModelId,
         mode: currentMode,
-        contextUsageLabel: null,
+        contextUsageLabel: contextState.effectiveWindow > 0
+          ? `${Math.round(contextState.usedPercentage * 100)}%`
+          : null,
+        contextState,
       }),
     [
       activeSession,
+      contextState,
       currentAgentId,
       currentMode,
       currentModelId,
@@ -566,6 +583,18 @@ export function useStudioBridge() {
             return current
         }
       })
+
+      // 上下文窗口状态更新（不在 setLiveConversation 内，因为是独立状态）
+      if (event.type === 'context_update' && event.payload) {
+        setContextState({
+          usedPercentage: typeof event.payload.usedPercentage === 'number' ? event.payload.usedPercentage : 0,
+          lastInputTokens: typeof event.payload.lastInputTokens === 'number' ? event.payload.lastInputTokens : 0,
+          effectiveWindow: typeof event.payload.effectiveWindow === 'number' ? event.payload.effectiveWindow : 128_000,
+          level: (['normal', 'warning', 'critical', 'overflow'].includes(event.payload.level as string)
+            ? event.payload.level as ContextState['level']
+            : 'normal'),
+        })
+      }
     })
     const unsubscribePermission =
       bridge.permission?.onRequest((request) => {
@@ -1046,6 +1075,7 @@ export function useStudioBridge() {
     submitPrompt,
     isSubmitting,
     liveConversation,
+    contextState,
     lastRuntimeEvent,
     pendingPermissionRequest,
     pendingUserInputRequest,

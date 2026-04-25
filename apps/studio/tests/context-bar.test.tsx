@@ -61,6 +61,7 @@ describe('work context and context bar', () => {
       modelId: 'claude-sonnet-4-6',
       mode: 'standard',
       contextUsageLabel: '42%',
+      contextState: null,
       runningSubagents: 1,
     })
   })
@@ -109,7 +110,13 @@ describe('work context and context bar', () => {
     expect(screen.getByText('未知分支')).toBeTruthy()
     expect(screen.getByText('未选择 Agent')).toBeTruthy()
     expect(screen.getByText('未选择模型')).toBeTruthy()
-    expect(screen.getByText('Context 未连接')).toBeTruthy()
+    // Context 字段现在使用环形进度圈，不再是纯文字
+    const allFields = within(screen.getByLabelText('工作上下文条'))
+      .getAllByTestId('context-bar-field')
+    const contextField = allFields.find(
+      (node) => node.getAttribute('data-field-key') === 'contextUsage',
+    )
+    expect(contextField).toBeTruthy()
     expect(screen.getByText('0 个运行中')).toBeTruthy()
   })
 

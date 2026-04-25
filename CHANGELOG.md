@@ -1,4 +1,11 @@
 ## 2026-04-25
+- **Studio 对话交互 UX 优化**：参考 Claude Code App / Codex CLI 范式，全面升级消息流交互体验
+  - ThinkingBlock：可折叠思考块 + CSS spinner + 秒数计时 + 实时流式内容展示 + 完成后自动折叠
+  - ToolCallRow：紧凑工具调用行 `Read src/index.ts` 风格 + 呼吸灯脉冲 + spinner → 完成变粗体加深色
+  - ContextRing：上下文用量改为 SVG 环形进度圈 + hover tooltip 显示 token 详情（已用/窗口/占比）
+  - 新增零依赖 Markdown 渲染器（bold/code/list）+ 打字机光标闪烁动画
+  - 打通 `context_update` 事件管道（runtime → useStudioBridge → ContextBar）
+
 - **Studio 用户交互实现**：打通 AskUserQuestion 的 main/preload/renderer 交互闭环
   - 新增 `studio:user-input:request/respond` 契约、preload 校验、main 等待队列与 60 秒超时取消
   - 新增 `UserQuestionDialog` 并在主壳挂载，支持 `text` / `select` / `multiselect` 三种题型
