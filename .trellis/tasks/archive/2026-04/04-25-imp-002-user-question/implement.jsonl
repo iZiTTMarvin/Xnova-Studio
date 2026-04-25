@@ -1,0 +1,10 @@
+{"file": ".trellis/workflow.md", "reason": "Project workflow and conventions"}
+{"file": ".trellis/spec/backend/index.md", "reason": "Backend development guide"}
+{"file": ".trellis/spec/frontend/index.md", "reason": "Frontend development guide"}
+{"file": "apps/studio/src/main/studio-runtime-service.ts", "reason": "requestUserInput 实现"}
+{"file": "apps/studio/src/shared/studio-bridge-contract.ts", "reason": "类型定义"}
+{"file": "apps/studio/src/main/studio-ipc.ts", "reason": "IPC 通道"}
+{"file": ".trellis/spec/backend/runtime-boundary.md", "reason": "runtime/host/preload/renderer 边界约束"}
+{"file": ".trellis/spec/frontend/hook-guidelines.md", "reason": "Hook 订阅与清理约束"}
+{"file": ".trellis/spec/guides/cross-layer-thinking-guide.md", "reason": "跨层数据流与契约校验"}
+{"file": ".trellis/spec/frontend/project-shell-v1.md", "reason": "Studio 主壳与 submit 主链路约束"}

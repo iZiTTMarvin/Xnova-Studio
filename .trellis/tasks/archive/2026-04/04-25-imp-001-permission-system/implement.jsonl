@@ -1,0 +1,8 @@
+{"file": ".trellis/workflow.md", "reason": "Project workflow and conventions"}
+{"file": ".trellis/spec/backend/index.md", "reason": "Backend development guide"}
+{"file": ".trellis/spec/frontend/index.md", "reason": "Frontend development guide"}
+{"file": "apps/studio/src/main/studio-runtime-service.ts", "reason": "权限决策核心逻辑"}
+{"file": "apps/studio/src/main/studio-ipc.ts", "reason": "IPC 通道注册"}
+{"file": "apps/studio/src/shared/studio-bridge-contract.ts", "reason": "Bridge 类型定义"}
+{"file": "apps/studio/src/preload/studio-ipc-contract.ts", "reason": "IPC channel 常量"}
+{"file": "apps/studio/src/renderer/hooks/useStudioBridge.ts", "reason": "前端事件处理"}

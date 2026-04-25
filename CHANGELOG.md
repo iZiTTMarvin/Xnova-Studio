@@ -1,4 +1,14 @@
 ## 2026-04-25
+- **Studio 用户交互实现**：打通 AskUserQuestion 的 main/preload/renderer 交互闭环
+  - 新增 `studio:user-input:request/respond` 契约、preload 校验、main 等待队列与 60 秒超时取消
+  - 新增 `UserQuestionDialog` 并在主壳挂载，支持 `text` / `select` / `multiselect` 三种题型
+  - 任务详情见 `.trellis/tasks/archive/2026-04/04-25-imp-002-user-question/`
+
+- **Studio 权限系统重构**：将危险工具权限从硬编码拒绝改为 Renderer 弹窗决策
+  - 新增 `studio:permission:request/respond` 契约、preload 校验、main 等待队列、30 秒超时与本次会话记住
+  - 新增 `PermissionDialog` 并在主壳挂载，bash/git/kill_shell 可由用户确认执行
+  - 任务详情见 `.trellis/tasks/archive/2026-04/04-25-imp-001-permission-system/`
+
 - **全面代码审查与改进计划**：完成全项目架构审查、OpenCowork 对比分析，产出分阶段改进计划
   - 产出 `IMPROVEMENT-PLAN.md`：18 项改进清单，按 P0/P1/P2/P3 四级优先级排序
   - 产出 `CODEX-PROMPT.md`：给 Codex 的完整 Trellis 工作流提示词，逐步拆解执行改进项

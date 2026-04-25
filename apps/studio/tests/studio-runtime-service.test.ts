@@ -1,5 +1,6 @@
 import { describe, expect, it, vi } from 'vitest'
 import { createStudioRuntimeService } from '../src/main/studio-runtime-service'
+import { STUDIO_BRIDGE_CHANNELS } from '../src/shared/studio-bridge-contract'
 import type {
   RuntimeHostBridge,
   RuntimeInstance,
@@ -535,6 +536,515 @@ describe('studio runtime service', () => {
     ).resolves.toEqual(
       expect.objectContaining({
         allow: false,
+      }),
+    )
+  })
+
+  it('危险工具应通过 Renderer 权限弹窗确认，并支持本次会话记住', async () => {
+    let runtimeBridge: RuntimeHostBridge | null = null
+    const send = vi.fn()
+
+    const runtimeInstance: RuntimeInstance = {
+      submit: vi.fn(async () => ({
+        text: 'done',
+        thinking: '',
+        stopReason: 'end_turn',
+        llmCallCount: 1,
+        toolCallCount: 0,
+        usage: {
+          inputTokens: 1,
+          outputTokens: 1,
+          cacheReadTokens: 0,
+          cacheWriteTokens: 0,
+        },
+        aborted: false,
+        historyCompacted: false,
+        sessionId: 'session-1',
+      })),
+      abort: vi.fn(),
+      dispose: vi.fn(async () => undefined),
+      getSnapshot: vi.fn(() => ({
+        sessionId: 'session-1',
+        isRunning: false,
+        provider: 'openai',
+        model: 'gpt-4o',
+        warnings: [],
+      })),
+    }
+
+    const service = createStudioRuntimeService({
+      createRuntimeFn: vi.fn(async (_input, bridge) => {
+        runtimeBridge = bridge
+        return runtimeInstance
+      }),
+      loadResolvedConfigFn: vi.fn(() => ({
+        effective: {
+          defaultProvider: 'openai',
+          defaultModel: 'gpt-4o',
+          providers: {},
+        },
+        source: {},
+        warnings: [],
+      })),
+      mainWindowManager: {
+        getMainWindow: () => ({
+          webContents: {
+            send,
+          },
+        }),
+      },
+    })
+
+    await service.submit(
+      {
+        text: '继续',
+        projectPath: 'D:/workspace/demo',
+      },
+      {
+        workspacePath: 'D:/workspace/demo',
+        lastSelection: null,
+      },
+      vi.fn(),
+    )
+
+    expect(runtimeBridge).not.toBeNull()
+    const permissionPromise = runtimeBridge!.requestPermission({
+      toolName: 'bash',
+      args: { command: 'pnpm test' },
+      sessionId: 'session-1',
+    })
+
+    expect(send).toHaveBeenCalledTimes(1)
+    expect(send).toHaveBeenCalledWith(
+      STUDIO_BRIDGE_CHANNELS.permissionRequest,
+      expect.objectContaining({
+        toolName: 'bash',
+        args: { command: 'pnpm test' },
+        description: expect.stringContaining('pnpm test'),
+      }),
+    )
+
+    const requestPayload = send.mock.calls[0]![1] as { requestId: string }
+    expect(
+      service.respondToPermissionRequest({
+        requestId: requestPayload.requestId,
+        allow: true,
+        remember: true,
+      }),
+    ).toBe(true)
+
+    await expect(permissionPromise).resolves.toEqual(
+      expect.objectContaining({
+        allow: true,
+        remember: true,
+      }),
+    )
+
+    await expect(
+      runtimeBridge!.requestPermission({
+        toolName: 'bash',
+        args: { command: 'pnpm typecheck' },
+        sessionId: 'session-1',
+      }),
+    ).resolves.toEqual(
+      expect.objectContaining({
+        allow: true,
+        remember: true,
+      }),
+    )
+    expect(send).toHaveBeenCalledTimes(1)
+  })
+
+  it('危险工具权限请求超时后自动拒绝', async () => {
+    let runtimeBridge: RuntimeHostBridge | null = null
+    const send = vi.fn()
+
+    const runtimeInstance: RuntimeInstance = {
+      submit: vi.fn(async () => ({
+        text: 'done',
+        thinking: '',
+        stopReason: 'end_turn',
+        llmCallCount: 1,
+        toolCallCount: 0,
+        usage: {
+          inputTokens: 1,
+          outputTokens: 1,
+          cacheReadTokens: 0,
+          cacheWriteTokens: 0,
+        },
+        aborted: false,
+        historyCompacted: false,
+        sessionId: 'session-1',
+      })),
+      abort: vi.fn(),
+      dispose: vi.fn(async () => undefined),
+      getSnapshot: vi.fn(() => ({
+        sessionId: 'session-1',
+        isRunning: false,
+        provider: 'openai',
+        model: 'gpt-4o',
+        warnings: [],
+      })),
+    }
+
+    const service = createStudioRuntimeService({
+      createRuntimeFn: vi.fn(async (_input, bridge) => {
+        runtimeBridge = bridge
+        return runtimeInstance
+      }),
+      loadResolvedConfigFn: vi.fn(() => ({
+        effective: {
+          defaultProvider: 'openai',
+          defaultModel: 'gpt-4o',
+          providers: {},
+        },
+        source: {},
+        warnings: [],
+      })),
+      permissionRequestTimeoutMs: 1,
+      mainWindowManager: {
+        getMainWindow: () => ({
+          webContents: {
+            send,
+          },
+        }),
+      },
+    })
+
+    await service.submit(
+      {
+        text: '继续',
+        projectPath: 'D:/workspace/demo',
+      },
+      {
+        workspacePath: 'D:/workspace/demo',
+        lastSelection: null,
+      },
+      vi.fn(),
+    )
+
+    await expect(
+      runtimeBridge!.requestPermission({
+        toolName: 'bash',
+        args: { command: 'pnpm test' },
+        sessionId: 'session-1',
+      }),
+    ).resolves.toEqual(
+      expect.objectContaining({
+        allow: false,
+        reason: 'permission-timeout',
+      }),
+    )
+  })
+
+  it('用户提问应通过 Renderer 对话框回传答案', async () => {
+    let runtimeBridge: RuntimeHostBridge | null = null
+    const send = vi.fn()
+
+    const runtimeInstance: RuntimeInstance = {
+      submit: vi.fn(async () => ({
+        text: 'done',
+        thinking: '',
+        stopReason: 'end_turn',
+        llmCallCount: 1,
+        toolCallCount: 0,
+        usage: {
+          inputTokens: 1,
+          outputTokens: 1,
+          cacheReadTokens: 0,
+          cacheWriteTokens: 0,
+        },
+        aborted: false,
+        historyCompacted: false,
+        sessionId: 'session-1',
+      })),
+      abort: vi.fn(),
+      dispose: vi.fn(async () => undefined),
+      getSnapshot: vi.fn(() => ({
+        sessionId: 'session-1',
+        isRunning: false,
+        provider: 'openai',
+        model: 'gpt-4o',
+        warnings: [],
+      })),
+    }
+
+    const service = createStudioRuntimeService({
+      createRuntimeFn: vi.fn(async (_input, bridge) => {
+        runtimeBridge = bridge
+        return runtimeInstance
+      }),
+      loadResolvedConfigFn: vi.fn(() => ({
+        effective: {
+          defaultProvider: 'openai',
+          defaultModel: 'gpt-4o',
+          providers: {},
+        },
+        source: {},
+        warnings: [],
+      })),
+      mainWindowManager: {
+        getMainWindow: () => ({
+          webContents: {
+            send,
+          },
+        }),
+      },
+    })
+
+    await service.submit(
+      {
+        text: '继续',
+        projectPath: 'D:/workspace/demo',
+      },
+      {
+        workspacePath: 'D:/workspace/demo',
+        lastSelection: null,
+      },
+      vi.fn(),
+    )
+
+    const userInputPromise = runtimeBridge!.requestUserInput!({
+      sessionId: 'session-1',
+      questions: [
+        {
+          key: 'focus',
+          title: '本次优先修哪一层？',
+          type: 'select',
+          options: [
+            { label: 'renderer' },
+            { label: 'main' },
+          ],
+        },
+        {
+          key: 'details',
+          title: '请补充说明',
+          type: 'text',
+          placeholder: '例如：先打通 IPC',
+        },
+      ],
+    })
+
+    expect(send).toHaveBeenCalledWith(
+      STUDIO_BRIDGE_CHANNELS.userInputRequest,
+      expect.objectContaining({
+        sessionId: 'session-1',
+        questions: [
+          expect.objectContaining({
+            key: 'focus',
+            type: 'select',
+          }),
+          expect.objectContaining({
+            key: 'details',
+            type: 'text',
+          }),
+        ],
+      }),
+    )
+
+    const requestPayload = send.mock.calls[0]![1] as { requestId: string }
+    expect(
+      service.respondToUserInputRequest({
+        requestId: requestPayload.requestId,
+        cancelled: false,
+        answers: {
+          focus: 'renderer',
+          details: '先补齐 Renderer 对话框',
+        },
+      }),
+    ).toBe(true)
+
+    await expect(userInputPromise).resolves.toEqual({
+      cancelled: false,
+      answers: {
+        focus: 'renderer',
+        details: '先补齐 Renderer 对话框',
+      },
+    })
+  })
+
+  it('用户提问超时后自动返回 cancelled', async () => {
+    vi.useFakeTimers()
+
+    try {
+      let runtimeBridge: RuntimeHostBridge | null = null
+      const send = vi.fn()
+
+      const runtimeInstance: RuntimeInstance = {
+        submit: vi.fn(async () => ({
+          text: 'done',
+          thinking: '',
+          stopReason: 'end_turn',
+          llmCallCount: 1,
+          toolCallCount: 0,
+          usage: {
+            inputTokens: 1,
+            outputTokens: 1,
+            cacheReadTokens: 0,
+            cacheWriteTokens: 0,
+          },
+          aborted: false,
+          historyCompacted: false,
+          sessionId: 'session-1',
+        })),
+        abort: vi.fn(),
+        dispose: vi.fn(async () => undefined),
+        getSnapshot: vi.fn(() => ({
+          sessionId: 'session-1',
+          isRunning: false,
+          provider: 'openai',
+          model: 'gpt-4o',
+          warnings: [],
+        })),
+      }
+
+      const service = createStudioRuntimeService({
+        createRuntimeFn: vi.fn(async (_input, bridge) => {
+          runtimeBridge = bridge
+          return runtimeInstance
+        }),
+        loadResolvedConfigFn: vi.fn(() => ({
+          effective: {
+            defaultProvider: 'openai',
+            defaultModel: 'gpt-4o',
+            providers: {},
+          },
+          source: {},
+          warnings: [],
+        })),
+        userInputRequestTimeoutMs: 1_000,
+        mainWindowManager: {
+          getMainWindow: () => ({
+            webContents: {
+              send,
+            },
+          }),
+        },
+      })
+
+      await service.submit(
+        {
+          text: '继续',
+          projectPath: 'D:/workspace/demo',
+        },
+        {
+          workspacePath: 'D:/workspace/demo',
+          lastSelection: null,
+        },
+        vi.fn(),
+      )
+
+      const userInputPromise = runtimeBridge!.requestUserInput!({
+        sessionId: 'session-1',
+        questions: [
+          {
+            key: 'focus',
+            title: '本次优先修哪一层？',
+            type: 'select',
+            options: [{ label: 'renderer' }],
+          },
+        ],
+      })
+
+      await vi.advanceTimersByTimeAsync(1_000)
+
+      await expect(userInputPromise).resolves.toEqual({
+        cancelled: true,
+        answers: {},
+      })
+      expect(send).toHaveBeenCalledWith(
+        STUDIO_BRIDGE_CHANNELS.userInputRequest,
+        expect.objectContaining({
+          sessionId: 'session-1',
+        }),
+      )
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+
+  it('workspace 内写入工具自动放行，越界写入工具自动拒绝', async () => {
+    let runtimeBridge: RuntimeHostBridge | null = null
+
+    const runtimeInstance: RuntimeInstance = {
+      submit: vi.fn(async () => ({
+        text: 'done',
+        thinking: '',
+        stopReason: 'end_turn',
+        llmCallCount: 1,
+        toolCallCount: 0,
+        usage: {
+          inputTokens: 1,
+          outputTokens: 1,
+          cacheReadTokens: 0,
+          cacheWriteTokens: 0,
+        },
+        aborted: false,
+        historyCompacted: false,
+        sessionId: 'session-1',
+      })),
+      abort: vi.fn(),
+      dispose: vi.fn(async () => undefined),
+      getSnapshot: vi.fn(() => ({
+        sessionId: 'session-1',
+        isRunning: false,
+        provider: 'openai',
+        model: 'gpt-4o',
+        warnings: [],
+      })),
+    }
+
+    const service = createStudioRuntimeService({
+      createRuntimeFn: vi.fn(async (_input, bridge) => {
+        runtimeBridge = bridge
+        return runtimeInstance
+      }),
+      loadResolvedConfigFn: vi.fn(() => ({
+        effective: {
+          defaultProvider: 'openai',
+          defaultModel: 'gpt-4o',
+          providers: {},
+        },
+        source: {},
+        warnings: [],
+      })),
+    })
+
+    await service.submit(
+      {
+        text: '继续',
+        projectPath: 'D:/workspace/demo',
+      },
+      {
+        workspacePath: 'D:/workspace/demo',
+        lastSelection: null,
+      },
+      vi.fn(),
+    )
+
+    await expect(
+      runtimeBridge!.requestPermission({
+        toolName: 'write_file',
+        args: { path: 'src/index.ts', content: 'export {}' },
+        sessionId: 'session-1',
+      }),
+    ).resolves.toEqual(
+      expect.objectContaining({
+        allow: true,
+        reason: 'workspace-scoped-tool',
+      }),
+    )
+
+    await expect(
+      runtimeBridge!.requestPermission({
+        toolName: 'edit_file',
+        args: { path: 'D:/outside/secret.ts', old_str: 'a', new_str: 'b' },
+        sessionId: 'session-1',
+      }),
+    ).resolves.toEqual(
+      expect.objectContaining({
+        allow: false,
+        reason: 'outside-workspace',
       }),
     )
   })

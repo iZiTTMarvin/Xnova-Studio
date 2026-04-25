@@ -18,6 +18,8 @@ import {
   type RuntimeInspectResult,
   type RuntimeSubmitRequest,
   type RuntimeSubmitResult,
+  type PermissionDialogResponse,
+  type UserQuestionDialogResponse,
   type StudioHostState,
   type StudioShellSnapshot,
   type StudioShellSnapshotRequest,
@@ -135,6 +137,94 @@ function parseRuntimeSubmitPayload(payload: unknown): RuntimeSubmitRequest {
     ...(agentId === undefined ? {} : { agentId }),
     ...(providerId === undefined ? {} : { providerId }),
     ...(modelId === undefined ? {} : { modelId }),
+  }
+}
+
+function parsePermissionDialogResponsePayload(
+  payload: unknown,
+): PermissionDialogResponse {
+  if (!isPlainObject(payload)) {
+    throw new Error('studio.permission.respond 参数必须是对象。')
+  }
+
+  if (
+    Object.keys(payload).some(
+      (key) => key !== 'requestId' && key !== 'allow' && key !== 'remember',
+    )
+  ) {
+    throw new Error('studio.permission.respond 只允许 requestId/allow/remember 字段。')
+  }
+  if (typeof payload.requestId !== 'string' || payload.requestId.trim().length === 0) {
+    throw new Error('studio.permission.respond.requestId 必须是非空字符串。')
+  }
+  if (typeof payload.allow !== 'boolean') {
+    throw new Error('studio.permission.respond.allow 必须是布尔值。')
+  }
+  if (typeof payload.remember !== 'boolean') {
+    throw new Error('studio.permission.respond.remember 必须是布尔值。')
+  }
+
+  return {
+    requestId: payload.requestId.trim(),
+    allow: payload.allow,
+    remember: payload.remember,
+  }
+}
+
+function parseUserQuestionDialogResponsePayload(
+  payload: unknown,
+): UserQuestionDialogResponse {
+  if (!isPlainObject(payload)) {
+    throw new Error('studio.userInput.respond 参数必须是对象。')
+  }
+
+  if (
+    Object.keys(payload).some(
+      (key) => key !== 'requestId' && key !== 'cancelled' && key !== 'answers',
+    )
+  ) {
+    throw new Error(
+      'studio.userInput.respond 只允许 requestId/cancelled/answers 字段。',
+    )
+  }
+  if (typeof payload.requestId !== 'string' || payload.requestId.trim().length === 0) {
+    throw new Error('studio.userInput.respond.requestId 必须是非空字符串。')
+  }
+  if (typeof payload.cancelled !== 'boolean') {
+    throw new Error('studio.userInput.respond.cancelled 必须是布尔值。')
+  }
+  if (!isPlainObject(payload.answers)) {
+    throw new Error('studio.userInput.respond.answers 必须是对象。')
+  }
+
+  const answers = Object.fromEntries(
+    Object.entries(payload.answers).map(([key, value]) => {
+      if (typeof value === 'string') {
+        return [key, value]
+      }
+      if (Array.isArray(value)) {
+        return [
+          key,
+          value.map((item, index) => {
+            if (typeof item !== 'string') {
+              throw new Error(
+                `studio.userInput.respond.answers.${key}[${index}] 必须是字符串。`,
+              )
+            }
+            return item
+          }),
+        ]
+      }
+      throw new Error(
+        `studio.userInput.respond.answers.${key} 必须是字符串或字符串数组。`,
+      )
+    }),
+  ) as Record<string, string | string[]>
+
+  return {
+    requestId: payload.requestId.trim(),
+    cancelled: payload.cancelled,
+    answers,
   }
 }
 
@@ -411,6 +501,8 @@ export interface RegisterStudioMainIpcHandlersOptions {
     state: StudioHostState,
     emitRuntimeEvent: (event: StudioRuntimeEvent) => void,
   ) => Promise<RuntimeSubmitResult>
+  respondPermission?: (response: PermissionDialogResponse) => boolean
+  respondUserInput?: (response: UserQuestionDialogResponse) => boolean
   inspectShell: (
     request: StudioShellSnapshotRequest,
     state: StudioHostState,
@@ -594,6 +686,34 @@ export function registerStudioMainIpcHandlers(
         })
         options.logger.error('runtime submit 失败', error)
         return result
+      }
+    },
+  )
+
+  options.ipcMainLike.handle(
+    STUDIO_BRIDGE_CHANNELS.permissionRespond,
+    async (_event, payload): Promise<{ ok: boolean }> => {
+      const response = parsePermissionDialogResponsePayload(payload)
+      if (!options.respondPermission) {
+        throw new Error('studio.permission.respond 尚未实现。')
+      }
+
+      return {
+        ok: options.respondPermission(response),
+      }
+    },
+  )
+
+  options.ipcMainLike.handle(
+    STUDIO_BRIDGE_CHANNELS.userInputRespond,
+    async (_event, payload): Promise<{ ok: boolean }> => {
+      const response = parseUserQuestionDialogResponsePayload(payload)
+      if (!options.respondUserInput) {
+        throw new Error('studio.userInput.respond 尚未实现。')
+      }
+
+      return {
+        ok: options.respondUserInput(response),
       }
     },
   )

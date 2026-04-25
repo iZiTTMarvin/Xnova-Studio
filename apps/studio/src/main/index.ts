@@ -29,8 +29,13 @@ const runtimeInspector = createStudioRuntimeInspector({
     return runtimeManager.getRuntimeSnapshot(hostState)
   },
 })
+const mainWindowManager = createMainWindowManager({
+  BrowserWindow,
+  logger,
+})
 const runtimeService = createStudioRuntimeService({
   runtimeManager,
+  mainWindowManager,
   logger,
 })
 const shellInspector = createStudioShellInspector({
@@ -63,11 +68,6 @@ const skillsPluginsService = createStudioSkillsPluginsService({
       : undefined
   },
 })
-const mainWindowManager = createMainWindowManager({
-  BrowserWindow,
-  logger,
-})
-
 app.on('before-quit', () => {
   void runtimeService.dispose()
 })
@@ -98,6 +98,10 @@ registerStudioMainIpcHandlers({
   inspectRuntime: (request, state) => runtimeInspector.inspect(request, state),
   submitRuntime: (request, state, emitRuntimeEvent) =>
     runtimeService.submit(request, state, emitRuntimeEvent),
+  respondPermission: (response) =>
+    runtimeService.respondToPermissionRequest(response),
+  respondUserInput: (response) =>
+    runtimeService.respondToUserInputRequest(response),
   inspectShell: (request, state) => shellInspector.inspect(request, state),
   getProviderSettings: (state) => providerSettingsService.getSnapshot(state),
   saveProviderSettings: (input, state) => providerSettingsService.save(input, state),

@@ -1,3 +1,4 @@
+import path from 'node:path'
 import {
   loadResolvedConfig,
   type ResolvedConfigResult,
@@ -13,6 +14,8 @@ import type {
   RuntimeInstance,
   RuntimeSubmitInput,
   RuntimeTurnResult,
+  UserQuestionRequest,
+  UserQuestionResult,
 } from '@xnova/runtime'
 import type { MainLogger } from './logger'
 import {
@@ -25,9 +28,14 @@ import {
 import type {
   RuntimeSubmitRequest,
   RuntimeSubmitResult,
+  PermissionDialogRequest,
+  PermissionDialogResponse,
+  UserQuestionDialogRequest,
+  UserQuestionDialogResponse,
   StudioHostState,
   StudioRuntimeEvent,
 } from '../shared/studio-bridge-contract'
+import { STUDIO_BRIDGE_CHANNELS } from '../shared/studio-bridge-contract'
 
 export interface StudioRuntimeService {
   submit(
@@ -35,7 +43,15 @@ export interface StudioRuntimeService {
     hostState: StudioHostState,
     emitRuntimeEvent: (event: StudioRuntimeEvent) => void,
   ): Promise<RuntimeSubmitResult>
+  respondToPermissionRequest(response: PermissionDialogResponse): boolean
+  respondToUserInputRequest(response: UserQuestionDialogResponse): boolean
   dispose(): Promise<void>
+}
+
+interface PermissionWindowLike {
+  webContents?: {
+    send(channel: string, payload: unknown): void
+  }
 }
 
 export interface CreateStudioRuntimeServiceOptions {
@@ -53,6 +69,11 @@ export interface CreateStudioRuntimeServiceOptions {
   ) => Promise<PermissionResolution & { reason?: string }>
   fallbackCwd?: string
   submitTimeoutMs?: number
+  permissionRequestTimeoutMs?: number
+  userInputRequestTimeoutMs?: number
+  mainWindowManager?: {
+    getMainWindow(): PermissionWindowLike | null
+  }
   logger?: Pick<MainLogger, 'info' | 'warn' | 'error'>
 }
 
@@ -66,9 +87,12 @@ const SAFE_READ_TOOL_NAMES = new Set([
   'ask_user_question',
 ])
 
-const WORKSPACE_MUTATION_TOOL_NAMES = new Set([
+const WORKSPACE_PATH_MUTATION_TOOL_NAMES = new Set([
   'write_file',
   'edit_file',
+])
+
+const TRUSTED_MUTATION_TOOL_NAMES = new Set([
   'todo_write',
   'verify_code',
   'dispatch_agent',
@@ -77,11 +101,14 @@ const WORKSPACE_MUTATION_TOOL_NAMES = new Set([
   'memory_delete',
 ])
 
-const RESTRICTED_TOOL_NAMES = new Set([
+const INTERACTIVE_PERMISSION_TOOL_NAMES = new Set([
   'bash',
   'git',
   'kill_shell',
 ])
+
+let permissionRequestSequence = 0
+let userInputRequestSequence = 0
 
 function toStudioRuntimeEvent(event: RuntimeEvent): StudioRuntimeEvent {
   return {
@@ -177,21 +204,129 @@ function toPermissionEventPayload(
   }
 }
 
+function createPermissionRequestId(): string {
+  permissionRequestSequence += 1
+  return `permission-${Date.now()}-${permissionRequestSequence}`
+}
+
+function createUserInputRequestId(): string {
+  userInputRequestSequence += 1
+  return `user-question-${Date.now()}-${userInputRequestSequence}`
+}
+
+function createPermissionMemoryKey(
+  input: PermissionRequest,
+  hostState: StudioHostState,
+): string {
+  return `${hostState.workspacePath ?? 'no-workspace'}:${input.toolName}`
+}
+
+function isPathInsideWorkspace(rawPath: unknown, workspacePath: string): boolean {
+  if (typeof rawPath !== 'string' || rawPath.trim().length === 0) {
+    return false
+  }
+
+  const workspaceRoot = path.resolve(workspacePath)
+  const targetPath = path.resolve(workspaceRoot, rawPath)
+  const relativePath = path.relative(workspaceRoot, targetPath)
+
+  return (
+    relativePath === '' ||
+    (!relativePath.startsWith('..') && !path.isAbsolute(relativePath))
+  )
+}
+
+function isWorkspaceScopedMutation(
+  input: PermissionRequest,
+  workspacePath: string,
+): boolean {
+  if (!WORKSPACE_PATH_MUTATION_TOOL_NAMES.has(input.toolName)) {
+    return false
+  }
+
+  return isPathInsideWorkspace(input.args['path'], workspacePath)
+}
+
+function buildPermissionDescription(input: PermissionRequest): string {
+  const command = typeof input.args['command'] === 'string'
+    ? input.args['command']
+    : null
+  const cwd = typeof input.args['cwd'] === 'string' ? input.args['cwd'] : null
+  const pid = typeof input.args['pid'] === 'number' ? input.args['pid'] : null
+
+  switch (input.toolName) {
+    case 'bash':
+      return command
+        ? `bash 将执行命令: ${command}${cwd ? `（cwd: ${cwd}）` : ''}`
+        : 'bash 请求执行 shell 命令。'
+    case 'git':
+      return command
+        ? `git 将执行命令: ${command}`
+        : 'git 请求执行版本控制操作。'
+    case 'kill_shell':
+      return pid === null
+        ? 'kill_shell 请求查看或终止后台 shell 进程。'
+        : `kill_shell 将终止后台进程: ${pid}`
+    default:
+      return `${input.toolName} 请求执行。`
+  }
+}
+
+function toUserQuestionDialogRequest(
+  input: UserQuestionRequest,
+): UserQuestionDialogRequest {
+  return {
+    requestId: createUserInputRequestId(),
+    sessionId: input.sessionId,
+    questions: input.questions.map((question) => ({
+      key: question.key,
+      title: question.title,
+      type: question.type,
+      ...(question.options
+        ? {
+            options: question.options.map((option) => ({
+              label: option.label,
+              ...(option.description
+                ? { description: option.description }
+                : {}),
+            })),
+          }
+        : {}),
+      ...(question.placeholder
+        ? { placeholder: question.placeholder }
+        : {}),
+    })),
+  }
+}
+
+interface DefaultPermissionContext {
+  rememberedPermissions: Map<string, PermissionResolution & { reason?: string }>
+  requestPermissionFromRenderer(
+    request: PermissionDialogRequest,
+    memoryKey: string,
+  ): Promise<PermissionResolution & { reason?: string }>
+}
+
+interface PendingPermissionRequest {
+  memoryKey: string
+  timer: ReturnType<typeof setTimeout>
+  resolve(resolution: PermissionResolution & { reason?: string }): void
+}
+
+interface PendingUserInputRequest {
+  timer: ReturnType<typeof setTimeout>
+  resolve(result: UserQuestionResult): void
+}
+
 async function defaultResolvePermission(
   input: PermissionRequest,
   hostState: StudioHostState,
+  context: DefaultPermissionContext,
 ): Promise<PermissionResolution & { reason?: string }> {
   if (!hostState.workspacePath?.trim()) {
     return {
       allow: false,
       reason: 'workspace-not-ready',
-    }
-  }
-
-  if (RESTRICTED_TOOL_NAMES.has(input.toolName)) {
-    return {
-      allow: false,
-      reason: 'restricted-tool',
     }
   }
 
@@ -203,12 +338,48 @@ async function defaultResolvePermission(
     }
   }
 
-  if (WORKSPACE_MUTATION_TOOL_NAMES.has(input.toolName)) {
+  if (isWorkspaceScopedMutation(input, hostState.workspacePath)) {
     return {
       allow: true,
       remember: true,
       reason: 'workspace-scoped-tool',
     }
+  }
+
+  if (WORKSPACE_PATH_MUTATION_TOOL_NAMES.has(input.toolName)) {
+    return {
+      allow: false,
+      reason: 'outside-workspace',
+    }
+  }
+
+  if (TRUSTED_MUTATION_TOOL_NAMES.has(input.toolName)) {
+    return {
+      allow: true,
+      remember: true,
+      reason: 'workspace-scoped-tool',
+    }
+  }
+
+  if (INTERACTIVE_PERMISSION_TOOL_NAMES.has(input.toolName)) {
+    const memoryKey = createPermissionMemoryKey(input, hostState)
+    const remembered = context.rememberedPermissions.get(memoryKey)
+    if (remembered) {
+      return {
+        ...remembered,
+        reason: 'remembered-permission',
+      }
+    }
+
+    return context.requestPermissionFromRenderer(
+      {
+        requestId: createPermissionRequestId(),
+        toolName: input.toolName,
+        args: input.args,
+        description: buildPermissionDescription(input),
+      },
+      memoryKey,
+    )
   }
 
   return {
@@ -227,8 +398,9 @@ export function createStudioRuntimeService(
       return runtimeModule.createRuntime(input, bridge)
     })
   const loadResolvedConfigFn = options.loadResolvedConfigFn ?? loadResolvedConfig
-  const resolvePermissionFn = options.resolvePermissionFn ?? defaultResolvePermission
   const submitTimeoutMs = options.submitTimeoutMs ?? 60_000
+  const permissionRequestTimeoutMs = options.permissionRequestTimeoutMs ?? 30_000
+  const userInputRequestTimeoutMs = options.userInputRequestTimeoutMs ?? 60_000
   const logger = options.logger ?? {
     info() {
       return undefined
@@ -240,6 +412,96 @@ export function createStudioRuntimeService(
       return undefined
     },
   }
+  const rememberedPermissions = new Map<
+    string,
+    PermissionResolution & { reason?: string }
+  >()
+  const pendingPermissionRequests = new Map<string, PendingPermissionRequest>()
+  const pendingUserInputRequests = new Map<string, PendingUserInputRequest>()
+
+  function requestPermissionFromRenderer(
+    request: PermissionDialogRequest,
+    memoryKey: string,
+  ): Promise<PermissionResolution & { reason?: string }> {
+    const webContents = options.mainWindowManager?.getMainWindow()?.webContents
+    if (!webContents?.send) {
+      return Promise.resolve({
+        allow: false,
+        reason: 'permission-ui-unavailable',
+      })
+    }
+
+    return new Promise((resolve) => {
+      const timer = setTimeout(() => {
+        pendingPermissionRequests.delete(request.requestId)
+        logger.warn('权限请求等待超时，已自动拒绝', {
+          requestId: request.requestId,
+          toolName: request.toolName,
+          timeoutMs: permissionRequestTimeoutMs,
+        })
+        resolve({
+          allow: false,
+          reason: 'permission-timeout',
+        })
+      }, permissionRequestTimeoutMs)
+
+      pendingPermissionRequests.set(request.requestId, {
+        memoryKey,
+        timer,
+        resolve,
+      })
+      webContents.send(
+        STUDIO_BRIDGE_CHANNELS.permissionRequest,
+        request,
+      )
+    })
+  }
+
+  function requestUserInputFromRenderer(
+    request: UserQuestionDialogRequest,
+  ): Promise<UserQuestionResult> {
+    const windowInstance = options.mainWindowManager?.getMainWindow()
+    const webContents = windowInstance?.webContents
+    if (!webContents || typeof webContents.send !== 'function') {
+      return Promise.resolve({
+        answers: {},
+        cancelled: true,
+      })
+    }
+    const sendUserInputRequest = webContents.send.bind(webContents)
+
+    return new Promise((resolve) => {
+      const timer = setTimeout(() => {
+        pendingUserInputRequests.delete(request.requestId)
+        logger.warn('用户提问等待超时，已自动取消', {
+          requestId: request.requestId,
+          sessionId: request.sessionId,
+          timeoutMs: userInputRequestTimeoutMs,
+        })
+        resolve({
+          answers: {},
+          cancelled: true,
+        })
+      }, userInputRequestTimeoutMs)
+
+      pendingUserInputRequests.set(request.requestId, {
+        timer,
+        resolve,
+      })
+      sendUserInputRequest(
+        STUDIO_BRIDGE_CHANNELS.userInputRequest,
+        request,
+      )
+    })
+  }
+
+  const resolvePermissionFn =
+    options.resolvePermissionFn ??
+    ((input: PermissionRequest, hostState: StudioHostState) =>
+      defaultResolvePermission(input, hostState, {
+        rememberedPermissions,
+        requestPermissionFromRenderer,
+      }))
   const runtimeManager =
     options.runtimeManager ??
     createStudioRuntimeManager({
@@ -273,15 +535,48 @@ export function createStudioRuntimeService(
 
       return resolution
     },
-    async requestUserInput(_input) {
-      return {
-        answers: {},
-        cancelled: true,
-      }
+    async requestUserInput(input) {
+      return requestUserInputFromRenderer(toUserQuestionDialogRequest(input))
     },
   })
 
   return {
+    respondToPermissionRequest(response) {
+      const pending = pendingPermissionRequests.get(response.requestId)
+      if (!pending) {
+        return false
+      }
+
+      clearTimeout(pending.timer)
+      pendingPermissionRequests.delete(response.requestId)
+
+      const resolution: PermissionResolution & { reason?: string } = {
+        allow: response.allow,
+        remember: response.remember,
+        reason: response.allow ? 'renderer-approved' : 'renderer-denied',
+      }
+      if (response.remember) {
+        rememberedPermissions.set(pending.memoryKey, resolution)
+      }
+      pending.resolve(resolution)
+      return true
+    },
+
+    respondToUserInputRequest(response) {
+      const pending = pendingUserInputRequests.get(response.requestId)
+      if (!pending) {
+        return false
+      }
+
+      clearTimeout(pending.timer)
+      pendingUserInputRequests.delete(response.requestId)
+      pending.resolve({
+        answers: response.answers,
+        cancelled: response.cancelled,
+      })
+      return true
+    },
+
     async submit(request, hostState, emitRuntimeEvent) {
       const text = request.text.trim()
       if (!text) {
@@ -433,6 +728,22 @@ export function createStudioRuntimeService(
     },
 
     async dispose() {
+      for (const [requestId, pending] of pendingPermissionRequests) {
+        clearTimeout(pending.timer)
+        pending.resolve({
+          allow: false,
+          reason: 'runtime-disposed',
+        })
+        pendingPermissionRequests.delete(requestId)
+      }
+      for (const [requestId, pending] of pendingUserInputRequests) {
+        clearTimeout(pending.timer)
+        pending.resolve({
+          answers: {},
+          cancelled: true,
+        })
+        pendingUserInputRequests.delete(requestId)
+      }
       await runtimeManager.dispose()
     },
   }

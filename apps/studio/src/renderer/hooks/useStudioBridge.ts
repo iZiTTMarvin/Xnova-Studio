@@ -1,5 +1,7 @@
 import { useEffect, useMemo, useState } from 'react'
 import type {
+  PermissionDialogRequest,
+  PermissionDialogResponse,
   RuntimeInspectResult,
   StudioBridgeApi,
   StudioHostState,
@@ -8,6 +10,8 @@ import type {
   StudioSettingsApi,
   StudioShellSnapshot,
   StudioRuntimeEvent,
+  UserQuestionDialogRequest,
+  UserQuestionDialogResponse,
 } from '../../shared/studio-bridge-contract'
 import {
   resolveStartupRoute,
@@ -126,6 +130,10 @@ export function useStudioBridge() {
   const [runtimeInspectResult, setRuntimeInspectResult] = useState<RuntimeInspectResult | null>(null)
   const [runtimeError, setRuntimeError] = useState<string | null>(null)
   const [lastRuntimeEvent, setLastRuntimeEvent] = useState<StudioRuntimeEvent | null>(null)
+  const [pendingPermissionRequest, setPendingPermissionRequest] =
+    useState<PermissionDialogRequest | null>(null)
+  const [pendingUserInputRequest, setPendingUserInputRequest] =
+    useState<UserQuestionDialogRequest | null>(null)
   const [selectedProjectPath, setSelectedProjectPath] = useState<string | null>(null)
   const [selectedSessionId, setSelectedSessionId] = useState<string | null>(null)
   const [currentMode, setCurrentMode] = useState<'standard' | 'xforge'>('standard')
@@ -307,6 +315,8 @@ export function useStudioBridge() {
       setRuntimeError('宿主桥接不可用')
       setIsSubmitting(false)
       setRuntimeInspectResult(null)
+      setPendingPermissionRequest(null)
+      setPendingUserInputRequest(null)
       setCurrentAgentId(null)
       setCurrentProviderId(null)
       setCurrentModelId(null)
@@ -557,11 +567,29 @@ export function useStudioBridge() {
         }
       })
     })
+    const unsubscribePermission =
+      bridge.permission?.onRequest((request) => {
+        if (disposed) {
+          return
+        }
+
+        setPendingPermissionRequest(request)
+      }) ?? (() => undefined)
+    const unsubscribeUserInput =
+      bridge.userInput?.onRequest((request) => {
+        if (disposed) {
+          return
+        }
+
+        setPendingUserInputRequest(request)
+      }) ?? (() => undefined)
 
     return () => {
       disposed = true
       unsubscribeHost()
       unsubscribeRuntime()
+      unsubscribePermission()
+      unsubscribeUserInput()
     }
   }, [bridge])
 
@@ -932,6 +960,52 @@ export function useStudioBridge() {
     }
   }
 
+  const respondPermissionRequest = async (
+    response: PermissionDialogResponse,
+  ): Promise<void> => {
+    if (!bridge?.permission) {
+      setRuntimeError('权限桥接不可用。')
+      return
+    }
+
+    try {
+      await bridge.permission.respond(response)
+      setPendingPermissionRequest((current) =>
+        current?.requestId === response.requestId ? null : current,
+      )
+    } catch (error) {
+      const message = getErrorMessage(error)
+      setRuntimeError(message)
+      setLiveConversation((current) => ({
+        ...current,
+        systemMessages: [...current.systemMessages, message],
+      }))
+    }
+  }
+
+  const respondUserInputRequest = async (
+    response: UserQuestionDialogResponse,
+  ): Promise<void> => {
+    if (!bridge?.userInput) {
+      setRuntimeError('用户提问桥接不可用。')
+      return
+    }
+
+    try {
+      await bridge.userInput.respond(response)
+      setPendingUserInputRequest((current) =>
+        current?.requestId === response.requestId ? null : current,
+      )
+    } catch (error) {
+      const message = getErrorMessage(error)
+      setRuntimeError(message)
+      setLiveConversation((current) => ({
+        ...current,
+        systemMessages: [...current.systemMessages, message],
+      }))
+    }
+  }
+
   return {
     hostStatus,
     hostState,
@@ -973,6 +1047,10 @@ export function useStudioBridge() {
     isSubmitting,
     liveConversation,
     lastRuntimeEvent,
+    pendingPermissionRequest,
+    pendingUserInputRequest,
+    respondPermissionRequest,
+    respondUserInputRequest,
     settingsApi: (bridge?.settings ?? null) as StudioSettingsApi | null,
     memoryApi: bridge?.memory ?? null,
     mcpApi: bridge?.mcp ?? null,

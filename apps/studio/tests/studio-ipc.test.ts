@@ -2,6 +2,7 @@ import { describe, expect, it, vi } from 'vitest'
 import { registerStudioMainIpcHandlers } from '../src/main/studio-ipc'
 import {
   STUDIO_BRIDGE_CHANNELS,
+  type PermissionDialogResponse,
   type StudioShellSnapshot,
   type WorkspaceSelectionResult,
 } from '../src/shared/studio-bridge-contract'
@@ -463,5 +464,175 @@ describe('studio main ipc handlers', () => {
     await expect(
       Promise.resolve(shellGetSnapshotHandler?.({}, { projectPath: 123 })),
     ).rejects.toThrow('studio.shell.getSnapshot.projectPath 必须是字符串或 null')
+  })
+
+  it('permission.respond 校验 Renderer 决策并分发给权限等待队列', async () => {
+    const handlers = new Map<string, (_event: unknown, payload: unknown) => unknown>()
+    const respondPermission = vi.fn((response: PermissionDialogResponse) => {
+      return response.requestId === 'permission-1'
+    })
+
+    registerStudioMainIpcHandlers({
+      ipcMainLike: {
+        handle(channel, handler) {
+          handlers.set(channel, handler)
+        },
+      },
+      selectWorkspaceDirectory: vi.fn(async () => ({
+        ok: false as const,
+        code: 'cancelled' as const,
+        message: '用户取消了 workspace 目录选择',
+      })),
+      mainWindowManager: {
+        getMainWindow: () => null,
+      },
+      inspectRuntime: vi.fn(),
+      inspectShell: vi.fn(async () => createShellSnapshot()),
+      respondPermission,
+      logger: createLogger(),
+    })
+
+    const permissionRespondHandler = handlers.get(STUDIO_BRIDGE_CHANNELS.permissionRespond)
+    await expect(
+      Promise.resolve(
+        permissionRespondHandler?.({}, {
+          requestId: 'permission-1',
+          allow: true,
+          remember: true,
+        }),
+      ),
+    ).resolves.toEqual({
+      ok: true,
+    })
+
+    expect(respondPermission).toHaveBeenCalledWith({
+      requestId: 'permission-1',
+      allow: true,
+      remember: true,
+    })
+  })
+
+  it('permission.respond 拒绝非法参数', async () => {
+    const handlers = new Map<string, (_event: unknown, payload: unknown) => unknown>()
+
+    registerStudioMainIpcHandlers({
+      ipcMainLike: {
+        handle(channel, handler) {
+          handlers.set(channel, handler)
+        },
+      },
+      selectWorkspaceDirectory: vi.fn(async () => ({
+        ok: false as const,
+        code: 'cancelled' as const,
+        message: '用户取消了 workspace 目录选择',
+      })),
+      mainWindowManager: {
+        getMainWindow: () => null,
+      },
+      inspectRuntime: vi.fn(),
+      inspectShell: vi.fn(async () => createShellSnapshot()),
+      respondPermission: vi.fn(),
+      logger: createLogger(),
+    })
+
+    const permissionRespondHandler = handlers.get(STUDIO_BRIDGE_CHANNELS.permissionRespond)
+    await expect(
+      Promise.resolve(
+        permissionRespondHandler?.({}, {
+          requestId: 'permission-1',
+          allow: 'yes',
+          remember: false,
+        }),
+      ),
+    ).rejects.toThrow('studio.permission.respond.allow 必须是布尔值')
+  })
+
+  it('userInput.respond 校验 Renderer 回答并分发给等待队列', async () => {
+    const handlers = new Map<string, (_event: unknown, payload: unknown) => unknown>()
+    const respondUserInput = vi.fn((response) => {
+      return response.requestId === 'question-1'
+    })
+
+    registerStudioMainIpcHandlers({
+      ipcMainLike: {
+        handle(channel, handler) {
+          handlers.set(channel, handler)
+        },
+      },
+      selectWorkspaceDirectory: vi.fn(async () => ({
+        ok: false as const,
+        code: 'cancelled' as const,
+        message: '用户取消了 workspace 目录选择',
+      })),
+      mainWindowManager: {
+        getMainWindow: () => null,
+      },
+      inspectRuntime: vi.fn(),
+      inspectShell: vi.fn(async () => createShellSnapshot()),
+      respondUserInput,
+      logger: createLogger(),
+    })
+
+    const userInputRespondHandler = handlers.get(STUDIO_BRIDGE_CHANNELS.userInputRespond)
+    await expect(
+      Promise.resolve(
+        userInputRespondHandler?.({}, {
+          requestId: 'question-1',
+          cancelled: false,
+          answers: {
+            focus: 'renderer',
+            tasks: ['dialog', 'ipc'],
+          },
+        }),
+      ),
+    ).resolves.toEqual({
+      ok: true,
+    })
+
+    expect(respondUserInput).toHaveBeenCalledWith({
+      requestId: 'question-1',
+      cancelled: false,
+      answers: {
+        focus: 'renderer',
+        tasks: ['dialog', 'ipc'],
+      },
+    })
+  })
+
+  it('userInput.respond 拒绝非法参数', async () => {
+    const handlers = new Map<string, (_event: unknown, payload: unknown) => unknown>()
+
+    registerStudioMainIpcHandlers({
+      ipcMainLike: {
+        handle(channel, handler) {
+          handlers.set(channel, handler)
+        },
+      },
+      selectWorkspaceDirectory: vi.fn(async () => ({
+        ok: false as const,
+        code: 'cancelled' as const,
+        message: '用户取消了 workspace 目录选择',
+      })),
+      mainWindowManager: {
+        getMainWindow: () => null,
+      },
+      inspectRuntime: vi.fn(),
+      inspectShell: vi.fn(async () => createShellSnapshot()),
+      respondUserInput: vi.fn(),
+      logger: createLogger(),
+    })
+
+    const userInputRespondHandler = handlers.get(STUDIO_BRIDGE_CHANNELS.userInputRespond)
+    await expect(
+      Promise.resolve(
+        userInputRespondHandler?.({}, {
+          requestId: 'question-1',
+          cancelled: false,
+          answers: {
+            focus: 1,
+          },
+        }),
+      ),
+    ).rejects.toThrow('studio.userInput.respond.answers.focus 必须是字符串或字符串数组')
   })
 })

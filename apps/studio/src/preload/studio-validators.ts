@@ -29,6 +29,11 @@ import type {
   StudioStartupProjectCandidate,
   StudioStartupSessionCandidate,
   StudioRuntimeEvent,
+  PermissionDialogRequest,
+  PermissionDialogResponse,
+  UserQuestionDialogQuestion,
+  UserQuestionDialogRequest,
+  UserQuestionDialogResponse,
   WorkspaceSelectionResult,
 } from '../shared/studio-bridge-contract'
 
@@ -191,6 +196,240 @@ export function parseStudioRuntimeSubmitRequest(
     ...(agentId === undefined ? {} : { agentId }),
     ...(providerId === undefined ? {} : { providerId }),
     ...(modelId === undefined ? {} : { modelId }),
+  }
+}
+
+export function parseStudioPermissionDialogRequest(
+  payload: unknown,
+): PermissionDialogRequest {
+  const value = assertPlainObject(payload, 'permission.request')
+  if (
+    Object.keys(value).some(
+      (key) =>
+        key !== 'requestId' &&
+        key !== 'toolName' &&
+        key !== 'args' &&
+        key !== 'description',
+    )
+  ) {
+    throw new StudioBridgeValidationError(
+      'permission.request 只允许 requestId/toolName/args/description 字段。',
+    )
+  }
+  if (typeof value.requestId !== 'string' || value.requestId.trim().length === 0) {
+    throw new StudioBridgeValidationError('permission.request.requestId 必须是非空字符串。')
+  }
+  if (typeof value.toolName !== 'string' || value.toolName.trim().length === 0) {
+    throw new StudioBridgeValidationError('permission.request.toolName 必须是非空字符串。')
+  }
+  if (!isPlainObject(value.args)) {
+    throw new StudioBridgeValidationError('permission.request.args 必须是对象。')
+  }
+  if (typeof value.description !== 'string') {
+    throw new StudioBridgeValidationError('permission.request.description 必须是字符串。')
+  }
+
+  return {
+    requestId: value.requestId.trim(),
+    toolName: value.toolName.trim(),
+    args: value.args,
+    description: value.description,
+  }
+}
+
+export function parseStudioPermissionDialogResponse(
+  payload: unknown,
+): PermissionDialogResponse {
+  const value = assertPlainObject(payload, 'permission.respond')
+  if (
+    Object.keys(value).some(
+      (key) => key !== 'requestId' && key !== 'allow' && key !== 'remember',
+    )
+  ) {
+    throw new StudioBridgeValidationError(
+      'permission.respond 只允许 requestId/allow/remember 字段。',
+    )
+  }
+  if (typeof value.requestId !== 'string' || value.requestId.trim().length === 0) {
+    throw new StudioBridgeValidationError('permission.respond.requestId 必须是非空字符串。')
+  }
+  if (typeof value.allow !== 'boolean') {
+    throw new StudioBridgeValidationError('permission.respond.allow 必须是布尔值。')
+  }
+  if (typeof value.remember !== 'boolean') {
+    throw new StudioBridgeValidationError('permission.respond.remember 必须是布尔值。')
+  }
+
+  return {
+    requestId: value.requestId.trim(),
+    allow: value.allow,
+    remember: value.remember,
+  }
+}
+
+function parseUserQuestionOption(
+  payload: unknown,
+  subject: string,
+) {
+  const value = assertPlainObject(payload, subject)
+  if (typeof value.label !== 'string' || value.label.trim().length === 0) {
+    throw new StudioBridgeValidationError(`${subject}.label 必须是非空字符串。`)
+  }
+  if (
+    value.description !== undefined &&
+    value.description !== null &&
+    typeof value.description !== 'string'
+  ) {
+    throw new StudioBridgeValidationError(`${subject}.description 必须是字符串或 null。`)
+  }
+
+  return {
+    label: value.label.trim(),
+    ...(typeof value.description === 'string'
+      ? { description: value.description }
+      : {}),
+  }
+}
+
+function parseUserQuestion(
+  payload: unknown,
+  subject: string,
+): UserQuestionDialogQuestion {
+  const value = assertPlainObject(payload, subject)
+  if (typeof value.key !== 'string' || value.key.trim().length === 0) {
+    throw new StudioBridgeValidationError(`${subject}.key 必须是非空字符串。`)
+  }
+  if (typeof value.title !== 'string' || value.title.trim().length === 0) {
+    throw new StudioBridgeValidationError(`${subject}.title 必须是非空字符串。`)
+  }
+  let questionType: UserQuestionDialogQuestion['type']
+  switch (value.type) {
+    case 'select':
+    case 'multiselect':
+    case 'text':
+      questionType = value.type
+      break
+    default:
+      throw new StudioBridgeValidationError(`${subject}.type 非法。`)
+  }
+  if (
+    value.placeholder !== undefined &&
+    value.placeholder !== null &&
+    typeof value.placeholder !== 'string'
+  ) {
+    throw new StudioBridgeValidationError(`${subject}.placeholder 必须是字符串或 null。`)
+  }
+  if (value.options !== undefined && !Array.isArray(value.options)) {
+    throw new StudioBridgeValidationError(`${subject}.options 必须是数组。`)
+  }
+
+  const options =
+    value.options === undefined
+      ? undefined
+      : value.options.map((option, index) =>
+          parseUserQuestionOption(option, `${subject}.options[${index}]`),
+        )
+
+  if (
+    (questionType === 'select' || questionType === 'multiselect') &&
+    (!options || options.length === 0)
+  ) {
+    throw new StudioBridgeValidationError(`${subject}.options 不能为空。`)
+  }
+
+  return {
+    key: value.key.trim(),
+    title: value.title.trim(),
+    type: questionType,
+    ...(options ? { options } : {}),
+    ...(typeof value.placeholder === 'string'
+      ? { placeholder: value.placeholder }
+      : {}),
+  }
+}
+
+export function parseStudioUserQuestionDialogRequest(
+  payload: unknown,
+): UserQuestionDialogRequest {
+  const value = assertPlainObject(payload, 'userInput.request')
+  if (
+    Object.keys(value).some(
+      (key) => key !== 'requestId' && key !== 'sessionId' && key !== 'questions',
+    )
+  ) {
+    throw new StudioBridgeValidationError(
+      'userInput.request 只允许 requestId/sessionId/questions 字段。',
+    )
+  }
+  if (typeof value.requestId !== 'string' || value.requestId.trim().length === 0) {
+    throw new StudioBridgeValidationError('userInput.request.requestId 必须是非空字符串。')
+  }
+  if (typeof value.sessionId !== 'string' || value.sessionId.trim().length === 0) {
+    throw new StudioBridgeValidationError('userInput.request.sessionId 必须是非空字符串。')
+  }
+  if (!Array.isArray(value.questions) || value.questions.length === 0) {
+    throw new StudioBridgeValidationError('userInput.request.questions 必须是非空数组。')
+  }
+
+  const questions: UserQuestionDialogRequest['questions'] = value.questions.map(
+    (question, index) =>
+      parseUserQuestion(question, `userInput.request.questions[${index}]`),
+  )
+
+  return {
+    requestId: value.requestId.trim(),
+    sessionId: value.sessionId.trim(),
+    questions,
+  }
+}
+
+export function parseStudioUserQuestionDialogResponse(
+  payload: unknown,
+): UserQuestionDialogResponse {
+  const value = assertPlainObject(payload, 'userInput.respond')
+  if (
+    Object.keys(value).some(
+      (key) => key !== 'requestId' && key !== 'cancelled' && key !== 'answers',
+    )
+  ) {
+    throw new StudioBridgeValidationError(
+      'userInput.respond 只允许 requestId/cancelled/answers 字段。',
+    )
+  }
+  if (typeof value.requestId !== 'string' || value.requestId.trim().length === 0) {
+    throw new StudioBridgeValidationError('userInput.respond.requestId 必须是非空字符串。')
+  }
+  if (typeof value.cancelled !== 'boolean') {
+    throw new StudioBridgeValidationError('userInput.respond.cancelled 必须是布尔值。')
+  }
+
+  const answers = assertPlainObject(value.answers, 'userInput.respond.answers')
+  const normalizedAnswers = Object.fromEntries(
+    Object.entries(answers).map(([key, answer]) => {
+      if (typeof answer === 'string') {
+        return [key, answer]
+      }
+      if (Array.isArray(answer)) {
+        const normalized = answer.map((item, index) => {
+          if (typeof item !== 'string') {
+            throw new StudioBridgeValidationError(
+              `userInput.respond.answers.${key}[${index}] 必须是字符串。`,
+            )
+          }
+          return item
+        })
+        return [key, normalized]
+      }
+      throw new StudioBridgeValidationError(
+        `userInput.respond.answers.${key} 必须是字符串或字符串数组。`,
+      )
+    }),
+  ) as Record<string, string | string[]>
+
+  return {
+    requestId: value.requestId.trim(),
+    cancelled: value.cancelled,
+    answers: normalizedAnswers,
   }
 }
 

@@ -43,6 +43,44 @@ export type RuntimeSubmitResult =
       error: string
     }
 
+export interface PermissionDialogRequest {
+  requestId: string
+  toolName: string
+  args: Record<string, unknown>
+  description: string
+}
+
+export interface PermissionDialogResponse {
+  requestId: string
+  allow: boolean
+  remember: boolean
+}
+
+export interface UserQuestionDialogOption {
+  label: string
+  description?: string
+}
+
+export interface UserQuestionDialogQuestion {
+  key: string
+  title: string
+  type: 'select' | 'multiselect' | 'text'
+  options?: UserQuestionDialogOption[]
+  placeholder?: string
+}
+
+export interface UserQuestionDialogRequest {
+  requestId: string
+  sessionId: string
+  questions: UserQuestionDialogQuestion[]
+}
+
+export interface UserQuestionDialogResponse {
+  requestId: string
+  cancelled: boolean
+  answers: Record<string, string | string[]>
+}
+
 export type StudioModeId = 'standard' | 'xforge'
 
 export type StudioStatusIssueCode =
@@ -365,6 +403,16 @@ export interface StudioRuntimeApi {
   onEvent(listener: (event: StudioRuntimeEvent) => void): () => void
 }
 
+export interface StudioPermissionApi {
+  onRequest(listener: (request: PermissionDialogRequest) => void): () => void
+  respond(input: PermissionDialogResponse): Promise<void>
+}
+
+export interface StudioUserInputApi {
+  onRequest(listener: (request: UserQuestionDialogRequest) => void): () => void
+  respond(input: UserQuestionDialogResponse): Promise<void>
+}
+
 export interface StudioShellApi {
   getSnapshot(input?: StudioShellSnapshotRequest): Promise<StudioShellSnapshot>
 }
@@ -397,6 +445,8 @@ export interface StudioSkillsPluginsApi {
 export interface StudioBridgeApi {
   host: StudioHostApi
   runtime: StudioRuntimeApi
+  permission: StudioPermissionApi
+  userInput: StudioUserInputApi
   shell: StudioShellApi
   settings: StudioSettingsApi
   memory: StudioMemoryApi
@@ -413,6 +463,10 @@ export const STUDIO_BRIDGE_CHANNELS = {
   runtimeInspect: 'studio:runtime:inspect',
   runtimeSubmit: 'studio:runtime:submit',
   runtimeEvent: 'studio:runtime:event',
+  permissionRequest: 'studio:permission:request',
+  permissionRespond: 'studio:permission:respond',
+  userInputRequest: 'studio:user-input:request',
+  userInputRespond: 'studio:user-input:respond',
   shellGetSnapshot: 'studio:shell:get-snapshot',
   settingsGetProviderSettings: 'studio:settings:get-provider-settings',
   settingsSaveProviderSettings: 'studio:settings:save-provider-settings',

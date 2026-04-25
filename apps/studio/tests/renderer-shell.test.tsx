@@ -230,6 +230,90 @@ describe('renderer project-aware shell', () => {
     })
   })
 
+  it('收到用户问题请求时会弹出对话框，并通过桥接回传答案', async () => {
+    const baseBridge = createBridge({
+      hostState: {
+        workspacePath: 'D:/workspace/demo',
+        lastSelection: null,
+      },
+    })
+    const userInputListeners = new Set<(request: unknown) => void>()
+    const respond = vi.fn(async () => undefined)
+
+    ;(window as Window & { xnovaStudio?: unknown }).xnovaStudio = {
+      ...baseBridge,
+      userInput: {
+        onRequest(listener: (request: unknown) => void) {
+          userInputListeners.add(listener)
+          return () => {
+            userInputListeners.delete(listener)
+          }
+        },
+        respond,
+      },
+    }
+
+    render(<App />)
+
+    await waitFor(() => {
+      expect(userInputListeners.size).toBe(1)
+    })
+
+    act(() => {
+      const listener = [...userInputListeners][0]
+      listener?.({
+        requestId: 'question-1',
+        sessionId: 'session-1',
+        questions: [
+          {
+            key: 'details',
+            title: '请补充说明',
+            type: 'text',
+            placeholder: '例如：先补 IPC',
+          },
+          {
+            key: 'focus',
+            title: '本次优先修哪一层？',
+            type: 'select',
+            options: [
+              { label: 'renderer' },
+              { label: 'main' },
+            ],
+          },
+          {
+            key: 'tasks',
+            title: '还要补哪些内容？',
+            type: 'multiselect',
+            options: [
+              { label: 'dialog' },
+              { label: 'ipc' },
+            ],
+          },
+        ],
+      })
+    })
+
+    expect(screen.getByRole('dialog', { name: '用户问题确认' })).toBeTruthy()
+    fireEvent.change(screen.getByLabelText('请补充说明'), {
+      target: { value: '先打通 user-input IPC' },
+    })
+    fireEvent.click(screen.getByLabelText('renderer'))
+    fireEvent.click(screen.getByLabelText('dialog'))
+    fireEvent.click(screen.getByRole('button', { name: '提交回答' }))
+
+    await waitFor(() => {
+      expect(respond).toHaveBeenCalledWith({
+        requestId: 'question-1',
+        cancelled: false,
+        answers: {
+          details: '先打通 user-input IPC',
+          focus: 'renderer',
+          tasks: ['dialog'],
+        },
+      })
+    })
+  })
+
   it('搜索页可基于项目与会话筛选，并能跳转到项目会话视图', async () => {
     ;(window as Window & { xnovaStudio?: unknown }).xnovaStudio = createBridge({
       shellSnapshot: {

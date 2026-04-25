@@ -13,6 +13,10 @@ import type {
   StudioProviderSettingsSnapshot,
   RuntimeInspectRequest,
   RuntimeSubmitRequest,
+  PermissionDialogRequest,
+  PermissionDialogResponse,
+  UserQuestionDialogRequest,
+  UserQuestionDialogResponse,
   StudioBridgeApi,
   StudioHostState,
   StudioShellSnapshot,
@@ -30,6 +34,10 @@ import {
   parseStudioMemoryOverviewSnapshot,
   parseStudioMemoryRebuildResult,
   parseStudioOpenWorkspaceResponse,
+  parseStudioPermissionDialogRequest,
+  parseStudioPermissionDialogResponse,
+  parseStudioUserQuestionDialogRequest,
+  parseStudioUserQuestionDialogResponse,
   parseStudioProviderConnectionTestRequest,
   parseStudioProviderConnectionTestResult,
   parseStudioProviderSettingsSaveInput,
@@ -58,6 +66,8 @@ export function createStudioBridgeApi(
   }
 
   const hostListeners = new Set<(state: StudioHostState) => void>()
+  const permissionListeners = new Set<(request: PermissionDialogRequest) => void>()
+  const userInputListeners = new Set<(request: UserQuestionDialogRequest) => void>()
   const runtimeGateway =
     options.runtimeGateway ?? createStudioRuntimeGateway({
       ipcRenderer: options.ipcRenderer,
@@ -70,6 +80,26 @@ export function createStudioBridgeApi(
       hostState = nextState
       for (const listener of hostListeners) {
         listener(nextState)
+      }
+    },
+  )
+
+  options.ipcRenderer.on(
+    STUDIO_BRIDGE_CHANNELS.permissionRequest,
+    (_event, payload) => {
+      const request = parseStudioPermissionDialogRequest(payload)
+      for (const listener of permissionListeners) {
+        listener(request)
+      }
+    },
+  )
+
+  options.ipcRenderer.on(
+    STUDIO_BRIDGE_CHANNELS.userInputRequest,
+    (_event, payload) => {
+      const request = parseStudioUserQuestionDialogRequest(payload)
+      for (const listener of userInputListeners) {
+        listener(request)
       }
     },
   )
@@ -187,6 +217,26 @@ export function createStudioBridgeApi(
     return parseStudioSkillsPluginsOverviewSnapshot(payload)
   }
 
+  async function respondPermission(
+    input: PermissionDialogResponse,
+  ): Promise<void> {
+    const request = parseStudioPermissionDialogResponse(input)
+    await options.ipcRenderer.invoke(
+      STUDIO_BRIDGE_CHANNELS.permissionRespond,
+      request,
+    )
+  }
+
+  async function respondUserInput(
+    input: UserQuestionDialogResponse,
+  ): Promise<void> {
+    const request = parseStudioUserQuestionDialogResponse(input)
+    await options.ipcRenderer.invoke(
+      STUDIO_BRIDGE_CHANNELS.userInputRespond,
+      request,
+    )
+  }
+
   return {
     host: {
       async getState(...args: unknown[]) {
@@ -214,6 +264,28 @@ export function createStudioBridgeApi(
       },
       onEvent(listener: (event: StudioRuntimeEvent) => void) {
         return runtimeGateway.onEvent(listener)
+      },
+    },
+    permission: {
+      onRequest(listener) {
+        permissionListeners.add(listener)
+        return () => {
+          permissionListeners.delete(listener)
+        }
+      },
+      async respond(input: PermissionDialogResponse) {
+        return respondPermission(input)
+      },
+    },
+    userInput: {
+      onRequest(listener) {
+        userInputListeners.add(listener)
+        return () => {
+          userInputListeners.delete(listener)
+        }
+      },
+      async respond(input: UserQuestionDialogResponse) {
+        return respondUserInput(input)
       },
     },
     shell: {

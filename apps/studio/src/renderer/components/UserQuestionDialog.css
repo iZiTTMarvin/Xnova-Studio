@@ -1,0 +1,169 @@
+.user-question-dialog-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 91;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 20px;
+  background: rgba(6, 8, 14, 0.62);
+  backdrop-filter: blur(5px);
+}
+
+.user-question-dialog {
+  width: min(680px, 100%);
+  max-height: min(720px, calc(100vh - 40px));
+  overflow: auto;
+  border: 1px solid var(--border-hover);
+  border-radius: var(--radius-xl);
+  background:
+    linear-gradient(180deg, rgba(24, 31, 43, 0.98), rgba(12, 16, 24, 0.98));
+  box-shadow: var(--shadow-elevated);
+  padding: 20px;
+  display: grid;
+  gap: 16px;
+}
+
+.user-question-dialog-header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 16px;
+}
+
+.user-question-dialog-eyebrow {
+  margin: 0 0 6px;
+  color: var(--primary);
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+}
+
+.user-question-dialog h2 {
+  margin: 0;
+  color: var(--text-primary);
+  font-size: 22px;
+  line-height: 1.2;
+}
+
+.user-question-dialog-count {
+  flex-shrink: 0;
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-pill);
+  padding: 6px 10px;
+  color: var(--text-secondary);
+  font-size: 12px;
+  font-weight: 700;
+  background: rgba(8, 12, 20, 0.42);
+}
+
+.user-question-dialog-description {
+  margin: 0;
+  color: var(--text-secondary);
+  line-height: 1.65;
+  font-size: 14px;
+}
+
+.user-question-dialog-body {
+  display: grid;
+  gap: 14px;
+}
+
+.user-question-dialog-field,
+.user-question-dialog-fieldset {
+  display: grid;
+  gap: 10px;
+  margin: 0;
+  padding: 14px;
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-lg);
+  background: rgba(8, 12, 20, 0.38);
+}
+
+.user-question-dialog-fieldset legend,
+.user-question-dialog-label {
+  color: var(--text-primary);
+  font-size: 14px;
+  font-weight: 700;
+}
+
+.user-question-dialog-field textarea {
+  width: 100%;
+  resize: vertical;
+  min-height: 92px;
+}
+
+.user-question-dialog-field textarea,
+.user-question-dialog-option {
+  font: inherit;
+}
+
+.user-question-dialog-field textarea {
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-md);
+  background: rgba(7, 10, 18, 0.72);
+  color: var(--text-primary);
+  padding: 12px 14px;
+  line-height: 1.6;
+}
+
+.user-question-dialog-field textarea::placeholder {
+  color: var(--text-faint);
+}
+
+.user-question-dialog-options {
+  display: grid;
+  gap: 10px;
+}
+
+.user-question-dialog-option {
+  display: grid;
+  grid-template-columns: 18px minmax(0, 1fr);
+  gap: 10px;
+  align-items: flex-start;
+  padding: 10px 12px;
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-md);
+  background: rgba(7, 10, 18, 0.52);
+  color: var(--text-primary);
+}
+
+.user-question-dialog-option input {
+  margin-top: 2px;
+  width: 16px;
+  height: 16px;
+  accent-color: var(--primary);
+}
+
+.user-question-dialog-option-copy {
+  display: grid;
+  gap: 4px;
+}
+
+.user-question-dialog-option-copy strong {
+  font-size: 13px;
+}
+
+.user-question-dialog-option-copy small {
+  color: var(--text-secondary);
+  font-size: 12px;
+  line-height: 1.5;
+}
+
+.user-question-dialog-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 10px;
+}
+
+@media (max-width: 640px) {
+  .user-question-dialog {
+    padding: 16px;
+  }
+
+  .user-question-dialog-header {
+    flex-direction: column;
+    align-items: flex-start;
+  }
+}

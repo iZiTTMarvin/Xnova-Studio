@@ -353,6 +353,138 @@ engine.runtime.setModel({ provider, model })
 
 ## 场景：Studio Submit 契约必须同时满足“主链路可用”和“runtime-not-ready 门禁”
 
+## 场景：Studio 用户提问必须通过 Shared Contract 闭环完成
+
+### 1. Scope / Trigger
+
+- 触发条件：
+  - 修改 `RuntimeHostBridge.requestUserInput(...)`
+  - 修改 `apps/studio/src/main/studio-runtime-service.ts`
+  - 修改 `apps/studio/src/main/studio-ipc.ts`
+  - 修改 `apps/studio/src/preload/**`
+  - 修改 `apps/studio/src/shared/studio-bridge-contract.ts`
+  - 修改 `apps/studio/src/renderer/hooks/useStudioBridge.ts`
+  - 修改 `apps/studio/src/renderer/pages/StudioHomePage.tsx`
+- 这是 runtime -> host -> preload -> renderer 的交互型 cross-layer contract，任何一层绕开 shared contract 都会让 `AskUserQuestionTool` 再次退化成假交互。
+
+### 2. Signatures
+
+```ts
+interface UserQuestionDialogRequest {
+  requestId: string
+  sessionId: string
+  questions: Array<{
+    key: string
+    title: string
+    type: 'text' | 'select' | 'multiselect'
+    options?: Array<{
+      label: string
+      description?: string
+    }>
+    placeholder?: string
+  }>
+}
+
+interface UserQuestionDialogResponse {
+  requestId: string
+  cancelled: boolean
+  answers: Record<string, string | string[]>
+}
+```
+
+```ts
+const STUDIO_BRIDGE_CHANNELS = {
+  userInputRequest: 'studio:user-input:request',
+  userInputRespond: 'studio:user-input:respond',
+}
+```
+
+### 3. Contracts
+
+- runtime 只能通过 `bridge.requestUserInput(input)` 发起用户提问；不得直接依赖 renderer 或宿主 UI。
+- main 必须生成 `requestId`，把 runtime 请求转成 `UserQuestionDialogRequest`，并通过 `webContents.send(...)` 推送到 renderer。
+- renderer 只能通过 `window.xnovaStudio.userInput.onRequest/respond` 消费与回传；不得直接 import runtime 单例、ipcRenderer 裸通道或自行维护第二套 contract。
+- preload 负责校验：
+  - `requestId / sessionId` 为非空字符串
+  - `questions` 为非空数组
+  - `type` 只允许 `text / select / multiselect`
+  - `select / multiselect` 必须提供非空 `options`
+  - `answers` 只允许 `string | string[]`
+- main 必须维护 pending resolver 队列，等待 renderer 回答后再 resolve 给 runtime。
+- 60 秒无响应时，main 必须返回：
+
+```ts
+{ answers: {}, cancelled: true }
+```
+
+- renderer 取消时也必须回传同一语义，不得伪造默认答案。
+
+### 4. Validation & Error Matrix
+
+| 条件 | 处理方式 |
+|---|---|
+| main window 不可用 | 直接返回 `{ answers: {}, cancelled: true }` |
+| renderer 超过 60 秒未响应 | main 自动返回 `cancelled: true` |
+| timeout 后又收到旧 response | `respond` 返回 `{ ok: false }`，不得复活旧请求 |
+| `select/multiselect` 缺少 options | preload 校验失败，拒绝进入 renderer |
+| `answers` 含非字符串/非字符串数组 | preload/main 校验失败 |
+| renderer 直接走裸 `ipcRenderer` 或直连 runtime | 视为边界违规，必须回到 shared bridge contract |
+
+### 5. Good / Base / Bad Cases
+
+- Good：
+  - `studio-runtime-service` 维护 pending map + timeout
+  - `useStudioBridge` 持有单一 pending question 状态
+  - `StudioHomePage` 挂载 `UserQuestionDialog`，并通过 bridge 回传结果
+- Base：
+  - 至少支持 `text / select / multiselect`
+  - 至少支持提交与取消两条路径
+- Bad：
+  - `requestUserInput()` 固定返回 `cancelled: true`
+  - renderer 直接 `prompt()` 或写死默认答案
+  - main 收到问题后只打日志，不等待用户真实回答
+
+### 6. Tests Required
+
+- 单元测试：
+  - `studio-runtime-service.test.ts` 断言 request push、response resolve、60 秒 timeout
+  - `studio-ipc.test.ts` 断言 `userInput.respond` 参数校验与 handler 分发
+  - `studio-preload-bridge.test.ts` 断言 preload 订阅与响应校验
+  - `user-question-dialog.test.tsx` 断言三种题型收集答案正确
+- 集成测试：
+  - `renderer-shell.test.tsx` 断言收到 `userInput` 请求后会弹窗并通过 bridge 回传
+
+### 7. Wrong vs Correct
+
+#### Wrong
+
+```ts
+async requestUserInput(_input) {
+  return { answers: {}, cancelled: true }
+}
+```
+
+问题：
+
+- Studio 表面支持 AskUserQuestion，实际上永远不会真正询问用户
+- renderer 没有机会展示结构化问题表单
+
+#### Correct
+
+```ts
+async requestUserInput(input) {
+  return requestUserInputFromRenderer(toUserQuestionDialogRequest(input))
+}
+```
+
+```ts
+window.xnovaStudio.userInput.onRequest((request) => {
+  setPendingUserInputRequest(request)
+})
+```
+
+把等待队列、超时、校验和 UI 渲染全部收敛到 shared contract 上，才能保证 runtime/host/renderer 的交互语义一致。
+
 ### 1. Scope / Trigger
 
 - 触发条件：

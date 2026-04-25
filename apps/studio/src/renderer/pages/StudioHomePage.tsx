@@ -11,6 +11,8 @@ import { ProjectTreePanel } from '../components/ProjectTreePanel'
 import { SessionModelPicker } from '../components/SessionModelPicker'
 import { ScratchpadList } from '../components/ScratchpadList'
 import { StudioSettingsDialog } from '../components/StudioSettingsDialog'
+import { PermissionDialog } from '../components/PermissionDialog'
+import { UserQuestionDialog } from '../components/UserQuestionDialog'
 import { IconSend, IconFolder, IconSuggestionExplore } from '../components/Icons'
 import { useStudioBridge } from '../hooks/useStudioBridge'
 import { useMemoryOverview } from '../hooks/useMemoryOverview'
@@ -104,6 +106,10 @@ export function StudioHomePage() {
     isSubmitting,
     liveConversation,
     lastRuntimeEvent,
+    pendingPermissionRequest,
+    pendingUserInputRequest,
+    respondPermissionRequest,
+    respondUserInputRequest,
   } = useStudioBridge()
   const [activeNavId, setActiveNavId] = useState<PrimaryNavId>('quick-chat')
   const [selectedSubagent, setSelectedSubagent] = useState<SelectedSubagentState | null>(null)
@@ -891,6 +897,20 @@ export function StudioHomePage() {
         settingsApi={settingsApi}
         memoryApi={memoryApi}
         workspacePath={selectedProjectPath ?? hostState.workspacePath}
+      />
+
+      <PermissionDialog
+        request={pendingPermissionRequest}
+        onRespond={(response) => {
+          void respondPermissionRequest(response)
+        }}
+      />
+
+      <UserQuestionDialog
+        request={pendingUserInputRequest}
+        onRespond={(response) => {
+          void respondUserInputRequest(response)
+        }}
       />
     </div>
   )

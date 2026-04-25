@@ -77,6 +77,18 @@ class FakeIpcRenderer {
       }
     }
 
+    if (channel === STUDIO_BRIDGE_CHANNELS.permissionRespond) {
+      return {
+        ok: true,
+      }
+    }
+
+    if (channel === STUDIO_BRIDGE_CHANNELS.userInputRespond) {
+      return {
+        ok: true,
+      }
+    }
+
     throw new Error(`unexpected channel: ${channel}`)
   })
 
@@ -277,5 +289,217 @@ describe('studio preload bridge', () => {
         projectPath: 123,
       }),
     ).rejects.toThrow('shell.getSnapshot.projectPath 必须是字符串或 null')
+  })
+
+  it('订阅权限请求并通过 IPC 回传用户决策', async () => {
+    const ipcRenderer = new FakeIpcRenderer()
+    const api = createStudioBridgeApi({
+      ipcRenderer,
+    })
+
+    const listener = vi.fn()
+    const unsubscribe = api.permission.onRequest(listener)
+    ipcRenderer.emit(STUDIO_BRIDGE_CHANNELS.permissionRequest, {
+      requestId: 'permission-1',
+      toolName: 'bash',
+      args: {
+        command: 'pnpm test',
+      },
+      description: 'bash 将执行命令: pnpm test',
+    })
+
+    expect(listener).toHaveBeenCalledWith({
+      requestId: 'permission-1',
+      toolName: 'bash',
+      args: {
+        command: 'pnpm test',
+      },
+      description: 'bash 将执行命令: pnpm test',
+    })
+
+    await expect(
+      api.permission.respond({
+        requestId: 'permission-1',
+        allow: true,
+        remember: true,
+      }),
+    ).resolves.toBeUndefined()
+    expect(ipcRenderer.invoke).toHaveBeenCalledWith(
+      STUDIO_BRIDGE_CHANNELS.permissionRespond,
+      {
+        requestId: 'permission-1',
+        allow: true,
+        remember: true,
+      },
+    )
+
+    unsubscribe()
+    ipcRenderer.emit(STUDIO_BRIDGE_CHANNELS.permissionRequest, {
+      requestId: 'permission-2',
+      toolName: 'bash',
+      args: {
+        command: 'pnpm typecheck',
+      },
+      description: 'bash 将执行命令: pnpm typecheck',
+    })
+    expect(listener).toHaveBeenCalledTimes(1)
+  })
+
+  it('权限桥接会拒绝非法请求与响应', async () => {
+    const ipcRenderer = new FakeIpcRenderer()
+    const api = createStudioBridgeApi({
+      ipcRenderer,
+    })
+
+    const listener = vi.fn()
+    api.permission.onRequest(listener)
+
+    expect(() => {
+      ipcRenderer.emit(STUDIO_BRIDGE_CHANNELS.permissionRequest, {
+        requestId: 'permission-1',
+        toolName: 'bash',
+        args: [],
+        description: 'bad',
+      })
+    }).toThrow('permission.request.args 必须是对象')
+    expect(listener).not.toHaveBeenCalled()
+
+    await expect(
+      (api.permission.respond as (payload: unknown) => Promise<void>)({
+        requestId: 'permission-1',
+        allow: true,
+      }),
+    ).rejects.toThrow('permission.respond.remember 必须是布尔值')
+  })
+
+  it('订阅用户问题请求并通过 IPC 回传回答', async () => {
+    const ipcRenderer = new FakeIpcRenderer()
+    const api = createStudioBridgeApi({
+      ipcRenderer,
+    })
+
+    const listener = vi.fn()
+    const unsubscribe = api.userInput.onRequest(listener)
+    ipcRenderer.emit(STUDIO_BRIDGE_CHANNELS.userInputRequest, {
+      requestId: 'question-1',
+      sessionId: 'session-1',
+      questions: [
+        {
+          key: 'focus',
+          title: '本次优先修哪一层？',
+          type: 'select',
+          options: [
+            { label: 'renderer' },
+            { label: 'main', description: '处理主进程链路' },
+          ],
+        },
+        {
+          key: 'tasks',
+          title: '还要补哪些内容？',
+          type: 'multiselect',
+          options: [
+            { label: 'dialog' },
+            { label: 'ipc' },
+          ],
+        },
+      ],
+    })
+
+    expect(listener).toHaveBeenCalledWith({
+      requestId: 'question-1',
+      sessionId: 'session-1',
+      questions: [
+        {
+          key: 'focus',
+          title: '本次优先修哪一层？',
+          type: 'select',
+          options: [
+            { label: 'renderer' },
+            { label: 'main', description: '处理主进程链路' },
+          ],
+        },
+        {
+          key: 'tasks',
+          title: '还要补哪些内容？',
+          type: 'multiselect',
+          options: [
+            { label: 'dialog' },
+            { label: 'ipc' },
+          ],
+        },
+      ],
+    })
+
+    await expect(
+      api.userInput.respond({
+        requestId: 'question-1',
+        cancelled: false,
+        answers: {
+          focus: 'renderer',
+          tasks: ['dialog', 'ipc'],
+        },
+      }),
+    ).resolves.toBeUndefined()
+    expect(ipcRenderer.invoke).toHaveBeenCalledWith(
+      STUDIO_BRIDGE_CHANNELS.userInputRespond,
+      {
+        requestId: 'question-1',
+        cancelled: false,
+        answers: {
+          focus: 'renderer',
+          tasks: ['dialog', 'ipc'],
+        },
+      },
+    )
+
+    unsubscribe()
+    ipcRenderer.emit(STUDIO_BRIDGE_CHANNELS.userInputRequest, {
+      requestId: 'question-2',
+      sessionId: 'session-1',
+      questions: [
+        {
+          key: 'details',
+          title: '补充说明',
+          type: 'text',
+        },
+      ],
+    })
+    expect(listener).toHaveBeenCalledTimes(1)
+  })
+
+  it('用户问题桥接会拒绝非法请求与响应', async () => {
+    const ipcRenderer = new FakeIpcRenderer()
+    const api = createStudioBridgeApi({
+      ipcRenderer,
+    })
+
+    const listener = vi.fn()
+    api.userInput.onRequest(listener)
+
+    expect(() => {
+      ipcRenderer.emit(STUDIO_BRIDGE_CHANNELS.userInputRequest, {
+        requestId: 'question-1',
+        sessionId: 'session-1',
+        questions: [
+          {
+            key: 'focus',
+            title: '本次优先修哪一层？',
+            type: 'select',
+            options: [],
+          },
+        ],
+      })
+    }).toThrow('userInput.request.questions[0].options 不能为空')
+    expect(listener).not.toHaveBeenCalled()
+
+    await expect(
+      (api.userInput.respond as (payload: unknown) => Promise<void>)({
+        requestId: 'question-1',
+        cancelled: false,
+        answers: {
+          focus: [1],
+        },
+      }),
+    ).rejects.toThrow('userInput.respond.answers.focus[0] 必须是字符串')
   })
 })
