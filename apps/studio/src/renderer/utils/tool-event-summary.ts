@@ -1,4 +1,5 @@
 export type ToolEventSeverity = 'normal' | 'warning' | 'error'
+import { normalizeToolName } from './tool-classification'
 
 export interface ToolEventSummary {
   title: string
@@ -29,7 +30,7 @@ function getPathLeaf(pathValue: string | null): string | null {
   return segments[segments.length - 1] ?? normalized
 }
 
-function truncateText(value: string, maxLength: number): string {
+export function truncateText(value: string, maxLength: number): string {
   if (value.length <= maxLength) {
     return value
   }
@@ -61,7 +62,9 @@ export function createToolEventSummary(
   args: Record<string, unknown>,
   resultSummary?: string | null,
 ): ToolEventSummary {
-  switch (toolName) {
+  const normalizedToolName = normalizeToolName(toolName)
+
+  switch (normalizedToolName) {
     case 'write_file': {
       const content = typeof args['content'] === 'string' ? args['content'] : null
       return {
@@ -76,6 +79,50 @@ export function createToolEventSummary(
       return {
         title: '读取文件',
         target: resolveFileTarget(args),
+        detail: null,
+        severity: 'normal',
+      }
+
+    case 'grep':
+      return {
+        title: '搜索代码',
+        target: getStringArg(args, ['pattern', 'query', 'search']) ?? null,
+        detail: resolveFileTarget(args),
+        severity: 'normal',
+      }
+
+    case 'glob':
+      return {
+        title: '匹配文件',
+        target: getStringArg(args, ['pattern', 'glob']) ?? null,
+        detail: getStringArg(args, ['cwd', 'basePath']),
+        severity: 'normal',
+      }
+
+    case 'list':
+    case 'list_dir':
+    case 'list_files':
+      return {
+        title: '列出目录',
+        target: resolveFileTarget(args),
+        detail: null,
+        severity: 'normal',
+      }
+
+    case 'fast_context':
+      return {
+        title: '收集上下文',
+        target: getStringArg(args, ['query', 'pattern']) ?? null,
+        detail: null,
+        severity: 'normal',
+      }
+
+    case 'fetch':
+    case 'web':
+    case 'research_web':
+      return {
+        title: '检索网页',
+        target: getStringArg(args, ['url', 'query']) ?? null,
         detail: null,
         severity: 'normal',
       }
@@ -114,9 +161,68 @@ export function createToolEventSummary(
         severity: 'warning',
       }
 
+    case 'delete_file':
+      return {
+        title: '删除文件',
+        target: resolveFileTarget(args),
+        detail: null,
+        severity: 'warning',
+      }
+
+    case 'mkdir':
+      return {
+        title: '创建目录',
+        target: resolveFileTarget(args),
+        detail: null,
+        severity: 'normal',
+      }
+
+    case 'move_file':
+      return {
+        title: '移动文件',
+        target:
+          resolveFileTarget(args) ??
+          getStringArg(args, ['sourcePath', 'from']) ??
+          null,
+        detail: getStringArg(args, ['destinationPath', 'to']),
+        severity: 'normal',
+      }
+
+    case 'todo_write':
+      return {
+        title: '更新待办',
+        target: null,
+        detail: null,
+        severity: 'normal',
+      }
+
+    case 'dispatch_agent':
+      return {
+        title: '派遣子代理',
+        target: getStringArg(args, ['agentId', 'task']) ?? null,
+        detail: null,
+        severity: 'warning',
+      }
+
+    case 'control_agent':
+      return {
+        title: '控制子代理',
+        target: getStringArg(args, ['agentId', 'action']) ?? null,
+        detail: null,
+        severity: 'warning',
+      }
+
+    case 'memory_write':
+      return {
+        title: '写入记忆',
+        target: getStringArg(args, ['scope', 'path']) ?? null,
+        detail: null,
+        severity: 'normal',
+      }
+
     default:
       return {
-        title: toolName,
+        title: normalizedToolName || toolName,
         target:
           resolveFileTarget(args) ??
           getStringArg(args, ['command', 'query', 'pattern', 'name']) ??
@@ -148,6 +254,16 @@ export function createToolRunningStep(
     default:
       return `正在执行 ${summary.title}`
   }
+}
+
+export function formatDurationLabel(durationMs?: number): string | null {
+  if (durationMs === undefined || durationMs <= 0) {
+    return null
+  }
+  if (durationMs < 50) {
+    return '<0.1s'
+  }
+  return `${(durationMs / 1000).toFixed(1)}s`
 }
 
 export function createToolArgumentDetails(

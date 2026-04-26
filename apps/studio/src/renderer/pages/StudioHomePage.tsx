@@ -738,6 +738,7 @@ export function StudioHomePage() {
         <ConversationTimeline
           session={activeSessionDetail}
           liveConversation={liveConversation}
+          isRunActive={isRunActive && runStatus !== 'cancelling'}
         />
       </section>
 

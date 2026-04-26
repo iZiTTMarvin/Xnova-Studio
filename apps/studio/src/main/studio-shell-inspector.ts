@@ -5,6 +5,7 @@ import { join } from 'node:path'
 import { loadResolvedConfig } from '@config/resolver.js'
 import {
   SessionStore,
+  getMessagePlainText,
   getGitBranch,
   type SessionSummary,
 } from '@persistence/index.js'
@@ -165,12 +166,12 @@ function buildProjectSessions(
     try {
       const snapshot = store.loadMessages(sessionId)
       const firstUserMessage = snapshot.messages.find(
-        (message) => message.role === 'user' && message.content.trim().length > 0,
+        (message) => message.role === 'user' && getMessagePlainText(message).length > 0,
       )
       if (!firstUserMessage) {
         return null
       }
-      const chars = Array.from(firstUserMessage.content.trim())
+      const chars = Array.from(getMessagePlainText(firstUserMessage))
       const fallbackTitle = chars
         .slice(0, SESSION_TITLE_FALLBACK_CHAR_LIMIT)
         .join('')
@@ -286,34 +287,9 @@ function buildActiveSessionDetail(
       messages: snapshot.messages.map((message) => ({
         id: message.id,
         role: message.role,
-        content: message.content,
-        ...(message.toolEvents
-          ? {
-              toolEvents: message.toolEvents.map((toolEvent) => ({
-                toolCallId: toolEvent.toolCallId,
-                toolName: toolEvent.toolName,
-                args: toolEvent.args,
-                ...(typeof toolEvent.durationMs === 'number'
-                  ? { durationMs: toolEvent.durationMs }
-                  : {}),
-                ...(typeof toolEvent.success === 'boolean'
-                  ? { success: toolEvent.success }
-                  : {}),
-                ...(typeof toolEvent.resultSummary === 'string'
-                  ? { resultSummary: toolEvent.resultSummary }
-                  : {}),
-                ...(typeof toolEvent.resultFull === 'string'
-                  ? { resultFull: toolEvent.resultFull }
-                  : {}),
-                ...(typeof toolEvent.agentId === 'string'
-                  ? { agentId: toolEvent.agentId }
-                  : {}),
-              })),
-            }
-          : {}),
+        blocks: message.blocks,
         ...(message.provider ? { providerId: message.provider } : {}),
         ...(message.model ? { modelId: message.model } : {}),
-        ...(message.thinking ? { thinking: message.thinking } : {}),
         ...(message.usage ? { usage: message.usage } : {}),
         ...(message.llmCallCount !== undefined
           ? { llmCallCount: message.llmCallCount }

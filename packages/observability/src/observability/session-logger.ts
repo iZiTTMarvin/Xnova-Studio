@@ -12,7 +12,13 @@
  */
 
 import type { SessionStore } from '@persistence/session-store.js'
-import { sessionStore as defaultStore, generateEventId } from '@persistence/index.js'
+import {
+  createTextBlock,
+  generateEventId,
+  SESSION_CONVERSATION_SCHEMA_VERSION,
+  sessionStore as defaultStore,
+  type SessionConversationBlock,
+} from '@persistence/index.js'
 import type { SessionEvent, SessionEventType } from '@persistence/session-types.js'
 import type { AgentEvent } from '@core/agent-loop.js'
 import type { MessageContent } from '@core/types.js'
@@ -29,7 +35,6 @@ interface AssistantMeta {
   stopReason?: string
   llmCallCount?: number
   toolCallCount?: number
-  thinking?: string
 }
 
 interface TurnStats {
@@ -191,24 +196,45 @@ export class SessionLogger {
 
   /** 记录用户消息（支持纯文本或包含图片引用的结构化内容） */
   logUserMessage(content: string | MessageContent[]): void {
+    const text =
+      typeof content === 'string'
+        ? content
+        : content
+            .filter(
+              (item): item is Extract<MessageContent, { type: 'text' }> =>
+                item.type === 'text',
+            )
+            .map((item) => item.text)
+            .join('')
     this.#appendEvent('user', {
-      message: { role: 'user', content },
+      message: {
+        role: 'user',
+        blocks: [createTextBlock('user-text-1', text)],
+      },
     })
   }
 
   /** 记录助手回复 */
-  logAssistantMessage(content: string, model?: string, provider?: string, meta?: AssistantMeta): void {
+  logAssistantMessage(
+    blocksOrText: SessionConversationBlock[] | string,
+    model?: string,
+    provider?: string,
+    meta?: AssistantMeta,
+  ): void {
+    const blocks =
+      typeof blocksOrText === 'string'
+        ? [createTextBlock('assistant-text-1', blocksOrText)]
+        : blocksOrText
     this.#appendEvent('assistant', {
       message: {
         role: 'assistant',
-        content,
+        blocks,
         ...(model ? { model } : {}),
         ...(provider ? { provider } : {}),
         ...(meta?.usage ? { assistantUsage: meta.usage } : {}),
         ...(meta?.stopReason ? { stopReason: meta.stopReason } : {}),
         ...(meta?.llmCallCount ? { llmCallCount: meta.llmCallCount } : {}),
         ...(meta?.toolCallCount ? { toolCallCount: meta.toolCallCount } : {}),
-        ...(meta?.thinking ? { thinking: meta.thinking } : {}),
       },
     })
   }
@@ -289,6 +315,7 @@ export class SessionLogger {
         uuid: eventId,
         parentUuid: this.#lastEventUuid,
         cwd: this.#cwd,
+        conversationSchemaVersion: SESSION_CONVERSATION_SCHEMA_VERSION,
         ...fields,
       }
       this.#store.append(this.#sessionId, event)

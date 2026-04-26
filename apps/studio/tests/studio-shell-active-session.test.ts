@@ -27,6 +27,7 @@ describe('studio shell inspector active session', () => {
         },
         loadMessages() {
           return {
+            conversationSchemaVersion: 2,
             sessionId: 'session-2',
             provider: 'openai',
             model: 'gpt-4.1-mini',
@@ -35,12 +36,24 @@ describe('studio shell inspector active session', () => {
               {
                 id: 'user-1',
                 role: 'user',
-                content: '继续实现 Studio 主链路',
+                blocks: [
+                  {
+                    id: 'user-text-1',
+                    type: 'text',
+                    content: '继续实现 Studio 主链路',
+                  },
+                ],
               },
               {
                 id: 'assistant-1',
                 role: 'assistant',
-                content: '收到，我先把会话视图补上。',
+                blocks: [
+                  {
+                    id: 'assistant-text-1',
+                    type: 'text',
+                    content: '收到，我先把会话视图补上。',
+                  },
+                ],
               },
             ],
             leafEventUuid: 'assistant-1',
@@ -100,12 +113,24 @@ describe('studio shell inspector active session', () => {
           {
             id: 'user-1',
             role: 'user',
-            content: '继续实现 Studio 主链路',
+            blocks: [
+              {
+                id: 'user-text-1',
+                type: 'text',
+                content: '继续实现 Studio 主链路',
+              },
+            ],
           },
           {
             id: 'assistant-1',
             role: 'assistant',
-            content: '收到，我先把会话视图补上。',
+            blocks: [
+              {
+                id: 'assistant-text-1',
+                type: 'text',
+                content: '收到，我先把会话视图补上。',
+              },
+            ],
           },
         ],
       },

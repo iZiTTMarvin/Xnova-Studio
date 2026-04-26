@@ -164,6 +164,7 @@ describe('studio shell inspector', () => {
         },
         loadMessages() {
           return {
+            conversationSchemaVersion: 2,
             sessionId: 'session-1',
             provider: 'openai',
             model: 'gpt-4o',
@@ -172,7 +173,13 @@ describe('studio shell inspector', () => {
               {
                 id: 'assistant-1',
                 role: 'assistant',
-                content: '继续实现 shell',
+                blocks: [
+                  {
+                    id: 'assistant-text-1',
+                    type: 'text',
+                    content: '继续实现 shell',
+                  },
+                ],
               },
             ],
             leafEventUuid: 'assistant-1',
@@ -254,6 +261,7 @@ describe('studio shell inspector', () => {
         },
         loadMessages() {
           return {
+            conversationSchemaVersion: 2,
             sessionId: 'session-1',
             provider: 'openai',
             model: 'gpt-4o',
@@ -262,12 +270,24 @@ describe('studio shell inspector', () => {
               {
                 id: 'user-1',
                 role: 'user',
-                content: '这是一个用于标题回退的首条消息',
+                blocks: [
+                  {
+                    id: 'user-text-1',
+                    type: 'text',
+                    content: '这是一个用于标题回退的首条消息',
+                  },
+                ],
               },
               {
                 id: 'assistant-1',
                 role: 'assistant',
-                content: '收到，我先分析代码结构。',
+                blocks: [
+                  {
+                    id: 'assistant-text-1',
+                    type: 'text',
+                    content: '收到，我先分析代码结构。',
+                  },
+                ],
               },
             ],
             leafEventUuid: 'assistant-1',
@@ -319,6 +339,7 @@ describe('studio shell inspector', () => {
         },
         loadMessages() {
           return {
+            conversationSchemaVersion: 2,
             sessionId: 'session-1',
             provider: 'openai',
             model: 'gpt-4o',
@@ -377,6 +398,7 @@ describe('studio shell inspector', () => {
         },
         loadMessages() {
           return {
+            conversationSchemaVersion: 2,
             sessionId: 'session-1',
             provider: 'openai',
             model: 'gpt-4o',
@@ -450,6 +472,7 @@ describe('studio shell inspector', () => {
         },
         loadMessages() {
           return {
+            conversationSchemaVersion: 2,
             sessionId: 'session-1',
             provider: 'openai',
             model: 'gpt-4o',

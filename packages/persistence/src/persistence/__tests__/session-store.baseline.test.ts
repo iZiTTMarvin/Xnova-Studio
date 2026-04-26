@@ -6,10 +6,11 @@
  */
 
 import { describe, it, expect, beforeEach, afterEach } from 'vitest'
-import { mkdirSync, rmSync, existsSync } from 'node:fs'
+import { mkdirSync, rmSync, existsSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { tmpdir } from 'node:os'
 import { SessionStore } from '../session-store.js'
+import { SESSION_CONVERSATION_SCHEMA_VERSION } from '../conversation-blocks.js'
 
 function makeTempDir(): string {
   const dir = join(tmpdir(), `xnova-session-test-${Date.now()}-${Math.random().toString(36).slice(2)}`)
@@ -42,6 +43,9 @@ describe('SessionStore — 基线行为', () => {
 
     // 文件应存在于 baseDir 下某个子目录
     const snapshot = store.loadMessages(sessionId)
+    expect(snapshot.conversationSchemaVersion).toBe(
+      SESSION_CONVERSATION_SCHEMA_VERSION,
+    )
     expect(snapshot.sessionId).toBe(sessionId)
     expect(snapshot.provider).toBe('anthropic')
     expect(snapshot.model).toBe('claude-sonnet-4-6')
@@ -68,7 +72,17 @@ describe('SessionStore — 基线行为', () => {
       uuid: userUuid,
       parentUuid: startUuid,
       cwd: process.cwd(),
-      message: { role: 'user', content: '你好' },
+      conversationSchemaVersion: SESSION_CONVERSATION_SCHEMA_VERSION,
+      message: {
+        role: 'user',
+        blocks: [
+          {
+            id: 'user-text-1',
+            type: 'text',
+            content: '你好',
+          },
+        ],
+      },
     })
 
     store.append(sessionId, {
@@ -78,7 +92,17 @@ describe('SessionStore — 基线行为', () => {
       uuid: assistantUuid,
       parentUuid: userUuid,
       cwd: process.cwd(),
-      message: { role: 'assistant', content: '你好！有什么可以帮你的？' },
+      conversationSchemaVersion: SESSION_CONVERSATION_SCHEMA_VERSION,
+      message: {
+        role: 'assistant',
+        blocks: [
+          {
+            id: 'assistant-text-1',
+            type: 'text',
+            content: '你好！有什么可以帮你的？',
+          },
+        ],
+      },
     })
 
     const snapshot = store.loadMessages(sessionId)
@@ -86,9 +110,21 @@ describe('SessionStore — 基线行为', () => {
     const assistantMsgs = snapshot.messages.filter(m => m.role === 'assistant')
 
     expect(userMsgs).toHaveLength(1)
-    expect(userMsgs[0]!.content).toBe('你好')
+    expect(userMsgs[0]!.blocks).toEqual([
+      {
+        id: 'user-text-1',
+        type: 'text',
+        content: '你好',
+      },
+    ])
     expect(assistantMsgs).toHaveLength(1)
-    expect(assistantMsgs[0]!.content).toBe('你好！有什么可以帮你的？')
+    expect(assistantMsgs[0]!.blocks).toEqual([
+      {
+        id: 'assistant-text-1',
+        type: 'text',
+        content: '你好！有什么可以帮你的？',
+      },
+    ])
   })
 
   it('inspectSession() 以轻量摘要返回 messageCount / provider / model', () => {
@@ -104,7 +140,17 @@ describe('SessionStore — 基线行为', () => {
       uuid: 'user-1',
       parentUuid: startUuid,
       cwd,
-      message: { role: 'user', content: '分析 renderer' },
+      conversationSchemaVersion: SESSION_CONVERSATION_SCHEMA_VERSION,
+      message: {
+        role: 'user',
+        blocks: [
+          {
+            id: 'user-text-1',
+            type: 'text',
+            content: '分析 renderer',
+          },
+        ],
+      },
     })
     store.append(sessionId, {
       sessionId,
@@ -115,10 +161,17 @@ describe('SessionStore — 基线行为', () => {
       cwd,
       message: {
         role: 'assistant',
-        content: '已完成',
+        blocks: [
+          {
+            id: 'assistant-text-1',
+            type: 'text',
+            content: '已完成',
+          },
+        ],
         provider: 'openai',
         model: 'gpt-4o',
       },
+      conversationSchemaVersion: SESSION_CONVERSATION_SCHEMA_VERSION,
     })
 
     expect(store.inspectSession(sessionId)).toEqual({
@@ -153,7 +206,17 @@ describe('SessionStore — 基线行为', () => {
       uuid: 'some-uuid',
       parentUuid: null,
       cwd: process.cwd(),
-      message: { role: 'user', content: 'test' },
+      conversationSchemaVersion: SESSION_CONVERSATION_SCHEMA_VERSION,
+      message: {
+        role: 'user',
+        blocks: [
+          {
+            id: 'user-text-1',
+            type: 'text',
+            content: 'test',
+          },
+        ],
+      },
     })).toThrow()
   })
 
@@ -190,8 +253,15 @@ describe('SessionStore — 基线行为', () => {
       cwd,
       message: {
         role: 'assistant',
-        content: '已经扫完 renderer 的一半文件。',
+        blocks: [
+          {
+            id: 'assistant-text-1',
+            type: 'text',
+            content: '已经扫完 renderer 的一半文件。',
+          },
+        ],
       },
+      conversationSchemaVersion: SESSION_CONVERSATION_SCHEMA_VERSION,
     })
 
     store.append(subagentSessionId, {
@@ -217,5 +287,32 @@ describe('SessionStore — 基线行为', () => {
         ]),
       }),
     ])
+  })
+
+  it('旧 schemaVersion 会在 list() 中被忽略，并且 loadMessages() 返回空会话', () => {
+    const cwd = process.cwd()
+    const sessionId = store.create(cwd, 'anthropic', 'claude-sonnet-4-6')
+    const initial = store.loadMessages(sessionId)
+    const filePath = store.list({ limit: 10 })[0]!.filePath
+
+    const legacyEvent = {
+      sessionId,
+      type: 'session_start' as const,
+      timestamp: new Date().toISOString(),
+      uuid: initial.leafEventUuid!,
+      parentUuid: null,
+      cwd,
+      provider: 'anthropic',
+      model: 'claude-sonnet-4-6',
+    }
+
+    rmSync(filePath, { force: true })
+    writeFileSync(filePath, `${JSON.stringify(legacyEvent)}\n`, 'utf-8')
+
+    expect(store.list({ limit: 10 })).toEqual([])
+    expect(store.loadMessages(sessionId)).toMatchObject({
+      conversationSchemaVersion: 0,
+      messages: [],
+    })
   })
 })

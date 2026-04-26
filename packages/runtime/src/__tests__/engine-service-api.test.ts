@@ -151,6 +151,7 @@ vi.mock('@xnova/persistence', () => ({
     list: vi.fn(() => []),
     listBranches: vi.fn(() => []),
     loadMessages: vi.fn(() => ({
+      conversationSchemaVersion: 2,
       sessionId: 'session-1',
       provider: 'anthropic',
       model: 'claude-sonnet-4-6',
@@ -221,13 +222,34 @@ function createHarness() {
     list: vi.fn(() => []),
     listBranches: vi.fn(() => []),
     loadMessages: vi.fn(() => ({
+      conversationSchemaVersion: 2,
       sessionId: 'session-1',
       provider: 'anthropic',
       model: 'claude-sonnet-4-6',
       cwd: 'D:/workspace',
       messages: [
-        { id: 'u1', role: 'user' as const, content: 'Q' },
-        { id: 'a1', role: 'assistant' as const, content: 'A' },
+        {
+          id: 'u1',
+          role: 'user' as const,
+          blocks: [
+            {
+              id: 'user-text-1',
+              type: 'text' as const,
+              content: 'Q',
+            },
+          ],
+        },
+        {
+          id: 'a1',
+          role: 'assistant' as const,
+          blocks: [
+            {
+              id: 'assistant-text-1',
+              type: 'text' as const,
+              content: 'A',
+            },
+          ],
+        },
       ],
       leafEventUuid: 'leaf-1',
     })),

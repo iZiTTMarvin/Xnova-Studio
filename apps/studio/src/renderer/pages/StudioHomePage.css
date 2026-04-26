@@ -475,6 +475,311 @@
 }
 
 /* ========================================
+   renderRows 时间线重构
+   ======================================== */
+
+.conversation-render-row {
+  min-width: 0;
+}
+
+.conversation-render-row-text {
+  color: var(--text-primary);
+}
+
+.reasoning-row {
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-lg);
+  background: color-mix(in srgb, var(--bg-panel-strong) 86%, transparent);
+  overflow: hidden;
+}
+
+.reasoning-row-header {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  padding: 10px 12px;
+  border: 0;
+  background: transparent;
+  color: var(--text-muted);
+  font-family: inherit;
+  font-size: 12px;
+  text-align: left;
+  cursor: pointer;
+}
+
+.reasoning-row-header:hover {
+  background: var(--bg-soft);
+}
+
+.reasoning-row-chevron {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 14px;
+  height: 14px;
+  color: var(--text-faint);
+}
+
+.reasoning-row-title {
+  color: var(--text-muted);
+  font-weight: 500;
+}
+
+.reasoning-row-duration {
+  margin-left: auto;
+  color: var(--text-faint);
+  font-family: var(--font-mono);
+  font-size: 11px;
+}
+
+.reasoning-row-content {
+  padding: 0 12px 12px;
+}
+
+.reasoning-row-text {
+  color: var(--text-muted);
+  font-size: 12px;
+  line-height: 1.65;
+  font-style: italic;
+  white-space: pre-wrap;
+}
+
+.tool-activity-group-row,
+.tool-action-row {
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-lg);
+  background: color-mix(in srgb, var(--bg-panel-strong) 90%, transparent);
+  overflow: hidden;
+}
+
+.tool-activity-group-row--running,
+.tool-action-row--running {
+  animation: breathe 2s ease-in-out infinite;
+}
+
+.tool-action-row--error {
+  border-color: color-mix(in srgb, var(--error) 32%, var(--border-subtle));
+}
+
+.tool-activity-group-row-main,
+.tool-action-row-main {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  width: 100%;
+  padding: 10px 12px;
+  border: 0;
+  background: transparent;
+  color: inherit;
+  font-family: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.tool-activity-group-row-main:hover,
+.tool-action-row-main:hover {
+  background: var(--bg-soft);
+}
+
+.tool-activity-group-row-status,
+.tool-action-row-status {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 16px;
+  min-width: 16px;
+  height: 16px;
+  color: var(--text-faint);
+}
+
+.tool-activity-group-row-title {
+  color: var(--text-primary);
+  font-size: 13px;
+  font-weight: 600;
+}
+
+.tool-activity-group-row-count {
+  margin-left: auto;
+  color: var(--text-faint);
+  font-family: var(--font-mono);
+  font-size: 11px;
+}
+
+.tool-activity-group-row-chevron,
+.tool-action-row-chevron {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 12px;
+  color: var(--text-faint);
+}
+
+.tool-activity-group-row-details {
+  display: grid;
+  gap: 6px;
+  padding: 0 12px 12px 38px;
+}
+
+.tool-activity-group-item {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  min-width: 0;
+  color: var(--text-secondary);
+  font-size: 12px;
+}
+
+.tool-activity-group-item-status {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 14px;
+  min-width: 14px;
+  color: var(--text-faint);
+}
+
+.tool-activity-group-item-copy {
+  display: flex;
+  align-items: baseline;
+  gap: 6px;
+  min-width: 0;
+  flex-wrap: wrap;
+}
+
+.tool-activity-group-item-title {
+  color: var(--text-secondary);
+}
+
+.tool-activity-group-item-target,
+.tool-activity-group-item-detail,
+.tool-activity-group-item-duration {
+  color: var(--text-faint);
+  font-family: var(--font-mono);
+  font-size: 11px;
+}
+
+.tool-activity-group-item--more {
+  color: var(--text-faint);
+  font-size: 12px;
+}
+
+.tool-action-row-copy {
+  display: grid;
+  gap: 4px;
+  min-width: 0;
+  flex: 1;
+}
+
+.tool-action-row-title-line {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  min-width: 0;
+  flex-wrap: wrap;
+}
+
+.tool-action-row-title {
+  color: var(--text-primary);
+  font-size: 13px;
+  font-weight: 600;
+}
+
+.tool-action-row-target,
+.tool-action-row-detail,
+.tool-action-row-duration,
+.tool-action-row-status-text {
+  color: var(--text-faint);
+  font-family: var(--font-mono);
+  font-size: 11px;
+}
+
+.tool-action-row-failure {
+  color: color-mix(in srgb, var(--error) 82%, white);
+  font-size: 12px;
+  line-height: 1.55;
+}
+
+.tool-action-row-meta {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-left: auto;
+  min-width: fit-content;
+}
+
+.tool-action-row-icon-success {
+  color: var(--success);
+}
+
+.tool-action-row-icon-error {
+  color: var(--error);
+}
+
+.tool-action-row-details {
+  display: grid;
+  gap: 8px;
+  padding: 0 12px 12px 38px;
+}
+
+.tool-action-row-detail-section {
+  display: grid;
+  gap: 4px;
+}
+
+.tool-action-row-detail-label {
+  color: var(--text-faint);
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+}
+
+.tool-action-row-detail-result {
+  color: var(--text-secondary);
+  font-size: 12px;
+  line-height: 1.6;
+  white-space: pre-wrap;
+}
+
+.tool-action-row-detail-code {
+  margin: 0;
+  padding: 8px 10px;
+  background: rgba(9, 14, 26, 0.74);
+  border-radius: var(--radius-sm);
+  color: var(--text-muted);
+  font-family: var(--font-mono);
+  font-size: 11px;
+  line-height: 1.5;
+  white-space: pre-wrap;
+  overflow-x: auto;
+  max-height: 200px;
+  overflow-y: auto;
+}
+
+.conversation-status-row {
+  color: var(--text-muted);
+  font-size: 12px;
+  line-height: 1.6;
+}
+
+.conversation-system-row {
+  border-left: 2px solid var(--border-hover);
+  padding-left: 10px;
+  color: var(--text-muted);
+  font-size: 12px;
+  line-height: 1.6;
+}
+
+.conversation-system-row--warning {
+  border-left-color: var(--warning);
+}
+
+.conversation-system-row--error {
+  border-left-color: var(--error);
+  color: color-mix(in srgb, var(--error) 70%, white);
+}
+
+/* ========================================
    上下文环形进度圈
    ======================================== */
 
@@ -667,4 +972,3 @@
     grid-template-columns: 1fr;
   }
 }
-

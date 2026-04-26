@@ -13,6 +13,10 @@ import { join } from 'node:path'
 import { dbg } from '../debug.js'
 import type { SessionEvent, SessionSnapshot, SessionSummary, BranchInfo, SubagentSnapshot, SubagentSnapshotEvent } from './session-types.js'
 import {
+  getMessagePlainText,
+  SESSION_CONVERSATION_SCHEMA_VERSION,
+} from './conversation-blocks.js'
+import {
   toProjectSlug,
   generateSessionId,
   generateEventId,
@@ -53,6 +57,7 @@ export class SessionStore {
       uuid: eventId,
       parentUuid: null,
       cwd,
+      conversationSchemaVersion: SESSION_CONVERSATION_SCHEMA_VERSION,
       gitBranch,
       provider,
       model,
@@ -83,6 +88,11 @@ export class SessionStore {
     const content = readFileSync(filePath, 'utf-8')
     const lines = content.trim().split('\n').filter(Boolean)
     const allEvents: SessionEvent[] = lines.map(l => JSON.parse(l) as SessionEvent)
+    const conversationSchemaVersion = this.#resolveConversationSchemaVersion(allEvents)
+
+    if (conversationSchemaVersion !== SESSION_CONVERSATION_SCHEMA_VERSION) {
+      return this.#buildEmptySnapshot(sessionId, conversationSchemaVersion, allEvents)
+    }
 
     // Determine the leaf to trace from
     let targetLeafUuid = leafEventUuid
@@ -90,7 +100,15 @@ export class SessionStore {
       const latestLeaf = this.#findLatestLeaf(allEvents)
       if (!latestLeaf) {
         // Fallback: empty session
-        return { sessionId, provider: '', model: '', cwd: '', messages: [], leafEventUuid: null }
+        return {
+          conversationSchemaVersion,
+          sessionId,
+          provider: '',
+          model: '',
+          cwd: '',
+          messages: [],
+          leafEventUuid: null,
+        }
       }
       targetLeafUuid = latestLeaf.uuid
     }
@@ -103,11 +121,6 @@ export class SessionStore {
     let cwd = ''
     const messages: SessionSnapshot['messages'] = []
 
-    // 收集工具事件：tool_call_start 的 args + tool_call_end 的结果
-    const toolStartArgs = new Map<string, Record<string, unknown>>()
-    // 本轮积累的已完成工具记录（在 assistant 消息前插入）
-    let pendingTools: SessionSnapshot['messages'][0]['toolEvents'] = []
-
     for (const event of path) {
       if (event.type === 'session_start' || event.type === 'session_resume') {
         if (event.provider) provider = event.provider
@@ -115,66 +128,43 @@ export class SessionStore {
         if (event.cwd) cwd = event.cwd
       }
 
-      // 记录 tool_call_start 的 args（tool_call_end 里没有 args）
-      if (event.type === 'tool_call_start' && event.toolCallId && event.toolName) {
-        toolStartArgs.set(event.toolCallId, event.args ?? {})
-      }
-
-      // 收集已完成的工具记录
-      if (event.type === 'tool_call_end' && event.toolCallId && event.toolName) {
-        if (!pendingTools) pendingTools = []
-        const toolEvt: import('./session-types.js').SnapshotToolEvent = {
-          toolCallId: event.toolCallId,
-          toolName: event.toolName,
-          args: toolStartArgs.get(event.toolCallId) ?? {},
-          // dispatch_agent 关联子 Agent ID
-          ...(event.agentId ? { agentId: event.agentId } : {}),
+      if (
+        (event.type === 'user' ||
+          event.type === 'assistant' ||
+          event.type === 'system') &&
+        event.message &&
+        Array.isArray(event.message.blocks)
+      ) {
+        const message: SessionSnapshot['messages'][number] = {
+          id: event.uuid,
+          role: event.type,
+          blocks: event.message.blocks,
         }
-        if (event.durationMs != null) toolEvt.durationMs = event.durationMs
-        if (event.success != null) toolEvt.success = event.success
-        if (event.resultSummary != null) toolEvt.resultSummary = event.resultSummary
-        if (event.resultFull != null) toolEvt.resultFull = event.resultFull
-        pendingTools.push(toolEvt)
-      }
-
-      if (event.type === 'user' && event.message && typeof event.message.content === 'string') {
-        // user 消息前：如果有未归属的工具记录，先插入（属于上一轮的尾部）
-        if (pendingTools && pendingTools.length > 0) {
-          messages.push({ id: `tools-${event.uuid}`, role: 'system', content: '', toolEvents: pendingTools })
-          pendingTools = []
+        if (event.message.model) message.model = String(event.message.model)
+        if (event.message.provider) message.provider = String(event.message.provider)
+        if (event.message.assistantUsage) {
+          message.usage = event.message.assistantUsage
         }
-        messages.push({ id: event.uuid, role: 'user', content: event.message.content })
-      }
-
-      if (event.type === 'assistant' && event.message && typeof event.message.content === 'string') {
-        // assistant 消息前：插入本轮工具记录
-        if (pendingTools && pendingTools.length > 0) {
-          messages.push({ id: `tools-${event.uuid}`, role: 'system', content: '', toolEvents: pendingTools })
-          pendingTools = []
+        if (event.message.stopReason) message.stopReason = String(event.message.stopReason)
+        if (event.message.llmCallCount !== undefined) {
+          message.llmCallCount = Number(event.message.llmCallCount)
         }
-        const assistantMsg: SessionSnapshot['messages'][number] = { id: event.uuid, role: 'assistant', content: event.message.content }
-        if (event.message.model) assistantMsg.model = String(event.message.model)
-        if (event.message.provider) assistantMsg.provider = String(event.message.provider)
-        // 提取新增的统计字段
-        const rawMsg = event.message as Record<string, unknown>
-        if (rawMsg['assistantUsage']) {
-          const u = rawMsg['assistantUsage'] as { inputTokens: number; outputTokens: number; cacheReadTokens: number; cacheWriteTokens: number }
-          assistantMsg.usage = u
+        if (event.message.toolCallCount !== undefined) {
+          message.toolCallCount = Number(event.message.toolCallCount)
         }
-        if (rawMsg['stopReason']) assistantMsg.stopReason = String(rawMsg['stopReason'])
-        if (rawMsg['llmCallCount']) assistantMsg.llmCallCount = Number(rawMsg['llmCallCount'])
-        if (rawMsg['toolCallCount']) assistantMsg.toolCallCount = Number(rawMsg['toolCallCount'])
-        if (rawMsg['thinking']) assistantMsg.thinking = String(rawMsg['thinking'])
-        messages.push(assistantMsg)
+        messages.push(message)
       }
     }
 
-    // 末尾可能有未归属的工具记录（对话中断时）
-    if (pendingTools && pendingTools.length > 0) {
-      messages.push({ id: `tools-tail`, role: 'system', content: '', toolEvents: pendingTools })
+    return {
+      conversationSchemaVersion,
+      sessionId,
+      provider,
+      model,
+      cwd,
+      messages,
+      leafEventUuid: targetLeafUuid,
     }
-
-    return { sessionId, provider, model, cwd, messages, leafEventUuid: targetLeafUuid }
   }
 
   /** List all branches in a session (each leaf event = one branch) */
@@ -185,6 +175,9 @@ export class SessionStore {
     const content = readFileSync(filePath, 'utf-8')
     const lines = content.trim().split('\n').filter(Boolean)
     const events: SessionEvent[] = lines.map(l => JSON.parse(l) as SessionEvent)
+    if (this.#resolveConversationSchemaVersion(events) !== SESSION_CONVERSATION_SCHEMA_VERSION) {
+      return []
+    }
 
     // Build parent→children and uuid→event maps
     const childrenOf = new Set<string>() // set of all parentUuids that have children
@@ -211,11 +204,15 @@ export class SessionStore {
       // Count user+assistant messages
       const msgs = path.filter(e =>
         (e.type === 'user' || e.type === 'assistant') &&
-        e.message && typeof e.message.content === 'string'
+        e.message && Array.isArray(e.message.blocks)
       )
 
       const lastMsg = msgs.length > 0 ? msgs[msgs.length - 1]! : null
-      const lastMessageText = lastMsg?.message?.content
+      const lastMessageText = lastMsg?.message
+        ? getMessagePlainText({
+            blocks: lastMsg.message.blocks,
+          })
+        : ''
       const lastMessage = typeof lastMessageText === 'string'
         ? (lastMessageText.length > 80 ? lastMessageText.slice(0, 80) + '...' : lastMessageText)
         : ''
@@ -273,6 +270,9 @@ export class SessionStore {
 
         const stat = statSync(filePath)
         const extracted = this.#extractSummary(filePath)
+        if (extracted.conversationSchemaVersion !== SESSION_CONVERSATION_SCHEMA_VERSION) {
+          continue
+        }
 
         summaries.push({
           sessionId,
@@ -366,6 +366,7 @@ export class SessionStore {
       uuid: eventId,
       parentUuid: null,
       cwd,
+      conversationSchemaVersion: SESSION_CONVERSATION_SCHEMA_VERSION,
       gitBranch,
       provider,
       model,
@@ -399,6 +400,9 @@ export class SessionStore {
         const filePath = join(subagentDir, file)
         const lines = readFileSync(filePath, 'utf-8').split('\n').filter(Boolean)
         const events: SessionEvent[] = lines.map(l => JSON.parse(l) as SessionEvent)
+        if (this.#resolveConversationSchemaVersion(events) !== SESSION_CONVERSATION_SCHEMA_VERSION) {
+          continue
+        }
 
         // 从 session_start 提取 agentId
         const startEvent = events.find(e => e.type === 'session_start')
@@ -407,12 +411,13 @@ export class SessionStore {
         const agentId = startEvent.agentId
         const endEvent = events.find(e => e.type === 'session_end')
         const userEvent = events.find(e => e.type === 'user')
-        const assistantEvent = events.find(e => e.type === 'assistant')
 
         // 提取描述：从父会话 dispatch_agent 的 description 参数获取不到，
         // 用 user message 的前 50 字符作为 fallback
-        const description = typeof userEvent?.message?.content === 'string'
-          ? userEvent.message.content.slice(0, 50)
+        const description = userEvent?.message?.blocks
+          ? getMessagePlainText({
+              blocks: userEvent.message.blocks,
+            }).slice(0, 50) || agentId
           : agentId
 
         // 提取详细事件
@@ -435,11 +440,16 @@ export class SessionStore {
               ...(ev.resultSummary !== undefined ? { resultSummary: ev.resultSummary } : {}),
               ...(ev.resultFull !== undefined ? { resultFull: ev.resultFull } : {}),
             })
-          } else if (ev.type === 'assistant' && typeof ev.message?.content === 'string') {
-            detailEvents.push({
-              kind: 'text',
-              text: ev.message.content,
+          } else if (ev.type === 'assistant' && Array.isArray(ev.message?.blocks)) {
+            const text = getMessagePlainText({
+              blocks: ev.message.blocks,
             })
+            if (text) {
+              detailEvents.push({
+                kind: 'text',
+                text,
+              })
+            }
           } else if (ev.type === 'error') {
             detailEvents.push({
               kind: 'error',
@@ -487,14 +497,20 @@ export class SessionStore {
 
     const content = readFileSync(filePath, 'utf-8')
     const lines = content.trim().split('\n').filter(Boolean)
+    const events = lines.map((line) => JSON.parse(line) as SessionEvent)
+    if (this.#resolveConversationSchemaVersion(events) !== SESSION_CONVERSATION_SCHEMA_VERSION) {
+      return {
+        messageCount: 0,
+        provider: null,
+        model: null,
+      }
+    }
 
     let messageCount = 0
     let provider: string | null = null
     let model: string | null = null
 
-    for (const line of lines) {
-      const event = JSON.parse(line) as SessionEvent
-
+    for (const event of events) {
       if (event.type === 'user' || event.type === 'assistant') {
         messageCount += 1
       }
@@ -612,11 +628,13 @@ export class SessionStore {
 
   /** Extract cwd / firstMessage / updatedAt / gitBranch from JSONL content */
   #extractSummary(filePath: string): {
+    conversationSchemaVersion: number
     cwd: string
     firstMessage: string
     updatedAt: string
     gitBranch: string
   } {
+    let conversationSchemaVersion = 0
     let cwd = ''
     let firstMessage = ''
     let updatedAt = ''
@@ -625,10 +643,10 @@ export class SessionStore {
     try {
       const content = readFileSync(filePath, 'utf-8')
       const lines = content.trim().split('\n').filter(Boolean)
+      const events = lines.map((line) => JSON.parse(line) as SessionEvent)
+      conversationSchemaVersion = this.#resolveConversationSchemaVersion(events)
 
-      for (const line of lines) {
-        const event = JSON.parse(line) as SessionEvent
-
+      for (const event of events) {
         // Track latest timestamp
         if (event.timestamp) {
           updatedAt = event.timestamp
@@ -648,19 +666,44 @@ export class SessionStore {
           !firstMessage &&
           event.type === 'user' &&
           event.message &&
-          typeof event.message.content === 'string'
+          Array.isArray(event.message.blocks)
         ) {
+          const plainText = getMessagePlainText({
+            blocks: event.message.blocks,
+          })
           firstMessage =
-            event.message.content.length > FIRST_MESSAGE_MAX_LENGTH
-              ? event.message.content.slice(0, FIRST_MESSAGE_MAX_LENGTH) + '...'
-              : event.message.content
+            plainText.length > FIRST_MESSAGE_MAX_LENGTH
+              ? plainText.slice(0, FIRST_MESSAGE_MAX_LENGTH) + '...'
+              : plainText
         }
       }
     } catch (err) {
       dbg(`[SessionStore] JSONL 摘要提取失败 file=${filePath}: ${err instanceof Error ? err.message : String(err)}\n`)
     }
 
-    return { cwd, firstMessage, updatedAt, gitBranch }
+    return { conversationSchemaVersion, cwd, firstMessage, updatedAt, gitBranch }
+  }
+
+  #resolveConversationSchemaVersion(events: SessionEvent[]): number {
+    const startEvent = events.find((event) => event.type === 'session_start')
+    return startEvent?.conversationSchemaVersion ?? 0
+  }
+
+  #buildEmptySnapshot(
+    sessionId: string,
+    conversationSchemaVersion: number,
+    events: SessionEvent[],
+  ): SessionSnapshot {
+    const startEvent = events.find((event) => event.type === 'session_start')
+    return {
+      conversationSchemaVersion,
+      sessionId,
+      provider: startEvent?.provider ?? '',
+      model: startEvent?.model ?? '',
+      cwd: startEvent?.cwd ?? '',
+      messages: [],
+      leafEventUuid: startEvent?.uuid ?? null,
+    }
   }
 
   /** Find JSONL file by sessionId — cache first, then scan directories */

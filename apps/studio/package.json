@@ -12,7 +12,8 @@
     "pack:dir": "pnpm build && electron-builder --config electron-builder.yml --dir --publish never",
     "pack:win": "pnpm build && electron-builder --config electron-builder.yml --win nsis --x64 --publish never",
     "typecheck": "tsc --noEmit",
-    "test": "vitest run"
+    "test": "vitest run",
+    "reset:sessions": "node scripts/reset-sessions.js"
   },
   "engines": {
     "node": ">=20.0.0"

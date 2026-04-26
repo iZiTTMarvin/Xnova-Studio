@@ -161,6 +161,17 @@ describe('createRuntime() — 集成门面', () => {
     vi.clearAllMocks()
     mocks.historyStore.length = 0
     mocks.agentLoopRun.mockImplementation(async function* () {
+      yield {
+        type: 'llm_start',
+        provider: 'openai',
+        model: 'gpt-4o',
+        messageCount: 1,
+      }
+      yield {
+        type: 'llm_first_chunk',
+        chunkType: 'text',
+        elapsedMs: 50,
+      }
       yield { type: 'text', text: 'Hello' }
       yield { type: 'tool_start', toolName: 'bash', toolCallId: 'tool-1', args: { command: 'pwd' } }
       yield {
@@ -212,7 +223,27 @@ describe('createRuntime() — 集成门面', () => {
     expect(mocks.ensureSession).toHaveBeenCalledWith('openai', 'gpt-4o')
     expect(mocks.bindTokenMeter).toHaveBeenCalledWith('session-1', 'openai', 'gpt-4o')
     expect(mocks.logUserMessage).toHaveBeenCalledWith('你好')
-    expect(mocks.logAssistantMessage).toHaveBeenCalledWith('Hello', 'gpt-4o', 'openai', expect.objectContaining({
+    expect(mocks.logAssistantMessage).toHaveBeenCalledWith([
+      {
+        id: 'assistant-text-1',
+        type: 'text',
+        content: 'Hello',
+      },
+      {
+        id: 'assistant-tool-2',
+        type: 'tool',
+        toolCallId: 'tool-1',
+        toolName: 'bash',
+        args: {
+          command: 'pwd',
+        },
+        status: 'done',
+        durationMs: 12,
+        success: true,
+        resultSummary: 'done',
+        resultFull: 'done',
+      },
+    ], 'gpt-4o', 'openai', expect.objectContaining({
       usage: {
         inputTokens: 10,
         outputTokens: 20,
@@ -249,7 +280,16 @@ describe('createRuntime() — 集成门面', () => {
       aborted: false,
       sessionId: 'session-1',
     }))
-    expect(emitted.map(event => event.type)).toEqual(['text_delta', 'tool_start', 'tool_end', 'context_update', 'turn_end'])
+    expect(emitted.map(event => event.type)).toEqual([
+      'model_request_started',
+      'model_first_chunk',
+      'text_delta',
+      'tool_start',
+      'tool_end',
+      'model_request_finished',
+      'context_update',
+      'turn_end',
+    ])
   })
 
   it('pipe 模式可要求先等待 MCP 就绪', async () => {

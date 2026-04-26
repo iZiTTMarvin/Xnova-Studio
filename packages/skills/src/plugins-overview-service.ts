@@ -126,11 +126,11 @@ function collectSkillUsage(
     try {
       const snapshot = sessionStore.loadMessages(session.sessionId)
       for (const message of snapshot.messages) {
-        for (const toolEvent of message.toolEvents ?? []) {
-          if (toolEvent.toolName !== 'skill') {
+        for (const block of message.blocks) {
+          if (block.type !== 'tool' || block.toolName !== 'skill') {
             continue
           }
-          const name = toolEvent.args['name']
+          const name = block.args['name']
           if (typeof name !== 'string') {
             continue
           }

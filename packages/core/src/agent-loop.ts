@@ -106,6 +106,11 @@ export type AgentEvent =
     e2eMs: number;
     tps: number
 }
+    | {
+    type: 'llm_first_chunk';
+    chunkType: 'text' | 'thinking' | 'tool_call';
+    elapsedMs: number
+}
     | { type: 'llm_error'; error: string; partialOutputTokens?: number }
     | { type: 'tool_fallback'; toolName: string; fromLevel: string; toLevel: string; reason: string }
     | { type: 'post_tool_feedback'; toolName: string; toolCallId: string; feedback: string }
@@ -365,6 +370,11 @@ export class AgentLoop {
                 if (!firstContentChunk && (chunk.type === 'text' || chunk.type === 'thinking' || chunk.type === 'tool_call')) {
                     ttftMs = Date.now() - requestStart
                     firstContentChunk = true
+                    yield {
+                        type: 'llm_first_chunk',
+                        chunkType: chunk.type,
+                        elapsedMs: ttftMs,
+                    }
                 }
 
                 const mapped = this.#mapChunk(chunk, pendingToolCalls)

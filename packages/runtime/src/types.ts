@@ -39,6 +39,10 @@ export type ResolvedConfig = CCodeConfig
 
 /** Runtime 向 Host 发出的事件类型 */
 export type RuntimeEventType =
+  | 'model_request_started' // 模型请求开始
+  | 'model_first_chunk'     // 收到首个 chunk
+  | 'model_request_finished' // 模型请求结束
+  | 'model_request_failed'  // 模型请求失败
   | 'text_delta'        // LLM 流式文本片段
   | 'thinking'          // 思考过程片段
   | 'tool_start'        // 工具调用开始

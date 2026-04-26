@@ -61,6 +61,10 @@ import type {
   SessionSnapshot,
   SessionSummary,
 } from '@persistence/session-types.js'
+import {
+  getMessagePlainText,
+  SESSION_CONVERSATION_SCHEMA_VERSION,
+} from '@persistence/index.js'
 import { generateEventId } from '@persistence/session-utils.js'
 import type { LoadedPluginInfo } from '@plugin/types.js'
 import type { LLMProvider } from '@providers/provider.js'
@@ -351,8 +355,9 @@ function toStructuredHistory(snapshot: SessionSnapshot): Message[] {
     .filter((message) => message.role === 'user' || message.role === 'assistant')
     .map((message) => ({
       role: message.role,
-      content: message.content,
+      content: getMessagePlainText(message),
     }))
+    .filter((message) => message.content.length > 0)
 }
 
 function createResumeEvent(input: {
@@ -371,6 +376,7 @@ function createResumeEvent(input: {
     uuid: input.eventId,
     parentUuid: input.parentUuid,
     cwd: input.cwd,
+    conversationSchemaVersion: SESSION_CONVERSATION_SCHEMA_VERSION,
     provider: input.provider,
     model: input.model,
     accumulatedMs: input.accumulatedMs,

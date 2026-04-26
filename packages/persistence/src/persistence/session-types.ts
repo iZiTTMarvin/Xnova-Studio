@@ -1,6 +1,9 @@
 // src/persistence/session-types.ts
 
-import type { TokenUsage, MessageContent } from '@core/types.js'
+import type {
+  SessionConversationBlock,
+  SessionConversationMessage,
+} from './conversation-blocks.js'
 
 export type SessionEventType =
   // 已有
@@ -34,13 +37,13 @@ export interface SessionEvent {
   uuid: string // 本条事件 ID
   parentUuid: string | null // 上一条事件 ID
   cwd: string
+  conversationSchemaVersion?: number
   gitBranch?: string
   message?: {
     role: string
-    content: string | MessageContent[]
+    blocks: SessionConversationBlock[]
     model?: string
     provider?: string
-    usage?: TokenUsage
     /** assistant 消息本轮累计 token 用量 */
     assistantUsage?: {
       inputTokens: number
@@ -54,8 +57,6 @@ export interface SessionEvent {
     llmCallCount?: number
     /** 本轮工具调用次数 */
     toolCallCount?: number
-    /** 思考过程（extended thinking） */
-    thinking?: string
   }
   provider?: string
   model?: string
@@ -135,49 +136,13 @@ export interface SessionEvent {
   resolution?: 'graceful' | 'forced'
 }
 
-/** 工具执行记录（loadMessages 还原用） */
-export interface SnapshotToolEvent {
-  toolCallId: string
-  toolName: string
-  args: Record<string, unknown>
-  durationMs?: number
-  success?: boolean
-  resultSummary?: string
-  resultFull?: string
-  /** dispatch_agent 关联的子 Agent ID */
-  agentId?: string
-}
-
 export interface SessionSnapshot {
+  conversationSchemaVersion: number
   sessionId: string
   provider: string
   model: string
   cwd: string
-  messages: Array<{
-    id: string
-    role: 'user' | 'assistant' | 'system'
-    content: string
-    toolEvents?: SnapshotToolEvent[]
-    /** assistant 消息的模型名（中途可能切换） */
-    model?: string
-    /** assistant 消息的供应商名 */
-    provider?: string
-    /** assistant 消息本轮累计 token 用量 */
-    usage?: {
-      inputTokens: number
-      outputTokens: number
-      cacheReadTokens: number
-      cacheWriteTokens: number
-    }
-    /** LLM 停止原因 */
-    stopReason?: string
-    /** 本轮 LLM 调用次数 */
-    llmCallCount?: number
-    /** 本轮工具调用次数 */
-    toolCallCount?: number
-    /** 思考过程 */
-    thinking?: string
-  }>
+  messages: SessionConversationMessage[]
   /** 当前分支的叶节点 UUID */
   leafEventUuid: string | null
 }

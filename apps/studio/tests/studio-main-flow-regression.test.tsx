@@ -209,12 +209,24 @@ describe('studio main flow regression', () => {
             {
               id: 'user-1',
               role: 'user',
-              content: '请继续实现主壳聊天流。',
+              blocks: [
+                {
+                  id: 'user-text-1',
+                  type: 'text',
+                  content: '请继续实现主壳聊天流。',
+                },
+              ],
             },
             {
               id: 'assistant-1',
               role: 'assistant',
-              content: '收到，我先把会话聊天视图补上。',
+              blocks: [
+                {
+                  id: 'assistant-text-1',
+                  type: 'text',
+                  content: '收到，我先把会话聊天视图补上。',
+                },
+              ],
             },
           ],
           subagents: [],

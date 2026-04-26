@@ -3,6 +3,7 @@ import {
   loadResolvedConfig,
   type ResolvedConfigResult,
 } from '@config/resolver.js'
+import { getMessagePlainText } from '@persistence/index.js'
 import { createEngineServiceApi } from '@xnova/runtime'
 import type {
   EngineServiceApi,
@@ -197,8 +198,9 @@ function buildResumeHistory(
       )
       .map((message) => ({
         role: message.role,
-        content: message.content,
+        content: getMessagePlainText(message),
       }))
+      .filter((message) => message.content.length > 0)
 
     return [
       ...restoredHistory,
@@ -791,8 +793,13 @@ export function createStudioRuntimeService(
     bridgeState: StudioRuntimeBridgeState,
   ): RuntimeHostBridge => ({
     emit(event: RuntimeEvent) {
-      bridgeState.submitActivity?.touch()
       const activeRun = currentRun
+      const isRuntimeTerminalEvent =
+        event.type === 'turn_end' || event.type === 'session_end'
+      if (isRuntimeTerminalEvent && (!activeRun || activeRun.settled)) {
+        return
+      }
+      bridgeState.submitActivity?.touch()
       if (activeRun) {
         touchActiveRun(activeRun, event.sessionId)
       }

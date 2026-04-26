@@ -271,10 +271,143 @@ describe('studio runtime service', () => {
       'text_delta',
       'run_cancelled',
     ])
+    const lateRuntimeBridge = runtimeBridge as RuntimeHostBridge | null
+    if (lateRuntimeBridge) {
+      lateRuntimeBridge.emit({
+        type: 'turn_end',
+        timestamp: '2026-04-26T00:00:03.000Z',
+        sessionId: 'session-1',
+        payload: {
+          stopReason: 'end_turn',
+          aborted: false,
+        },
+      })
+      lateRuntimeBridge.emit({
+        type: 'session_end',
+        timestamp: '2026-04-26T00:00:04.000Z',
+        sessionId: 'session-1',
+        payload: {
+          status: 'done',
+        },
+      })
+    }
+    expect(emittedEvents.map((event) => event.type)).toEqual([
+      'run_started',
+      'text_delta',
+      'run_cancelled',
+    ])
     await expect(submitPromise).resolves.toMatchObject({
       ok: false,
       error: expect.stringContaining('已停止当前运行'),
     })
+  })
+
+  it('runtime 发出 model_request_* 事件时，会透传给 renderer 并保留 runId', async () => {
+    let runtimeBridge: RuntimeHostBridge | null = null
+
+    const runtimeInstance: RuntimeInstance = {
+      submit: vi.fn(async () => {
+        runtimeBridge?.emit({
+          type: 'model_request_started',
+          timestamp: '2026-04-26T00:00:00.000Z',
+          sessionId: 'session-1',
+          payload: {
+            providerId: 'minimax',
+            modelId: 'MiniMax-M2.7',
+            phase: 'initial',
+          },
+        })
+        runtimeBridge?.emit({
+          type: 'model_first_chunk',
+          timestamp: '2026-04-26T00:00:01.000Z',
+          sessionId: 'session-1',
+          payload: {
+            elapsedMs: 900,
+          },
+        })
+        runtimeBridge?.emit({
+          type: 'model_request_finished',
+          timestamp: '2026-04-26T00:00:02.000Z',
+          sessionId: 'session-1',
+          payload: {
+            ttftMs: 900,
+            elapsedMs: 1400,
+          },
+        })
+        return {
+          text: 'done',
+          thinking: '',
+          stopReason: 'end_turn',
+          llmCallCount: 1,
+          toolCallCount: 0,
+          usage: {
+            inputTokens: 1,
+            outputTokens: 1,
+            cacheReadTokens: 0,
+            cacheWriteTokens: 0,
+          },
+          aborted: false,
+          historyCompacted: false,
+          sessionId: 'session-1',
+        }
+      }),
+      abort: vi.fn(),
+      dispose: vi.fn(async () => undefined),
+      getSnapshot: vi.fn(() => ({
+        sessionId: 'session-1',
+        isRunning: false,
+        provider: 'minimax',
+        model: 'MiniMax-M2.7',
+        warnings: [],
+      })),
+    }
+    const service = createStudioRuntimeService({
+      createRuntimeFn: vi.fn(async (_input, bridge) => {
+        runtimeBridge = bridge
+        return runtimeInstance
+      }),
+      loadResolvedConfigFn: vi.fn(() => ({
+        effective: {
+          defaultProvider: 'minimax',
+          defaultModel: 'MiniMax-M2.7',
+          providers: {},
+        },
+        source: {},
+        warnings: [],
+      })),
+    })
+    const emittedEvents: Array<{ type: string; runId?: string }> = []
+
+    await expect(
+      service.submit(
+        {
+          text: '继续',
+          projectPath: 'D:/workspace/demo',
+          providerId: 'minimax',
+          modelId: 'MiniMax-M2.7',
+        },
+        {
+          workspacePath: 'D:/workspace/demo',
+          lastSelection: null,
+        },
+        (event) => {
+          emittedEvents.push(event)
+        },
+      ),
+    ).resolves.toEqual({
+      ok: true,
+      sessionId: 'session-1',
+    })
+
+    expect(emittedEvents.map((event) => event.type)).toEqual([
+      'run_started',
+      'model_request_started',
+      'model_first_chunk',
+      'model_request_finished',
+      'run_completed',
+    ])
+    expect(emittedEvents[1]?.runId).toBe(emittedEvents[0]?.runId)
+    expect(emittedEvents[2]?.runId).toBe(emittedEvents[0]?.runId)
   })
 
   it('runtime 发出 turn_end 后，即使 submit 暂不 resolve，也会收敛为 run_completed', async () => {
@@ -670,6 +803,7 @@ describe('studio runtime service', () => {
         listSessions: vi.fn(() => []),
         listBranches: vi.fn(() => []),
         loadSession: vi.fn((sessionId: string) => ({
+          conversationSchemaVersion: 2,
           sessionId,
           leafEventUuid: 'leaf-1',
           cwd: 'D:/workspace/demo',
@@ -679,12 +813,24 @@ describe('studio runtime service', () => {
             {
               id: 'user-1',
               role: 'user' as const,
-              content: '历史用户消息',
+              blocks: [
+                {
+                  id: 'user-text-1',
+                  type: 'text' as const,
+                  content: '历史用户消息',
+                },
+              ],
             },
             {
               id: 'assistant-1',
               role: 'assistant' as const,
-              content: '历史助手消息',
+              blocks: [
+                {
+                  id: 'assistant-text-1',
+                  type: 'text' as const,
+                  content: '历史助手消息',
+                },
+              ],
             },
           ],
         })),

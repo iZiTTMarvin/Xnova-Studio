@@ -5,6 +5,7 @@ import type {
   RuntimeCancelResult,
   RuntimeInspectResult,
   StudioBridgeApi,
+  StudioConversationBlock,
   StudioHostState,
   StudioProjectSessionSummary,
   StudioRunStatus,
@@ -50,51 +51,11 @@ export interface ContextState {
   level: 'normal' | 'warning' | 'critical' | 'overflow'
 }
 
-export type LiveConversationBlock =
-  | {
-      id: string
-      type: 'text'
-      content: string
-    }
-  | {
-      id: string
-      type: 'thinking'
-      content: string
-    }
-  | {
-      id: string
-      type: 'tool'
-      toolCallId: string
-      toolName: string
-      args: Record<string, unknown>
-      status: 'running' | 'done'
-      durationMs?: number
-      success?: boolean
-      resultSummary?: string
-      resultFull?: string
-    }
-  | {
-      id: string
-      type: 'status'
-      content: string
-    }
-  | {
-      id: string
-      type: 'system'
-      content: string
-      level: 'info' | 'warning' | 'error'
-    }
-
-type LiveConversationToolEvent = Extract<LiveConversationBlock, { type: 'tool' }>
+export type LiveConversationBlock = StudioConversationBlock
 
 export interface LiveConversationState {
   pendingUserText: string | null
   blocks: LiveConversationBlock[]
-  // 兼容旧测试和页面门禁：这些字段由 blocks 派生，不再作为渲染事实源。
-  assistantText: string
-  thinkingText: string
-  toolEvents: Array<Omit<LiveConversationToolEvent, 'id' | 'type'>>
-  systemMessages: string[]
 }
 
 const RUN_IDLE_WARNING_MS = 90_000
@@ -108,23 +69,9 @@ function getErrorMessage(error: unknown): string {
 function createEmptyLiveConversation(
   pendingUserText: string | null = null,
 ): LiveConversationState {
-  return deriveLiveConversation(pendingUserText, [])
-}
-
-function toLiveToolEvent(
-  block: LiveConversationToolEvent,
-): Omit<LiveConversationToolEvent, 'id' | 'type'> {
   return {
-    toolCallId: block.toolCallId,
-    toolName: block.toolName,
-    args: block.args,
-    status: block.status,
-    ...(block.durationMs === undefined ? {} : { durationMs: block.durationMs }),
-    ...(block.success === undefined ? {} : { success: block.success }),
-    ...(block.resultSummary === undefined
-      ? {}
-      : { resultSummary: block.resultSummary }),
-    ...(block.resultFull === undefined ? {} : { resultFull: block.resultFull }),
+    pendingUserText,
+    blocks: [],
   }
 }
 
@@ -135,23 +82,6 @@ function deriveLiveConversation(
   return {
     pendingUserText,
     blocks,
-    assistantText: blocks
-      .filter((block): block is Extract<LiveConversationBlock, { type: 'text' }> =>
-        block.type === 'text')
-      .map((block) => block.content)
-      .join(''),
-    thinkingText: blocks
-      .filter((block): block is Extract<LiveConversationBlock, { type: 'thinking' }> =>
-        block.type === 'thinking')
-      .map((block) => block.content)
-      .join(''),
-    toolEvents: blocks
-      .filter((block): block is LiveConversationToolEvent => block.type === 'tool')
-      .map(toLiveToolEvent),
-    systemMessages: blocks
-      .filter((block): block is Extract<LiveConversationBlock, { type: 'system' }> =>
-        block.type === 'system')
-      .map((block) => block.content),
   }
 }
 
@@ -202,7 +132,11 @@ function appendLiveThinkingBlock(
   }
 
   const lastBlock = current.blocks.at(-1)
-  if (lastBlock?.type === 'thinking') {
+  if (
+    lastBlock?.type === 'thinking' &&
+    lastBlock.endedAt === undefined &&
+    lastBlock.durationMs === undefined
+  ) {
     return replaceLiveBlocks(current, [
       ...current.blocks.slice(0, -1),
       {
@@ -218,8 +152,38 @@ function appendLiveThinkingBlock(
       id,
       type: 'thinking',
       content,
+      startedAt: Date.now(),
     },
   ])
+}
+
+function finalizeOpenThinkingBlocks(
+  current: LiveConversationState,
+): LiveConversationState {
+  const endedAt = Date.now()
+  let changed = false
+  const nextBlocks = current.blocks.map((block) => {
+    if (block.type !== 'thinking') {
+      return block
+    }
+    if (block.endedAt !== undefined || block.durationMs !== undefined) {
+      return block
+    }
+    changed = true
+    if (block.startedAt !== undefined) {
+      return {
+        ...block,
+        endedAt,
+        durationMs: Math.max(0, endedAt - block.startedAt),
+      }
+    }
+    return {
+      ...block,
+      endedAt,
+    }
+  })
+
+  return changed ? replaceLiveBlocks(current, nextBlocks) : current
 }
 
 function appendLiveStatusBlock(
@@ -411,6 +375,9 @@ export function useStudioBridge() {
       modelId: null,
     },
   })
+  const activeRunIdRef = useRef<string | null>(null)
+  const finalizedRunIdsRef = useRef<Set<string>>(new Set())
+  const finalizedTerminalStatusRef = useRef<StudioRunStatus | null>(null)
 
   const createLiveBlockId = (kind: LiveConversationBlock['type']): string => {
     liveBlockSequenceRef.current += 1
@@ -579,6 +546,9 @@ export function useStudioBridge() {
       setLastRuntimeEventAt(null)
       setRunIdleWarning(null)
       setCurrentRunStep(null)
+      activeRunIdRef.current = null
+      finalizedRunIdsRef.current.clear()
+      finalizedTerminalStatusRef.current = null
       cancelRequestedRef.current = false
       setCurrentAgentId(null)
       setCurrentProviderId(null)
@@ -733,16 +703,79 @@ export function useStudioBridge() {
         return
       }
 
+      const isTerminalEvent =
+        event.type === 'run_completed' ||
+        event.type === 'run_failed' ||
+        event.type === 'run_cancelled' ||
+        event.type === 'turn_end' ||
+        event.type === 'session_end' ||
+        event.type === 'model_request_failed'
+
+      if (event.type === 'run_started' && event.runId) {
+        activeRunIdRef.current = event.runId
+        finalizedRunIdsRef.current.delete(event.runId)
+        finalizedTerminalStatusRef.current = null
+      } else {
+        if (event.runId) {
+          if (finalizedRunIdsRef.current.has(event.runId)) {
+            return
+          }
+          if (
+            activeRunIdRef.current !== null &&
+            event.runId !== activeRunIdRef.current
+          ) {
+            return
+          }
+        } else if (isTerminalEvent && finalizedTerminalStatusRef.current !== null) {
+          return
+        }
+      }
+
       setLastRuntimeEvent(event)
       setLastRuntimeEventAt(Date.now())
       setRunIdleWarning(null)
       switch (event.type) {
         case 'run_started':
           cancelRequestedRef.current = false
+          activeRunIdRef.current = event.runId ?? null
           setCurrentRunId(event.runId ?? null)
           setIsSubmitting(true)
           setRunStatus('running')
           setCurrentRunStep(RUN_STEP_CALLING_MODEL)
+          break
+        case 'model_request_started':
+          setRunStatus((current) =>
+            isActiveRunStatus(current) || current === 'idle'
+              ? 'running'
+              : current,
+          )
+          setCurrentRunStep('正在请求模型')
+          break
+        case 'model_first_chunk':
+          setRunStatus((current) =>
+            isActiveRunStatus(current) || current === 'idle'
+              ? 'running'
+              : current,
+          )
+          setCurrentRunStep('模型已开始响应')
+          break
+        case 'model_request_finished':
+          setRunStatus((current) =>
+            isActiveRunStatus(current) || current === 'idle'
+              ? 'running'
+              : current,
+          )
+          break
+        case 'model_request_failed':
+          if (event.runId) {
+            finalizedRunIdsRef.current.add(event.runId)
+          }
+          finalizedTerminalStatusRef.current = 'failed'
+          activeRunIdRef.current = null
+          setIsSubmitting(false)
+          setRunStatus('failed')
+          setCurrentRunId(null)
+          setCurrentRunStep('运行失败')
           break
         case 'text_delta':
         case 'thinking':
@@ -783,12 +816,25 @@ export function useStudioBridge() {
           break
         case 'run_completed':
         case 'session_end':
+          if (event.runId) {
+            finalizedRunIdsRef.current.add(event.runId)
+          }
+          finalizedTerminalStatusRef.current = 'completed'
+          activeRunIdRef.current = null
           setIsSubmitting(false)
           setRunStatus('completed')
           setCurrentRunId(null)
           setCurrentRunStep('运行已完成')
           break
         case 'turn_end':
+          if (event.runId) {
+            finalizedRunIdsRef.current.add(event.runId)
+          }
+          finalizedTerminalStatusRef.current =
+            event.payload?.error || event.payload?.aborted === true
+              ? 'failed'
+              : 'completed'
+          activeRunIdRef.current = null
           setIsSubmitting(false)
           setRunStatus(
             event.payload?.error || event.payload?.aborted === true
@@ -803,12 +849,22 @@ export function useStudioBridge() {
           )
           break
         case 'run_failed':
+          if (event.runId) {
+            finalizedRunIdsRef.current.add(event.runId)
+          }
+          finalizedTerminalStatusRef.current = 'failed'
+          activeRunIdRef.current = null
           setIsSubmitting(false)
           setRunStatus('failed')
           setCurrentRunId(null)
           setCurrentRunStep('运行失败')
           break
         case 'run_cancelled':
+          if (event.runId) {
+            finalizedRunIdsRef.current.add(event.runId)
+          }
+          finalizedTerminalStatusRef.current = 'cancelled'
+          activeRunIdRef.current = null
           setIsSubmitting(false)
           setRunStatus('cancelled')
           setCurrentRunId(null)
@@ -823,7 +879,7 @@ export function useStudioBridge() {
             return deriveLiveConversation(current.pendingUserText, [])
           case 'text_delta':
             return appendLiveTextBlock(
-              current,
+              finalizeOpenThinkingBlocks(current),
               createLiveBlockId('text'),
               typeof event.payload?.text === 'string' ? event.payload.text : '',
             )
@@ -847,22 +903,23 @@ export function useStudioBridge() {
                 ? (event.payload.args as Record<string, unknown>)
                 : {}
             const runningStep = createToolRunningStep(toolName, args)
-            const lastBlock = current.blocks.at(-1)
+            const finalizedCurrent = finalizeOpenThinkingBlocks(current)
+            const lastBlock = finalizedCurrent.blocks.at(-1)
             const shouldInsertStatus =
-              current.blocks.length === 0 ||
+              finalizedCurrent.blocks.length === 0 ||
               (lastBlock?.type !== 'text' && lastBlock?.type !== 'status')
             const blocks: LiveConversationBlock[] = shouldInsertStatus
               ? [
-                  ...current.blocks,
+                  ...finalizedCurrent.blocks,
                   {
                     id: createLiveBlockId('status'),
                     type: 'status',
                     content: runningStep,
                   },
                 ]
-              : current.blocks
+              : finalizedCurrent.blocks
 
-            return replaceLiveBlocks(current, [
+            return replaceLiveBlocks(finalizedCurrent, [
               ...blocks,
                 {
                   id: createLiveBlockId('tool'),
@@ -887,7 +944,8 @@ export function useStudioBridge() {
               changed = true
               return {
                 ...block,
-                status: 'done' as const,
+                status:
+                  event.payload?.success === false ? 'error' as const : 'done' as const,
                 ...(typeof event.payload?.durationMs === 'number'
                   ? { durationMs: event.payload.durationMs }
                   : {}),
@@ -907,18 +965,19 @@ export function useStudioBridge() {
           case 'run_completed':
           case 'session_end':
             return appendLiveStatusBlock(
-              current,
+              finalizeOpenThinkingBlocks(current),
               createLiveBlockId('status'),
               '运行已完成',
             )
           case 'turn_end':
             return appendLiveStatusBlock(
-              current,
+              finalizeOpenThinkingBlocks(current),
               createLiveBlockId('status'),
               event.payload?.error || event.payload?.aborted === true
                 ? '运行失败'
                 : '运行已完成',
             )
+          case 'model_request_failed':
           case 'warning':
           case 'error':
           case 'runtime.error':
@@ -940,7 +999,7 @@ export function useStudioBridge() {
                   ? 'info'
                   : 'error'
             return appendLiveSystemBlock(
-              current,
+              finalizeOpenThinkingBlocks(current),
               createLiveBlockId('system'),
               message,
               level,
@@ -1272,6 +1331,8 @@ export function useStudioBridge() {
     setLastRuntimeEventAt(Date.now())
     setRunIdleWarning(null)
     setCurrentRunStep('正在启动运行')
+    activeRunIdRef.current = null
+    finalizedTerminalStatusRef.current = null
     cancelRequestedRef.current = false
     setRuntimeError(null)
     setShellError(null)
@@ -1307,7 +1368,7 @@ export function useStudioBridge() {
         setCurrentRunStep('运行失败')
         setLiveConversation((current) =>
           appendLiveSystemBlock(
-            current,
+            finalizeOpenThinkingBlocks(current),
             createLiveBlockId('system'),
             submitResult.error,
             'error',
@@ -1407,7 +1468,7 @@ export function useStudioBridge() {
       setShellError(message)
       setLiveConversation((current) =>
         appendLiveSystemBlock(
-          current,
+          finalizeOpenThinkingBlocks(current),
           createLiveBlockId('system'),
           message,
           'error',
@@ -1440,6 +1501,7 @@ export function useStudioBridge() {
     setIsSubmitting(false)
     setRunIdleWarning(null)
     setCurrentRunStep('正在停止当前运行')
+    setLiveConversation((current) => finalizeOpenThinkingBlocks(current))
 
     try {
       const result = await bridge.runtime.cancel({
@@ -1452,7 +1514,7 @@ export function useStudioBridge() {
         setRuntimeError(result.error)
         setLiveConversation((current) =>
           appendLiveSystemBlock(
-            current,
+            finalizeOpenThinkingBlocks(current),
             createLiveBlockId('system'),
             result.error,
             'error',
@@ -1474,7 +1536,7 @@ export function useStudioBridge() {
       setRuntimeError(message)
       setLiveConversation((current) =>
         appendLiveSystemBlock(
-          current,
+          finalizeOpenThinkingBlocks(current),
           createLiveBlockId('system'),
           message,
           'error',
@@ -1509,7 +1571,7 @@ export function useStudioBridge() {
       setRuntimeError(message)
       setLiveConversation((current) =>
         appendLiveSystemBlock(
-          current,
+          finalizeOpenThinkingBlocks(current),
           createLiveBlockId('system'),
           message,
           'error',
@@ -1540,7 +1602,7 @@ export function useStudioBridge() {
       setRuntimeError(message)
       setLiveConversation((current) =>
         appendLiveSystemBlock(
-          current,
+          finalizeOpenThinkingBlocks(current),
           createLiveBlockId('system'),
           message,
           'error',

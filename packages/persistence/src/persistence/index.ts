@@ -8,6 +8,15 @@ export { SessionStore } from './session-store.js'
 export type { SessionEvent, SessionSnapshot, SessionSummary, BranchInfo, SubagentSnapshot, SubagentSnapshotEvent } from './session-types.js'
 export type { SessionEventType } from './session-types.js'
 export {
+  SESSION_CONVERSATION_SCHEMA_VERSION,
+  getMessagePlainText,
+  createTextBlock,
+} from './conversation-blocks.js'
+export type {
+  SessionConversationBlock,
+  SessionConversationMessage,
+} from './conversation-blocks.js'
+export {
   toProjectSlug,
   generateSessionId,
   generateEventId,

@@ -48,25 +48,31 @@ describe('skills/plugins overview service', () => {
         loadMessages: (sessionId: string) =>
           sessionId === 'session-2'
             ? {
+                conversationSchemaVersion: 2,
                 sessionId,
                 provider: 'anthropic',
                 model: 'claude-sonnet-4-6',
                 cwd: 'D:/workspace/demo',
                 messages: [
                   {
-                    id: 'tools-2',
-                    role: 'system' as const,
-                    content: '',
-                    toolEvents: [
+                    id: 'assistant-2',
+                    role: 'assistant' as const,
+                    blocks: [
                       {
+                        id: 'tool-a',
+                        type: 'tool' as const,
                         toolCallId: 'a',
                         toolName: 'skill',
                         args: { name: 'repo-plugin:deploy' },
+                        status: 'done' as const,
                       },
                       {
+                        id: 'tool-b',
+                        type: 'tool' as const,
                         toolCallId: 'b',
                         toolName: 'skill',
                         args: { name: 'commit' },
+                        status: 'done' as const,
                       },
                     ],
                   },
@@ -74,20 +80,23 @@ describe('skills/plugins overview service', () => {
                 leafEventUuid: null,
               }
             : {
+                conversationSchemaVersion: 2,
                 sessionId,
                 provider: 'anthropic',
                 model: 'claude-sonnet-4-6',
                 cwd: 'D:/workspace/demo',
                 messages: [
                   {
-                    id: 'tools-1',
-                    role: 'system' as const,
-                    content: '',
-                    toolEvents: [
+                    id: 'assistant-1',
+                    role: 'assistant' as const,
+                    blocks: [
                       {
+                        id: 'tool-c',
+                        type: 'tool' as const,
                         toolCallId: 'c',
                         toolName: 'skill',
                         args: { name: 'commit' },
+                        status: 'done' as const,
                       },
                     ],
                   },
@@ -127,6 +136,7 @@ describe('skills/plugins overview service', () => {
       sessionStore: {
         list: () => [],
         loadMessages: () => ({
+          conversationSchemaVersion: 2,
           sessionId: 'empty',
           provider: '',
           model: '',

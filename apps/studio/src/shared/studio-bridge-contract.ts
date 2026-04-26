@@ -151,6 +151,10 @@ export type StudioRunStatus =
 
 export type StudioRunLifecycleEventType =
   | 'run_started'
+  | 'model_request_started'
+  | 'model_first_chunk'
+  | 'model_request_finished'
+  | 'model_request_failed'
   | 'text_delta'
   | 'thinking'
   | 'tool_start'
@@ -229,25 +233,51 @@ export interface StudioProjectSessionSummary {
   subagents: StudioProjectSubagentSummary[]
 }
 
-export interface StudioConversationToolEvent {
-  toolCallId: string
-  toolName: string
-  args: Record<string, unknown>
-  durationMs?: number
-  success?: boolean
-  resultSummary?: string
-  resultFull?: string
-  agentId?: string
-}
+export type StudioConversationBlock =
+  | {
+      id: string
+      type: 'text'
+      content: string
+    }
+  | {
+      id: string
+      type: 'thinking'
+      content: string
+      startedAt?: number
+      endedAt?: number
+      durationMs?: number
+    }
+  | {
+      id: string
+      type: 'tool'
+      toolCallId: string
+      toolName: string
+      args: Record<string, unknown>
+      status: 'running' | 'done' | 'error'
+      durationMs?: number
+      success?: boolean
+      resultSummary?: string
+      resultFull?: string
+      agentId?: string
+    }
+  | {
+      id: string
+      type: 'status'
+      content: string
+    }
+  | {
+      id: string
+      type: 'system'
+      content: string
+      level: 'info' | 'warning' | 'error'
+    }
 
 export interface StudioConversationMessage {
   id: string
   role: 'user' | 'assistant' | 'system'
-  content: string
-  toolEvents?: StudioConversationToolEvent[]
+  blocks: StudioConversationBlock[]
   providerId?: string | null
   modelId?: string | null
-  thinking?: string | null
   usage?: {
     inputTokens: number
     outputTokens: number
@@ -261,6 +291,19 @@ export interface StudioConversationMessage {
 export interface StudioActiveSessionDetail extends StudioProjectSessionSummary {
   leafEventUuid: string | null
   messages: StudioConversationMessage[]
+}
+
+export function getMessagePlainText(
+  message: Pick<StudioConversationMessage, 'blocks'>,
+): string {
+  return message.blocks
+    .filter(
+      (block): block is Extract<StudioConversationBlock, { type: 'text' }> =>
+        block.type === 'text',
+    )
+    .map((block) => block.content)
+    .join('')
+    .trim()
 }
 
 export interface StudioScratchpadEntry {

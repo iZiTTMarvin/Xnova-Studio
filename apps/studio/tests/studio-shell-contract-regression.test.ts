@@ -77,12 +77,24 @@ describe('studio shell contract regression', () => {
             {
               id: 'user-1',
               role: 'user',
-              content: '请继续实现 Studio 主链路。',
+              blocks: [
+                {
+                  id: 'user-text-1',
+                  type: 'text',
+                  content: '请继续实现 Studio 主链路。',
+                },
+              ],
             },
             {
               id: 'assistant-1',
               role: 'assistant',
-              content: '收到，我先把会话视图补上。',
+              blocks: [
+                {
+                  id: 'assistant-text-1',
+                  type: 'text',
+                  content: '收到，我先把会话视图补上。',
+                },
+              ],
             },
           ],
           subagents: [],
@@ -109,12 +121,24 @@ describe('studio shell contract regression', () => {
           {
             id: 'user-1',
             role: 'user',
-            content: '请继续实现 Studio 主链路。',
+            blocks: [
+              {
+                id: 'user-text-1',
+                type: 'text',
+                content: '请继续实现 Studio 主链路。',
+              },
+            ],
           },
           {
             id: 'assistant-1',
             role: 'assistant',
-            content: '收到，我先把会话视图补上。',
+            blocks: [
+              {
+                id: 'assistant-text-1',
+                type: 'text',
+                content: '收到，我先把会话视图补上。',
+              },
+            ],
           },
         ],
       },

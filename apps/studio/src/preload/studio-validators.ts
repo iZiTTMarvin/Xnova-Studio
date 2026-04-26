@@ -1559,68 +1559,118 @@ function parseProjectSessionSummary(
   }
 }
 
-function parseConversationToolEvent(
+function parseConversationBlock(
   payload: unknown,
   subject: string,
 ) {
   const value = assertPlainObject(payload, subject)
-  if (typeof value.toolCallId !== 'string') {
-    throw new StudioBridgeValidationError(`${subject}.toolCallId 必须是字符串。`)
-  }
-  if (typeof value.toolName !== 'string') {
-    throw new StudioBridgeValidationError(`${subject}.toolName 必须是字符串。`)
-  }
-  if (!isPlainObject(value.args)) {
-    throw new StudioBridgeValidationError(`${subject}.args 必须是对象。`)
+  if (typeof value.id !== 'string') {
+    throw new StudioBridgeValidationError(`${subject}.id 必须是字符串。`)
   }
   if (
-    value.durationMs !== undefined &&
-    value.durationMs !== null &&
-    typeof value.durationMs !== 'number'
+    typeof value.type !== 'string' ||
+    !['text', 'thinking', 'tool', 'status', 'system'].includes(value.type)
   ) {
-    throw new StudioBridgeValidationError(`${subject}.durationMs 必须是数字或 null。`)
-  }
-  if (
-    value.success !== undefined &&
-    value.success !== null &&
-    typeof value.success !== 'boolean'
-  ) {
-    throw new StudioBridgeValidationError(`${subject}.success 必须是布尔值或 null。`)
-  }
-  if (
-    value.resultSummary !== undefined &&
-    value.resultSummary !== null &&
-    typeof value.resultSummary !== 'string'
-  ) {
-    throw new StudioBridgeValidationError(`${subject}.resultSummary 必须是字符串或 null。`)
-  }
-  if (
-    value.resultFull !== undefined &&
-    value.resultFull !== null &&
-    typeof value.resultFull !== 'string'
-  ) {
-    throw new StudioBridgeValidationError(`${subject}.resultFull 必须是字符串或 null。`)
-  }
-  if (
-    value.agentId !== undefined &&
-    value.agentId !== null &&
-    typeof value.agentId !== 'string'
-  ) {
-    throw new StudioBridgeValidationError(`${subject}.agentId 必须是字符串或 null。`)
+    throw new StudioBridgeValidationError(`${subject}.type 非法。`)
   }
 
-  return {
-    toolCallId: value.toolCallId,
-    toolName: value.toolName,
-    args: value.args as Record<string, unknown>,
-    ...(typeof value.durationMs === 'number' ? { durationMs: value.durationMs } : {}),
-    ...(typeof value.success === 'boolean' ? { success: value.success } : {}),
-    ...(typeof value.resultSummary === 'string'
-      ? { resultSummary: value.resultSummary }
-      : {}),
-    ...(typeof value.resultFull === 'string' ? { resultFull: value.resultFull } : {}),
-    ...(typeof value.agentId === 'string' ? { agentId: value.agentId } : {}),
+  switch (value.type) {
+    case 'text':
+    case 'thinking':
+    case 'status':
+      if (typeof value.content !== 'string') {
+        throw new StudioBridgeValidationError(`${subject}.content 必须是字符串。`)
+      }
+      return {
+        id: value.id,
+        type: value.type,
+        content: value.content,
+      }
+    case 'system':
+      if (typeof value.content !== 'string') {
+        throw new StudioBridgeValidationError(`${subject}.content 必须是字符串。`)
+      }
+      if (
+        typeof value.level !== 'string' ||
+        !['info', 'warning', 'error'].includes(value.level)
+      ) {
+        throw new StudioBridgeValidationError(`${subject}.level 非法。`)
+      }
+      return {
+        id: value.id,
+        type: 'system' as const,
+        content: value.content,
+        level: value.level as 'info' | 'warning' | 'error',
+      }
+    case 'tool':
+      if (typeof value.toolCallId !== 'string') {
+        throw new StudioBridgeValidationError(`${subject}.toolCallId 必须是字符串。`)
+      }
+      if (typeof value.toolName !== 'string') {
+        throw new StudioBridgeValidationError(`${subject}.toolName 必须是字符串。`)
+      }
+      if (!isPlainObject(value.args)) {
+        throw new StudioBridgeValidationError(`${subject}.args 必须是对象。`)
+      }
+      if (
+        typeof value.status !== 'string' ||
+        !['running', 'done', 'error'].includes(value.status)
+      ) {
+        throw new StudioBridgeValidationError(`${subject}.status 非法。`)
+      }
+      if (
+        value.durationMs !== undefined &&
+        value.durationMs !== null &&
+        typeof value.durationMs !== 'number'
+      ) {
+        throw new StudioBridgeValidationError(`${subject}.durationMs 必须是数字或 null。`)
+      }
+      if (
+        value.success !== undefined &&
+        value.success !== null &&
+        typeof value.success !== 'boolean'
+      ) {
+        throw new StudioBridgeValidationError(`${subject}.success 必须是布尔值或 null。`)
+      }
+      if (
+        value.resultSummary !== undefined &&
+        value.resultSummary !== null &&
+        typeof value.resultSummary !== 'string'
+      ) {
+        throw new StudioBridgeValidationError(`${subject}.resultSummary 必须是字符串或 null。`)
+      }
+      if (
+        value.resultFull !== undefined &&
+        value.resultFull !== null &&
+        typeof value.resultFull !== 'string'
+      ) {
+        throw new StudioBridgeValidationError(`${subject}.resultFull 必须是字符串或 null。`)
+      }
+      if (
+        value.agentId !== undefined &&
+        value.agentId !== null &&
+        typeof value.agentId !== 'string'
+      ) {
+        throw new StudioBridgeValidationError(`${subject}.agentId 必须是字符串或 null。`)
+      }
+      return {
+        id: value.id,
+        type: 'tool' as const,
+        toolCallId: value.toolCallId,
+        toolName: value.toolName,
+        args: value.args as Record<string, unknown>,
+        status: value.status as 'running' | 'done' | 'error',
+        ...(typeof value.durationMs === 'number' ? { durationMs: value.durationMs } : {}),
+        ...(typeof value.success === 'boolean' ? { success: value.success } : {}),
+        ...(typeof value.resultSummary === 'string'
+          ? { resultSummary: value.resultSummary }
+          : {}),
+        ...(typeof value.resultFull === 'string' ? { resultFull: value.resultFull } : {}),
+        ...(typeof value.agentId === 'string' ? { agentId: value.agentId } : {}),
+      }
   }
+
+  throw new StudioBridgeValidationError(`${subject}.type 非法。`)
 }
 
 function parseConversationUsage(
@@ -1663,14 +1713,8 @@ function parseConversationMessage(
   ) {
     throw new StudioBridgeValidationError(`${subject}.role 非法。`)
   }
-  if (typeof value.content !== 'string') {
-    throw new StudioBridgeValidationError(`${subject}.content 必须是字符串。`)
-  }
-  if (
-    value.toolEvents !== undefined &&
-    !Array.isArray(value.toolEvents)
-  ) {
-    throw new StudioBridgeValidationError(`${subject}.toolEvents 必须是数组。`)
+  if (!Array.isArray(value.blocks)) {
+    throw new StudioBridgeValidationError(`${subject}.blocks 必须是数组。`)
   }
   if (
     value.providerId !== undefined &&
@@ -1685,13 +1729,6 @@ function parseConversationMessage(
     typeof value.modelId !== 'string'
   ) {
     throw new StudioBridgeValidationError(`${subject}.modelId 必须是字符串或 null。`)
-  }
-  if (
-    value.thinking !== undefined &&
-    value.thinking !== null &&
-    typeof value.thinking !== 'string'
-  ) {
-    throw new StudioBridgeValidationError(`${subject}.thinking 必须是字符串或 null。`)
   }
   if (
     value.usage !== undefined &&
@@ -1718,17 +1755,11 @@ function parseConversationMessage(
   return {
     id: value.id,
     role: value.role as 'user' | 'assistant' | 'system',
-    content: value.content,
-    ...(value.toolEvents === undefined
-      ? {}
-      : {
-          toolEvents: (value.toolEvents as unknown[]).map((item, index) =>
-            parseConversationToolEvent(item, `${subject}.toolEvents[${index}]`),
-          ),
-        }),
+    blocks: value.blocks.map((item, index) =>
+      parseConversationBlock(item, `${subject}.blocks[${index}]`),
+    ),
     ...(value.providerId === undefined ? {} : { providerId: value.providerId as string | null }),
     ...(value.modelId === undefined ? {} : { modelId: value.modelId as string | null }),
-    ...(typeof value.thinking === 'string' ? { thinking: value.thinking } : {}),
     ...(value.usage === undefined || value.usage === null
       ? {}
       : { usage: parseConversationUsage(value.usage, `${subject}.usage`) }),

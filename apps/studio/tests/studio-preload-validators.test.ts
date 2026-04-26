@@ -242,6 +242,42 @@ describe('studio preload validators', () => {
             subagents: [],
           },
         ],
+        activeSession: {
+          sessionId: 'session-1',
+          projectPath: 'D:/workspace/demo',
+          title: '继续实现 shell',
+          updatedAt: '2026-04-22T00:00:00.000Z',
+          gitBranch: 'main',
+          messageCount: 12,
+          providerId: 'anthropic',
+          modelId: 'claude-sonnet-4-6',
+          subagents: [],
+          leafEventUuid: 'assistant-1',
+          messages: [
+            {
+              id: 'assistant-1',
+              role: 'assistant',
+              blocks: [
+                {
+                  id: 'text-1',
+                  type: 'text',
+                  content: '我先查看目录',
+                },
+                {
+                  id: 'tool-1',
+                  type: 'tool',
+                  toolCallId: 'tool-1',
+                  toolName: 'read_file',
+                  args: {
+                    path: 'D:/workspace/demo/SPEC.md',
+                  },
+                  status: 'done',
+                  success: true,
+                },
+              ],
+            },
+          ],
+        },
         scratchpadEntries: [],
         defaults: {
           projectPath: 'D:/workspace/demo',
@@ -298,6 +334,42 @@ describe('studio preload validators', () => {
           subagents: [],
         },
       ],
+      activeSession: {
+        sessionId: 'session-1',
+        projectPath: 'D:/workspace/demo',
+        title: '继续实现 shell',
+        updatedAt: '2026-04-22T00:00:00.000Z',
+        gitBranch: 'main',
+        messageCount: 12,
+        providerId: 'anthropic',
+        modelId: 'claude-sonnet-4-6',
+        subagents: [],
+        leafEventUuid: 'assistant-1',
+        messages: [
+          {
+            id: 'assistant-1',
+            role: 'assistant',
+            blocks: [
+              {
+                id: 'text-1',
+                type: 'text',
+                content: '我先查看目录',
+              },
+              {
+                id: 'tool-1',
+                type: 'tool',
+                toolCallId: 'tool-1',
+                toolName: 'read_file',
+                args: {
+                  path: 'D:/workspace/demo/SPEC.md',
+                },
+                status: 'done',
+                success: true,
+              },
+            ],
+          },
+        ],
+      },
       scratchpadEntries: [],
       defaults: {
         projectPath: 'D:/workspace/demo',

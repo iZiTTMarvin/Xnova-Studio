@@ -29,6 +29,7 @@ import {
   sessionLogger,
   tokenMeter,
 } from '@xnova/core'
+import type { SessionConversationBlock } from '@persistence/index.js'
 import { agentCatalog } from '@tools/agent/catalog.js'
 import { getOrCreateProvider } from '@providers/registry.js'
 import { makeErrorEvent, makeEvent } from './events.js'
@@ -40,6 +41,154 @@ import type {
   RuntimeSnapshot,
   RuntimeTurnResult,
 } from './types.js'
+
+function appendAssistantTextBlock(
+  blocks: SessionConversationBlock[],
+  id: string,
+  content: string,
+): SessionConversationBlock[] {
+  if (!content) {
+    return blocks
+  }
+  const lastBlock = blocks.at(-1)
+  if (lastBlock?.type === 'text') {
+    return [
+      ...blocks.slice(0, -1),
+      {
+        ...lastBlock,
+        content: lastBlock.content + content,
+      },
+    ]
+  }
+  return [
+    ...blocks,
+    {
+      id,
+      type: 'text',
+      content,
+    },
+  ]
+}
+
+function appendAssistantThinkingBlock(
+  blocks: SessionConversationBlock[],
+  id: string,
+  content: string,
+): SessionConversationBlock[] {
+  if (!content) {
+    return blocks
+  }
+  const lastBlock = blocks.at(-1)
+  if (lastBlock?.type === 'thinking') {
+    return [
+      ...blocks.slice(0, -1),
+      {
+        ...lastBlock,
+        content: lastBlock.content + content,
+      },
+    ]
+  }
+  return [
+    ...blocks,
+    {
+      id,
+      type: 'thinking',
+      content,
+    },
+  ]
+}
+
+function appendAssistantSystemBlock(
+  blocks: SessionConversationBlock[],
+  id: string,
+  content: string,
+  level: 'info' | 'warning' | 'error',
+): SessionConversationBlock[] {
+  if (!content) {
+    return blocks
+  }
+  return [
+    ...blocks,
+    {
+      id,
+      type: 'system',
+      content,
+      level,
+    },
+  ]
+}
+
+function startAssistantToolBlock(
+  blocks: SessionConversationBlock[],
+  input: {
+    id: string
+    toolCallId: string
+    toolName: string
+    args: Record<string, unknown>
+  },
+): SessionConversationBlock[] {
+  return [
+    ...blocks,
+    {
+      id: input.id,
+      type: 'tool',
+      toolCallId: input.toolCallId,
+      toolName: input.toolName,
+      args: input.args,
+      status: 'running',
+    },
+  ]
+}
+
+function finishAssistantToolBlock(
+  blocks: SessionConversationBlock[],
+  input: {
+    id: string
+    toolCallId: string
+    toolName: string
+    durationMs: number
+    success: boolean
+    resultSummary?: string
+    resultFull?: string
+    agentId?: string
+  },
+): SessionConversationBlock[] {
+  let found = false
+  const nextBlocks = blocks.map((block) => {
+    if (block.type !== 'tool' || block.toolCallId !== input.toolCallId) {
+      return block
+    }
+    found = true
+    return {
+      ...block,
+      status: input.success ? ('done' as const) : ('error' as const),
+      durationMs: input.durationMs,
+      success: input.success,
+      ...(input.resultSummary === undefined ? {} : { resultSummary: input.resultSummary }),
+      ...(input.resultFull === undefined ? {} : { resultFull: input.resultFull }),
+      ...(input.agentId === undefined ? {} : { agentId: input.agentId }),
+    }
+  })
+  if (found) {
+    return nextBlocks
+  }
+  return [
+    ...blocks,
+    {
+      id: input.id,
+      type: 'tool',
+      toolCallId: input.toolCallId,
+      toolName: input.toolName,
+      args: {},
+      status: input.success ? ('done' as const) : ('error' as const),
+      durationMs: input.durationMs,
+      success: input.success,
+      ...(input.resultSummary === undefined ? {} : { resultSummary: input.resultSummary }),
+      ...(input.resultFull === undefined ? {} : { resultFull: input.resultFull }),
+      ...(input.agentId === undefined ? {} : { agentId: input.agentId }),
+    },
+  ]
+}
 
 function syncContextHistoryForSubmit(
   submitInput: RuntimeSubmitInput,
@@ -101,6 +250,14 @@ export async function createRuntime(
 
       const result = emptyTurnResult(lastSessionId)
       result.stopReason = 'end_turn'
+      let assistantBlocks: SessionConversationBlock[] = []
+      let assistantBlockSequence = 0
+      let modelRequestCount = 0
+      let currentModelRequestPhase: 'initial' | 'after_tool_result' | 'retry' = 'initial'
+      const nextAssistantBlockId = (type: SessionConversationBlock['type']) => {
+        assistantBlockSequence += 1
+        return `assistant-${type}-${assistantBlockSequence}`
+      }
 
       try {
         const bootstrapResult = await bootstrapAll(input.cwd)
@@ -162,17 +319,53 @@ export async function createRuntime(
           tokenMeter.consume(event)
 
           switch (event.type) {
+            case 'llm_start':
+              currentModelRequestPhase =
+                modelRequestCount === 0 ? 'initial' : 'after_tool_result'
+              modelRequestCount += 1
+              bridge.emit(makeEvent('model_request_started', {
+                providerId: event.provider,
+                modelId: event.model,
+                phase: currentModelRequestPhase,
+              }, lastSessionId ?? undefined))
+              break
+
+            case 'llm_first_chunk':
+              bridge.emit(makeEvent('model_first_chunk', {
+                providerId: providerName,
+                modelId: modelName,
+                phase: currentModelRequestPhase,
+                elapsedMs: event.elapsedMs,
+              }, lastSessionId ?? undefined))
+              break
+
             case 'text':
               result.text += event.text
+              assistantBlocks = appendAssistantTextBlock(
+                assistantBlocks,
+                nextAssistantBlockId('text'),
+                event.text,
+              )
               bridge.emit(makeEvent('text_delta', { text: event.text }, lastSessionId ?? undefined))
               break
 
             case 'thinking':
               result.thinking += event.text
+              assistantBlocks = appendAssistantThinkingBlock(
+                assistantBlocks,
+                nextAssistantBlockId('thinking'),
+                event.text,
+              )
               bridge.emit(makeEvent('thinking', { text: event.text }, lastSessionId ?? undefined))
               break
 
             case 'tool_start':
+              assistantBlocks = startAssistantToolBlock(assistantBlocks, {
+                id: nextAssistantBlockId('tool'),
+                toolCallId: event.toolCallId,
+                toolName: event.toolName,
+                args: event.args,
+              })
               bridge.emit(makeEvent('tool_start', {
                 toolName: event.toolName,
                 toolCallId: event.toolCallId,
@@ -182,6 +375,18 @@ export async function createRuntime(
 
             case 'tool_done':
               result.toolCallCount++
+              assistantBlocks = finishAssistantToolBlock(assistantBlocks, {
+                id: nextAssistantBlockId('tool'),
+                toolCallId: event.toolCallId,
+                toolName: event.toolName,
+                durationMs: event.durationMs,
+                success: event.success,
+                ...(event.resultSummary === undefined ? {} : { resultSummary: event.resultSummary }),
+                ...(event.resultFull === undefined ? {} : { resultFull: event.resultFull }),
+                ...(event.meta?.type === 'dispatch-agent'
+                  ? { agentId: event.meta.agentId }
+                  : {}),
+              })
               bridge.emit(makeEvent('tool_end', {
                 toolName: event.toolName,
                 toolCallId: event.toolCallId,
@@ -222,11 +427,27 @@ export async function createRuntime(
               result.usage.outputTokens += event.outputTokens
               result.usage.cacheReadTokens += event.cacheReadTokens
               result.usage.cacheWriteTokens += event.cacheWriteTokens
+              bridge.emit(makeEvent('model_request_finished', {
+                providerId: providerName,
+                modelId: modelName,
+                phase: currentModelRequestPhase,
+                ttftMs: event.ttftMs,
+                elapsedMs: event.e2eMs,
+              }, lastSessionId ?? undefined))
               bridge.emit(makeEvent('context_update', {
                 usedPercentage: contextTracker.getState().usedPercentage,
                 lastInputTokens: contextTracker.getState().lastInputTokens,
                 effectiveWindow: contextTracker.getState().effectiveWindow,
                 level: contextTracker.getState().level,
+              }, lastSessionId ?? undefined))
+              break
+
+            case 'llm_error':
+              bridge.emit(makeEvent('model_request_failed', {
+                providerId: providerName,
+                modelId: modelName,
+                phase: currentModelRequestPhase,
+                message: event.error,
               }, lastSessionId ?? undefined))
               break
 
@@ -265,6 +486,12 @@ export async function createRuntime(
 
             case 'error':
               result.error = event.error
+              assistantBlocks = appendAssistantSystemBlock(
+                assistantBlocks,
+                nextAssistantBlockId('system'),
+                event.error,
+                'error',
+              )
               bridge.emit(makeErrorEvent(event.error, lastSessionId ?? undefined))
               break
 
@@ -276,26 +503,24 @@ export async function createRuntime(
           }
         }
 
-        if (result.text) {
-          sessionLogger.logAssistantMessage(result.text, modelName, providerName, {
+        if (assistantBlocks.length > 0) {
+          sessionLogger.logAssistantMessage(assistantBlocks, modelName, providerName, {
             usage: { ...result.usage },
             stopReason: result.stopReason,
             llmCallCount: result.llmCallCount,
             toolCallCount: result.toolCallCount,
-            ...(result.thinking ? { thinking: result.thinking } : {}),
           })
         }
       } catch (error) {
         if (isAbortError(error)) {
           result.aborted = true
           result.stopReason = 'abort'
-          if (result.text) {
-            sessionLogger.logAssistantMessage(result.text, modelName, providerName, {
+          if (assistantBlocks.length > 0) {
+            sessionLogger.logAssistantMessage(assistantBlocks, modelName, providerName, {
               usage: { ...result.usage },
               stopReason: result.stopReason,
               llmCallCount: result.llmCallCount,
               toolCallCount: result.toolCallCount,
-              ...(result.thinking ? { thinking: result.thinking } : {}),
             })
           }
           sessionLogger.logUserMessage('[Request interrupted by user]')

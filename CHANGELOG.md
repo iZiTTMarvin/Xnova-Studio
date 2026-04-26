@@ -1,4 +1,16 @@
 ## 2026-04-26
+- **Studio Run 终态与模型阶段可视化修复**：收口 late runtime event、thinking 生命周期与模型请求阶段状态
+  - `useStudioBridge / studio-runtime-service / ConversationTimeline` 改为按 `runId` 保持 terminal state 单调，`run_cancelled` 后 late `turn_end/session_end` 不再覆盖 UI
+  - thinking block 新增可选生命周期字段并在 `text/tool/status/system/cancel/terminal` 前统一 finalize，Stop 后不再继续显示“思考中...”或持续计时
+  - `llm_start / llm_first_chunk / llm_done / llm_error` 已桥接为 `model_request_*` Studio runtime event，并补齐 renderer / runtime 回归测试
+- **Studio Timeline 展示层重构**：为 blocks-first 会话新增 renderRows 中间层，收敛工具与 reasoning 的展示语义
+  - 新增 `tool-classification / conversation-render-rows / ToolActivityGroupRow / ToolActionRow / ReasoningRow`，assistant 时间线不再直接平铺 raw blocks
+  - 连续探索型工具合并为 activity summary，动作型与失败工具单独展示；`durationMs` 缺失或小于 50ms 不再刷出满屏 `0.0s`
+  - 修复只有最后一个 live thinking 才持续计时的问题，并补齐 renderRows、activity group、timeline 的前端回归测试
+- **Studio 会话持久化重构**：废弃旧 session message 结构，切换为 blocks-first 会话模型
+  - `SessionStore / SessionLogger / createRuntime / shell inspector / Timeline` 全链路改为 `blocks` 作为唯一消息事实源，移除 synthetic `role=system` 工具消息
+  - 新增 `conversationSchemaVersion = 2`，旧 session 不再迁移，列表直接忽略；开发期新增 `pnpm --filter xnova-studio reset:sessions`
+  - 补齐 persistence/runtime/skills/observability/studio 回归测试，并通过 `pnpm --filter xnova-studio test`、`pnpm typecheck`、`pnpm --filter xnova-studio build`
 - **Studio ConversationTimeline 顺序修复**：修复实时工具调用脱离 assistant 回答的问题
   - `liveConversation` 改为 ordered blocks，保留 `text_delta / tool_start / tool_end / text_delta` 到达顺序
   - persisted assistant message 带 `toolEvents` 时继续显示正文，并把工具调用归入 assistant turn

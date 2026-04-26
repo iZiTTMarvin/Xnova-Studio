@@ -84,6 +84,18 @@ function createShellSnapshot(sessionId: string | null) {
 function HookHarness() {
   const bridgeState = useStudioBridge()
   const [submitResult, setSubmitResult] = useState('')
+  const assistantText = bridgeState.liveConversation.blocks
+    .filter((block): block is Extract<(typeof bridgeState.liveConversation.blocks)[number], { type: 'text' }> =>
+      block.type === 'text')
+    .map((block) => block.content)
+    .join('')
+  const toolEvents = bridgeState.liveConversation.blocks
+    .filter((block): block is Extract<(typeof bridgeState.liveConversation.blocks)[number], { type: 'tool' }> =>
+      block.type === 'tool')
+  const systemMessages = bridgeState.liveConversation.blocks
+    .filter((block): block is Extract<(typeof bridgeState.liveConversation.blocks)[number], { type: 'system' }> =>
+      block.type === 'system')
+    .map((block) => block.content)
   const liveBlockSummary = bridgeState.liveConversation.blocks
     .map((block) => {
       switch (block.type) {
@@ -130,16 +142,19 @@ function HookHarness() {
       <div data-testid="run-active">{bridgeState.isRunActive ? 'yes' : 'no'}</div>
       <div data-testid="submitting">{bridgeState.isSubmitting ? 'yes' : 'no'}</div>
       <div data-testid="submit-result">{submitResult}</div>
-      <div data-testid="assistant-text">{bridgeState.liveConversation.assistantText}</div>
+      <div data-testid="assistant-text">{assistantText}</div>
       <div data-testid="tool-events">
-        {bridgeState.liveConversation.toolEvents
+        {toolEvents
           .map((toolEvent) => `${toolEvent.toolName}:${toolEvent.status}`)
           .join('|')}
       </div>
       <div data-testid="system-messages">
-        {bridgeState.liveConversation.systemMessages.join('|')}
+        {systemMessages.join('|')}
       </div>
       <div data-testid="live-blocks">{liveBlockSummary}</div>
+      <div data-testid="live-conversation-json">
+        {JSON.stringify(bridgeState.liveConversation.blocks)}
+      </div>
       <div data-testid="run-idle-warning">{bridgeState.runIdleWarning ?? ''}</div>
       <div data-testid="current-run-step">{bridgeState.currentRunStep ?? ''}</div>
     </div>
@@ -932,6 +947,692 @@ describe('useStudioBridge runtime submit', () => {
     })
     expect(screen.getByTestId('run-active').textContent).toBe('no')
     expect(screen.getByTestId('system-messages').textContent).toBe('已停止当前运行')
+  })
+
+  it('run_cancelled 后收到同 runId 的 late turn_end，不会覆盖 cancelled 终态', async () => {
+    let runtimeEventHandler: ((event: {
+      type: string
+      timestamp: string
+      runId?: string
+      payload?: Record<string, unknown>
+    }) => void) | null = null
+
+    ;(window as Window & { xnovaStudio?: unknown }).xnovaStudio = {
+      host: {
+        getState: vi.fn(async () => ({
+          workspacePath: 'D:/workspace/demo',
+          lastSelection: null,
+        })),
+        openWorkspace: vi.fn(),
+        onStateChanged: () => () => {},
+      },
+      runtime: {
+        inspect: vi.fn(async () => createRuntimeInspectResult()),
+        submit: vi.fn(() => {
+          runtimeEventHandler?.({
+            type: 'run_started',
+            timestamp: '2026-04-26T00:00:00.000Z',
+            runId: 'run-1',
+          })
+          return new Promise(() => undefined)
+        }),
+        cancel: vi.fn(async () => {
+          runtimeEventHandler?.({
+            type: 'run_cancelled',
+            timestamp: '2026-04-26T00:00:01.000Z',
+            runId: 'run-1',
+            payload: {
+              message: '已停止当前运行',
+            },
+          })
+          return {
+            ok: true as const,
+            runId: 'run-1',
+          }
+        }),
+        onEvent: (listener: (event: {
+          type: string
+          timestamp: string
+          runId?: string
+          payload?: Record<string, unknown>
+        }) => void) => {
+          runtimeEventHandler = listener
+          return () => {
+            runtimeEventHandler = null
+          }
+        },
+      },
+      shell: {
+        getSnapshot: vi.fn(async () => createShellSnapshot(null)),
+      },
+      settings: {
+        getProviderSettings: vi.fn(),
+        saveProviderSettings: vi.fn(),
+        testProviderConnection: vi.fn(),
+      },
+      memory: {
+        getOverview: vi.fn(),
+        rebuild: vi.fn(),
+      },
+      mcp: {
+        getOverview: vi.fn(),
+        addServer: vi.fn(),
+        deleteServer: vi.fn(),
+      },
+      skillsPlugins: {
+        getOverview: vi.fn(),
+      },
+    }
+
+    render(<HookHarness />)
+
+    await waitFor(() => {
+      expect(screen.getByTestId('shell-status').textContent).toBe('ready')
+    })
+
+    fireEvent.click(screen.getByRole('button', { name: '提交' }))
+    await waitFor(() => {
+      expect(screen.getByTestId('run-status').textContent).toBe('running')
+    })
+
+    fireEvent.click(screen.getByRole('button', { name: '停止' }))
+    await waitFor(() => {
+      expect(screen.getByTestId('run-status').textContent).toBe('cancelled')
+    })
+
+    runtimeEventHandler?.({
+      type: 'turn_end',
+      timestamp: '2026-04-26T00:00:02.000Z',
+      runId: 'run-1',
+      payload: {
+        stopReason: 'end_turn',
+        aborted: false,
+      },
+    })
+
+    expect(screen.getByTestId('run-status').textContent).toBe('cancelled')
+    expect(screen.getByTestId('current-run-step').textContent).toBe('已停止当前运行')
+    expect(screen.getByTestId('live-blocks').textContent).not.toContain('status:运行已完成')
+  })
+
+  it('run_cancelled 后收到同 runId 的 late session_end，不会覆盖 cancelled 终态', async () => {
+    let runtimeEventHandler: ((event: {
+      type: string
+      timestamp: string
+      runId?: string
+      payload?: Record<string, unknown>
+    }) => void) | null = null
+
+    ;(window as Window & { xnovaStudio?: unknown }).xnovaStudio = {
+      host: {
+        getState: vi.fn(async () => ({
+          workspacePath: 'D:/workspace/demo',
+          lastSelection: null,
+        })),
+        openWorkspace: vi.fn(),
+        onStateChanged: () => () => {},
+      },
+      runtime: {
+        inspect: vi.fn(async () => createRuntimeInspectResult()),
+        submit: vi.fn(() => {
+          runtimeEventHandler?.({
+            type: 'run_started',
+            timestamp: '2026-04-26T00:00:00.000Z',
+            runId: 'run-2',
+          })
+          return new Promise(() => undefined)
+        }),
+        cancel: vi.fn(async () => {
+          runtimeEventHandler?.({
+            type: 'run_cancelled',
+            timestamp: '2026-04-26T00:00:01.000Z',
+            runId: 'run-2',
+            payload: {
+              message: '已停止当前运行',
+            },
+          })
+          return {
+            ok: true as const,
+            runId: 'run-2',
+          }
+        }),
+        onEvent: (listener: (event: {
+          type: string
+          timestamp: string
+          runId?: string
+          payload?: Record<string, unknown>
+        }) => void) => {
+          runtimeEventHandler = listener
+          return () => {
+            runtimeEventHandler = null
+          }
+        },
+      },
+      shell: {
+        getSnapshot: vi.fn(async () => createShellSnapshot(null)),
+      },
+      settings: {
+        getProviderSettings: vi.fn(),
+        saveProviderSettings: vi.fn(),
+        testProviderConnection: vi.fn(),
+      },
+      memory: {
+        getOverview: vi.fn(),
+        rebuild: vi.fn(),
+      },
+      mcp: {
+        getOverview: vi.fn(),
+        addServer: vi.fn(),
+        deleteServer: vi.fn(),
+      },
+      skillsPlugins: {
+        getOverview: vi.fn(),
+      },
+    }
+
+    render(<HookHarness />)
+
+    await waitFor(() => {
+      expect(screen.getByTestId('shell-status').textContent).toBe('ready')
+    })
+
+    fireEvent.click(screen.getByRole('button', { name: '提交' }))
+    fireEvent.click(screen.getByRole('button', { name: '停止' }))
+
+    await waitFor(() => {
+      expect(screen.getByTestId('run-status').textContent).toBe('cancelled')
+    })
+
+    runtimeEventHandler?.({
+      type: 'session_end',
+      timestamp: '2026-04-26T00:00:02.000Z',
+      runId: 'run-2',
+      payload: {
+        status: 'done',
+      },
+    })
+
+    expect(screen.getByTestId('run-status').textContent).toBe('cancelled')
+    expect(screen.getByTestId('current-run-step').textContent).toBe('已停止当前运行')
+  })
+
+  it('run_failed 后 late run_completed 不会覆盖 failed', async () => {
+    let runtimeEventHandler: ((event: {
+      type: string
+      timestamp: string
+      runId?: string
+      payload?: Record<string, unknown>
+    }) => void) | null = null
+
+    ;(window as Window & { xnovaStudio?: unknown }).xnovaStudio = {
+      host: {
+        getState: vi.fn(async () => ({
+          workspacePath: 'D:/workspace/demo',
+          lastSelection: null,
+        })),
+        openWorkspace: vi.fn(),
+        onStateChanged: () => () => {},
+      },
+      runtime: {
+        inspect: vi.fn(async () => createRuntimeInspectResult()),
+        submit: vi.fn(() => {
+          runtimeEventHandler?.({
+            type: 'run_started',
+            timestamp: '2026-04-26T00:00:00.000Z',
+            runId: 'run-3',
+          })
+          runtimeEventHandler?.({
+            type: 'run_failed',
+            timestamp: '2026-04-26T00:00:01.000Z',
+            runId: 'run-3',
+            payload: {
+              message: 'provider failed',
+            },
+          })
+          return new Promise(() => undefined)
+        }),
+        onEvent: (listener: (event: {
+          type: string
+          timestamp: string
+          runId?: string
+          payload?: Record<string, unknown>
+        }) => void) => {
+          runtimeEventHandler = listener
+          return () => {
+            runtimeEventHandler = null
+          }
+        },
+      },
+      shell: {
+        getSnapshot: vi.fn(async () => createShellSnapshot(null)),
+      },
+      settings: {
+        getProviderSettings: vi.fn(),
+        saveProviderSettings: vi.fn(),
+        testProviderConnection: vi.fn(),
+      },
+      memory: {
+        getOverview: vi.fn(),
+        rebuild: vi.fn(),
+      },
+      mcp: {
+        getOverview: vi.fn(),
+        addServer: vi.fn(),
+        deleteServer: vi.fn(),
+      },
+      skillsPlugins: {
+        getOverview: vi.fn(),
+      },
+    }
+
+    render(<HookHarness />)
+    await waitFor(() => {
+      expect(screen.getByTestId('shell-status').textContent).toBe('ready')
+    })
+
+    fireEvent.click(screen.getByRole('button', { name: '提交' }))
+    await waitFor(() => {
+      expect(screen.getByTestId('run-status').textContent).toBe('failed')
+    })
+
+    runtimeEventHandler?.({
+      type: 'run_completed',
+      timestamp: '2026-04-26T00:00:02.000Z',
+      runId: 'run-3',
+      payload: {
+        sessionId: 'session-3',
+      },
+    })
+
+    expect(screen.getByTestId('run-status').textContent).toBe('failed')
+    expect(screen.getByTestId('current-run-step').textContent).toBe('运行失败')
+  })
+
+  it('event.runId 不匹配 currentRunId 时，不会改当前 runStatus', async () => {
+    let runtimeEventHandler: ((event: {
+      type: string
+      timestamp: string
+      runId?: string
+      payload?: Record<string, unknown>
+    }) => void) | null = null
+
+    ;(window as Window & { xnovaStudio?: unknown }).xnovaStudio = {
+      host: {
+        getState: vi.fn(async () => ({
+          workspacePath: 'D:/workspace/demo',
+          lastSelection: null,
+        })),
+        openWorkspace: vi.fn(),
+        onStateChanged: () => () => {},
+      },
+      runtime: {
+        inspect: vi.fn(async () => createRuntimeInspectResult()),
+        submit: vi.fn(() => {
+          runtimeEventHandler?.({
+            type: 'run_started',
+            timestamp: '2026-04-26T00:00:00.000Z',
+            runId: 'run-4',
+          })
+          return new Promise(() => undefined)
+        }),
+        onEvent: (listener: (event: {
+          type: string
+          timestamp: string
+          runId?: string
+          payload?: Record<string, unknown>
+        }) => void) => {
+          runtimeEventHandler = listener
+          return () => {
+            runtimeEventHandler = null
+          }
+        },
+      },
+      shell: {
+        getSnapshot: vi.fn(async () => createShellSnapshot(null)),
+      },
+      settings: {
+        getProviderSettings: vi.fn(),
+        saveProviderSettings: vi.fn(),
+        testProviderConnection: vi.fn(),
+      },
+      memory: {
+        getOverview: vi.fn(),
+        rebuild: vi.fn(),
+      },
+      mcp: {
+        getOverview: vi.fn(),
+        addServer: vi.fn(),
+        deleteServer: vi.fn(),
+      },
+      skillsPlugins: {
+        getOverview: vi.fn(),
+      },
+    }
+
+    render(<HookHarness />)
+    await waitFor(() => {
+      expect(screen.getByTestId('shell-status').textContent).toBe('ready')
+    })
+
+    fireEvent.click(screen.getByRole('button', { name: '提交' }))
+    await waitFor(() => {
+      expect(screen.getByTestId('run-status').textContent).toBe('running')
+    })
+
+    runtimeEventHandler?.({
+      type: 'run_failed',
+      timestamp: '2026-04-26T00:00:01.000Z',
+      runId: 'run-999',
+      payload: {
+        message: 'other run failed',
+      },
+    })
+
+    expect(screen.getByTestId('run-status').textContent).toBe('running')
+    expect(screen.getByTestId('current-run-step').textContent).toBe('正在调用模型')
+  })
+
+  it('thinking -> tool_start 时会 finalize 前一个 thinking block', async () => {
+    let runtimeEventHandler: ((event: {
+      type: string
+      timestamp: string
+      runId?: string
+      payload?: Record<string, unknown>
+    }) => void) | null = null
+
+    ;(window as Window & { xnovaStudio?: unknown }).xnovaStudio = {
+      host: {
+        getState: vi.fn(async () => ({
+          workspacePath: 'D:/workspace/demo',
+          lastSelection: null,
+        })),
+        openWorkspace: vi.fn(),
+        onStateChanged: () => () => {},
+      },
+      runtime: {
+        inspect: vi.fn(async () => createRuntimeInspectResult()),
+        submit: vi.fn(() => {
+          runtimeEventHandler?.({
+            type: 'run_started',
+            timestamp: '2026-04-26T00:00:00.000Z',
+            runId: 'run-5',
+          })
+          runtimeEventHandler?.({
+            type: 'thinking',
+            timestamp: '2026-04-26T00:00:01.000Z',
+            runId: 'run-5',
+            payload: {
+              text: '先分析目录',
+            },
+          })
+          runtimeEventHandler?.({
+            type: 'tool_start',
+            timestamp: '2026-04-26T00:00:02.000Z',
+            runId: 'run-5',
+            payload: {
+              toolCallId: 'tool-1',
+              toolName: 'read_file',
+              args: {
+                path: 'src/index.ts',
+              },
+            },
+          })
+          return new Promise(() => undefined)
+        }),
+        onEvent: (listener: (event: {
+          type: string
+          timestamp: string
+          runId?: string
+          payload?: Record<string, unknown>
+        }) => void) => {
+          runtimeEventHandler = listener
+          return () => {
+            runtimeEventHandler = null
+          }
+        },
+      },
+      shell: {
+        getSnapshot: vi.fn(async () => createShellSnapshot(null)),
+      },
+      settings: {
+        getProviderSettings: vi.fn(),
+        saveProviderSettings: vi.fn(),
+        testProviderConnection: vi.fn(),
+      },
+      memory: {
+        getOverview: vi.fn(),
+        rebuild: vi.fn(),
+      },
+      mcp: {
+        getOverview: vi.fn(),
+        addServer: vi.fn(),
+        deleteServer: vi.fn(),
+      },
+      skillsPlugins: {
+        getOverview: vi.fn(),
+      },
+    }
+
+    render(<HookHarness />)
+    await waitFor(() => {
+      expect(screen.getByTestId('shell-status').textContent).toBe('ready')
+    })
+
+    fireEvent.click(screen.getByRole('button', { name: '提交' }))
+
+    await waitFor(() => {
+      expect(screen.getByTestId('live-blocks').textContent).toContain('tool:read_file:running')
+    })
+
+    const blocks = JSON.parse(screen.getByTestId('live-conversation-json').textContent ?? '[]') as Array<Record<string, unknown>>
+    const thinkingBlock = blocks.find((block) => block['type'] === 'thinking')
+    expect(thinkingBlock?.['endedAt']).toEqual(expect.any(Number))
+    expect(thinkingBlock?.['durationMs']).toEqual(expect.any(Number))
+  })
+
+  it('run_cancelled 后会 finalize thinking block，并停止 live 状态', async () => {
+    let runtimeEventHandler: ((event: {
+      type: string
+      timestamp: string
+      runId?: string
+      payload?: Record<string, unknown>
+    }) => void) | null = null
+
+    ;(window as Window & { xnovaStudio?: unknown }).xnovaStudio = {
+      host: {
+        getState: vi.fn(async () => ({
+          workspacePath: 'D:/workspace/demo',
+          lastSelection: null,
+        })),
+        openWorkspace: vi.fn(),
+        onStateChanged: () => () => {},
+      },
+      runtime: {
+        inspect: vi.fn(async () => createRuntimeInspectResult()),
+        submit: vi.fn(() => {
+          runtimeEventHandler?.({
+            type: 'run_started',
+            timestamp: '2026-04-26T00:00:00.000Z',
+            runId: 'run-6',
+          })
+          runtimeEventHandler?.({
+            type: 'thinking',
+            timestamp: '2026-04-26T00:00:01.000Z',
+            runId: 'run-6',
+            payload: {
+              text: '继续思考中',
+            },
+          })
+          return new Promise(() => undefined)
+        }),
+        cancel: vi.fn(async () => {
+          runtimeEventHandler?.({
+            type: 'run_cancelled',
+            timestamp: '2026-04-26T00:00:02.000Z',
+            runId: 'run-6',
+            payload: {
+              message: '已停止当前运行',
+            },
+          })
+          return {
+            ok: true as const,
+            runId: 'run-6',
+          }
+        }),
+        onEvent: (listener: (event: {
+          type: string
+          timestamp: string
+          runId?: string
+          payload?: Record<string, unknown>
+        }) => void) => {
+          runtimeEventHandler = listener
+          return () => {
+            runtimeEventHandler = null
+          }
+        },
+      },
+      shell: {
+        getSnapshot: vi.fn(async () => createShellSnapshot(null)),
+      },
+      settings: {
+        getProviderSettings: vi.fn(),
+        saveProviderSettings: vi.fn(),
+        testProviderConnection: vi.fn(),
+      },
+      memory: {
+        getOverview: vi.fn(),
+        rebuild: vi.fn(),
+      },
+      mcp: {
+        getOverview: vi.fn(),
+        addServer: vi.fn(),
+        deleteServer: vi.fn(),
+      },
+      skillsPlugins: {
+        getOverview: vi.fn(),
+      },
+    }
+
+    render(<HookHarness />)
+    await waitFor(() => {
+      expect(screen.getByTestId('shell-status').textContent).toBe('ready')
+    })
+
+    fireEvent.click(screen.getByRole('button', { name: '提交' }))
+    await waitFor(() => {
+      expect(screen.getByTestId('live-blocks').textContent).toContain('thinking:继续思考中')
+    })
+
+    fireEvent.click(screen.getByRole('button', { name: '停止' }))
+    await waitFor(() => {
+      expect(screen.getByTestId('run-status').textContent).toBe('cancelled')
+    })
+
+    const blocks = JSON.parse(screen.getByTestId('live-conversation-json').textContent ?? '[]') as Array<Record<string, unknown>>
+    const thinkingBlock = blocks.find((block) => block['type'] === 'thinking')
+    expect(thinkingBlock?.['endedAt']).toEqual(expect.any(Number))
+    expect(thinkingBlock?.['durationMs']).toEqual(expect.any(Number))
+  })
+
+  it('model_request_* 事件会驱动模型请求阶段状态，并在失败后恢复输入', async () => {
+    let runtimeEventHandler: ((event: {
+      type: string
+      timestamp: string
+      runId?: string
+      payload?: Record<string, unknown>
+    }) => void) | null = null
+
+    ;(window as Window & { xnovaStudio?: unknown }).xnovaStudio = {
+      host: {
+        getState: vi.fn(async () => ({
+          workspacePath: 'D:/workspace/demo',
+          lastSelection: null,
+        })),
+        openWorkspace: vi.fn(),
+        onStateChanged: () => () => {},
+      },
+      runtime: {
+        inspect: vi.fn(async () => createRuntimeInspectResult()),
+        submit: vi.fn(() => {
+          runtimeEventHandler?.({
+            type: 'run_started',
+            timestamp: '2026-04-26T00:00:00.000Z',
+            runId: 'run-7',
+          })
+          runtimeEventHandler?.({
+            type: 'model_request_started',
+            timestamp: '2026-04-26T00:00:01.000Z',
+            runId: 'run-7',
+            payload: {
+              providerId: 'minimax',
+              modelId: 'MiniMax-M2.7',
+              phase: 'initial',
+            },
+          })
+          runtimeEventHandler?.({
+            type: 'model_first_chunk',
+            timestamp: '2026-04-26T00:00:02.000Z',
+            runId: 'run-7',
+            payload: {
+              elapsedMs: 1200,
+            },
+          })
+          runtimeEventHandler?.({
+            type: 'model_request_failed',
+            timestamp: '2026-04-26T00:00:03.000Z',
+            runId: 'run-7',
+            payload: {
+              message: '模型请求失败',
+            },
+          })
+          return new Promise(() => undefined)
+        }),
+        onEvent: (listener: (event: {
+          type: string
+          timestamp: string
+          runId?: string
+          payload?: Record<string, unknown>
+        }) => void) => {
+          runtimeEventHandler = listener
+          return () => {
+            runtimeEventHandler = null
+          }
+        },
+      },
+      shell: {
+        getSnapshot: vi.fn(async () => createShellSnapshot(null)),
+      },
+      settings: {
+        getProviderSettings: vi.fn(),
+        saveProviderSettings: vi.fn(),
+        testProviderConnection: vi.fn(),
+      },
+      memory: {
+        getOverview: vi.fn(),
+        rebuild: vi.fn(),
+      },
+      mcp: {
+        getOverview: vi.fn(),
+        addServer: vi.fn(),
+        deleteServer: vi.fn(),
+      },
+      skillsPlugins: {
+        getOverview: vi.fn(),
+      },
+    }
+
+    render(<HookHarness />)
+    await waitFor(() => {
+      expect(screen.getByTestId('shell-status').textContent).toBe('ready')
+    })
+
+    fireEvent.click(screen.getByRole('button', { name: '提交' }))
+
+    await waitFor(() => {
+      expect(screen.getByTestId('current-run-step').textContent).toBe('运行失败')
+    })
+    expect(screen.getByTestId('run-status').textContent).toBe('failed')
+    expect(screen.getByTestId('submitting').textContent).toBe('no')
   })
 
   it('running 长时间没有新 runtime event 时显示可停止提示', async () => {
