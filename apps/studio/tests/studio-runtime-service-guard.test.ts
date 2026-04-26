@@ -286,7 +286,12 @@ describe('studio runtime service guards', () => {
         sessionId: 'session-3',
       })
       expect(runtimeInstance.abort).not.toHaveBeenCalled()
-      expect(emittedEvents).toEqual(['text_delta', 'thinking'])
+      expect(emittedEvents).toEqual([
+        'run_started',
+        'text_delta',
+        'thinking',
+        'run_completed',
+      ])
     } finally {
       vi.useRealTimers()
     }

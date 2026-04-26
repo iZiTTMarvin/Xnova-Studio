@@ -99,8 +99,16 @@ function HookHarness() {
         提交
       </button>
       <div data-testid="shell-status">{bridgeState.shellStatus}</div>
+      <div data-testid="run-status">{bridgeState.runStatus}</div>
+      <div data-testid="run-active">{bridgeState.isRunActive ? 'yes' : 'no'}</div>
       <div data-testid="submitting">{bridgeState.isSubmitting ? 'yes' : 'no'}</div>
       <div data-testid="submit-result">{submitResult}</div>
+      <div data-testid="assistant-text">{bridgeState.liveConversation.assistantText}</div>
+      <div data-testid="tool-events">
+        {bridgeState.liveConversation.toolEvents
+          .map((toolEvent) => `${toolEvent.toolName}:${toolEvent.status}`)
+          .join('|')}
+      </div>
       <div data-testid="system-messages">
         {bridgeState.liveConversation.systemMessages.join('|')}
       </div>
@@ -361,5 +369,214 @@ describe('useStudioBridge runtime submit', () => {
     })
 
     expect(screen.getByTestId('system-messages').textContent).toBe(submitError)
+  })
+
+  it('runtime lifecycle 事件会驱动 runStatus，并保留 text/tool live 内容', async () => {
+    let runtimeEventHandler: ((event: {
+      type: string
+      timestamp: string
+      payload?: Record<string, unknown>
+    }) => void) | null = null
+    const submit = vi.fn(async () => {
+      runtimeEventHandler?.({
+        type: 'run_started',
+        timestamp: '2026-04-26T00:00:00.000Z',
+        payload: {
+          status: 'running',
+        },
+      })
+      runtimeEventHandler?.({
+        type: 'text_delta',
+        timestamp: '2026-04-26T00:00:01.000Z',
+        payload: {
+          text: '正在分析',
+        },
+      })
+      runtimeEventHandler?.({
+        type: 'tool_start',
+        timestamp: '2026-04-26T00:00:02.000Z',
+        payload: {
+          toolCallId: 'tool-1',
+          toolName: 'read_file',
+          args: {
+            path: 'src/index.ts',
+          },
+        },
+      })
+      runtimeEventHandler?.({
+        type: 'tool_end',
+        timestamp: '2026-04-26T00:00:03.000Z',
+        payload: {
+          toolCallId: 'tool-1',
+          success: true,
+        },
+      })
+      runtimeEventHandler?.({
+        type: 'run_completed',
+        timestamp: '2026-04-26T00:00:04.000Z',
+        payload: {
+          sessionId: 'session-2',
+        },
+      })
+      return {
+        ok: true as const,
+        sessionId: 'session-2',
+      }
+    })
+
+    ;(window as Window & { xnovaStudio?: unknown }).xnovaStudio = {
+      host: {
+        getState: vi.fn(async () => ({
+          workspacePath: 'D:/workspace/demo',
+          lastSelection: null,
+        })),
+        openWorkspace: vi.fn(),
+        onStateChanged: () => () => {},
+      },
+      runtime: {
+        inspect: vi.fn(async () => createRuntimeInspectResult()),
+        submit,
+        onEvent: (listener: (event: {
+          type: string
+          timestamp: string
+          payload?: Record<string, unknown>
+        }) => void) => {
+          runtimeEventHandler = listener
+          return () => {
+            runtimeEventHandler = null
+          }
+        },
+      },
+      shell: {
+        getSnapshot: vi
+          .fn()
+          .mockResolvedValueOnce(createShellSnapshot(null))
+          .mockResolvedValueOnce(createShellSnapshot('session-2')),
+      },
+      settings: {
+        getProviderSettings: vi.fn(),
+        saveProviderSettings: vi.fn(),
+        testProviderConnection: vi.fn(),
+      },
+      memory: {
+        getOverview: vi.fn(),
+        rebuild: vi.fn(),
+      },
+      mcp: {
+        getOverview: vi.fn(),
+        addServer: vi.fn(),
+        deleteServer: vi.fn(),
+      },
+      skillsPlugins: {
+        getOverview: vi.fn(),
+      },
+    }
+
+    render(<HookHarness />)
+
+    await waitFor(() => {
+      expect(screen.getByTestId('shell-status').textContent).toBe('ready')
+    })
+
+    fireEvent.click(screen.getByRole('button', { name: '提交' }))
+
+    await waitFor(() => {
+      expect(screen.getByTestId('run-status').textContent).toBe('completed')
+    })
+    expect(screen.getByTestId('run-active').textContent).toBe('no')
+    expect(screen.getByTestId('assistant-text').textContent).toBe('正在分析')
+    expect(screen.getByTestId('tool-events').textContent).toBe('read_file:done')
+  })
+
+  it('submit 成功后若 runtime inspect 刷新失败，不应提前清空 liveConversation', async () => {
+    let runtimeEventHandler: ((event: {
+      type: string
+      timestamp: string
+      payload?: Record<string, unknown>
+    }) => void) | null = null
+    const inspect = vi
+      .fn()
+      .mockResolvedValueOnce(createRuntimeInspectResult())
+      .mockRejectedValueOnce(new Error('inspect failed'))
+    const submit = vi.fn(async () => {
+      runtimeEventHandler?.({
+        type: 'text_delta',
+        timestamp: '2026-04-26T00:00:01.000Z',
+        payload: {
+          text: '刷新失败前的可见内容',
+        },
+      })
+      return {
+        ok: true as const,
+        sessionId: 'session-2',
+      }
+    })
+
+    ;(window as Window & { xnovaStudio?: unknown }).xnovaStudio = {
+      host: {
+        getState: vi.fn(async () => ({
+          workspacePath: 'D:/workspace/demo',
+          lastSelection: null,
+        })),
+        openWorkspace: vi.fn(),
+        onStateChanged: () => () => {},
+      },
+      runtime: {
+        inspect,
+        submit,
+        onEvent: (listener: (event: {
+          type: string
+          timestamp: string
+          payload?: Record<string, unknown>
+        }) => void) => {
+          runtimeEventHandler = listener
+          return () => {
+            runtimeEventHandler = null
+          }
+        },
+      },
+      shell: {
+        getSnapshot: vi
+          .fn()
+          .mockResolvedValueOnce(createShellSnapshot(null))
+          .mockResolvedValueOnce(createShellSnapshot('session-2')),
+      },
+      settings: {
+        getProviderSettings: vi.fn(),
+        saveProviderSettings: vi.fn(),
+        testProviderConnection: vi.fn(),
+      },
+      memory: {
+        getOverview: vi.fn(),
+        rebuild: vi.fn(),
+      },
+      mcp: {
+        getOverview: vi.fn(),
+        addServer: vi.fn(),
+        deleteServer: vi.fn(),
+      },
+      skillsPlugins: {
+        getOverview: vi.fn(),
+      },
+    }
+
+    render(<HookHarness />)
+
+    await waitFor(() => {
+      expect(screen.getByTestId('shell-status').textContent).toBe('ready')
+    })
+
+    fireEvent.click(screen.getByRole('button', { name: '提交' }))
+
+    await waitFor(() => {
+      expect(screen.getByTestId('submit-result').textContent).toBe('ok')
+    })
+    await waitFor(() => {
+      expect(inspect).toHaveBeenCalledTimes(2)
+    })
+
+    expect(screen.getByTestId('assistant-text').textContent).toBe(
+      '刷新失败前的可见内容',
+    )
   })
 })

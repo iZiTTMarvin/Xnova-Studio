@@ -258,6 +258,15 @@ function renderPersistedMessage(message: StudioConversationMessage) {
   )
 }
 
+function createStableSystemMessageKey(message: string, occurrence: number): string {
+  let hash = 0
+  for (let index = 0; index < message.length; index += 1) {
+    hash = (hash * 31 + message.charCodeAt(index)) >>> 0
+  }
+
+  return `live-system-${hash.toString(36)}-${occurrence}`
+}
+
 // ============================================================
 // ConversationTimeline — 主时间线
 // ============================================================
@@ -346,15 +355,21 @@ export function ConversationTimeline(props: ConversationTimelineProps) {
       ) : null}
 
       {/* 实时系统消息 */}
-      {props.liveConversation.systemMessages.map((message, index) => (
-        <article
-          key={`live-system-${message.slice(0, 20)}-${index}`}
-          className="conversation-message conversation-message-system conversation-message-live"
-        >
-          <div className="conversation-message-label">⚠️ 系统</div>
-          <div className="conversation-message-body">{message}</div>
-        </article>
-      ))}
+      {props.liveConversation.systemMessages.map((message, index, messages) => {
+        const occurrence = messages
+          .slice(0, index + 1)
+          .filter((candidate) => candidate === message).length
+
+        return (
+          <article
+            key={createStableSystemMessageKey(message, occurrence)}
+            className="conversation-message conversation-message-system conversation-message-live"
+          >
+            <div className="conversation-message-label">⚠️ 系统</div>
+            <div className="conversation-message-body">{message}</div>
+          </article>
+        )
+      })}
       <div ref={bottomRef} />
     </section>
   )

@@ -656,16 +656,6 @@ export function registerStudioMainIpcHandlers(
           },
         )
 
-        if (!result.ok) {
-          broadcast(STUDIO_BRIDGE_CHANNELS.runtimeEvent, {
-            type: 'runtime.error',
-            timestamp: new Date().toISOString(),
-            payload: {
-              message: result.error,
-            },
-          })
-        }
-
         options.logger.info('runtime submit 已完成', {
           ok: result.ok,
           workspacePath: hostState.workspacePath,
@@ -678,7 +668,7 @@ export function registerStudioMainIpcHandlers(
           error: `runtime submit 失败: ${message}`,
         }
         broadcast(STUDIO_BRIDGE_CHANNELS.runtimeEvent, {
-          type: 'runtime.error',
+          type: 'run_failed',
           timestamp: new Date().toISOString(),
           payload: {
             message: result.error,

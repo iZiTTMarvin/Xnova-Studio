@@ -299,6 +299,70 @@ describe('studio main ipc handlers', () => {
     )
   })
 
+  it('runtime.submit 失败时不额外广播 runtime.error，避免和 run_failed 重复显示', async () => {
+    const handlers = new Map<string, (_event: unknown, payload: unknown) => unknown>()
+    const send = vi.fn()
+    const submitRuntime = vi.fn(async (_request, _state, emitRuntimeEvent) => {
+      emitRuntimeEvent({
+        type: 'run_failed',
+        timestamp: '2026-04-26T00:00:00.000Z',
+        payload: {
+          message: 'provider failed',
+        },
+      })
+
+      return {
+        ok: false as const,
+        error: 'provider failed',
+      }
+    })
+
+    registerStudioMainIpcHandlers({
+      ipcMainLike: {
+        handle(channel, handler) {
+          handlers.set(channel, handler)
+        },
+      },
+      selectWorkspaceDirectory: vi.fn(async () => ({
+        ok: true as const,
+        code: 'selected' as const,
+        path: 'D:/workspace/demo',
+      })),
+      mainWindowManager: {
+        getMainWindow: () => ({
+          webContents: {
+            send,
+          },
+        }),
+      },
+      inspectRuntime: vi.fn(),
+      submitRuntime,
+      inspectShell: vi.fn(async () => createShellSnapshot()),
+      logger: createLogger(),
+    })
+
+    const openWorkspaceHandler = handlers.get(STUDIO_BRIDGE_CHANNELS.hostOpenWorkspace)
+    await Promise.resolve(openWorkspaceHandler?.({}, undefined))
+
+    const runtimeSubmitHandler = handlers.get(STUDIO_BRIDGE_CHANNELS.runtimeSubmit)
+    await expect(
+      Promise.resolve(
+        runtimeSubmitHandler?.({}, {
+          text: '分析当前项目',
+          projectPath: 'D:/workspace/demo',
+        }),
+      ),
+    ).resolves.toEqual({
+      ok: false,
+      error: 'provider failed',
+    })
+
+    const runtimeEventPayloads = send.mock.calls
+      .filter(([channel]) => channel === STUDIO_BRIDGE_CHANNELS.runtimeEvent)
+      .map(([, payload]) => payload as { type: string })
+    expect(runtimeEventPayloads.map((event) => event.type)).toEqual(['run_failed'])
+  })
+
   it('openWorkspace 会串行处理，避免并发对话框竞争共享 host state', async () => {
     const handlers = new Map<string, (_event: unknown, payload: unknown) => unknown>()
     const firstSelection = createDeferred<WorkspaceSelectionResult>()

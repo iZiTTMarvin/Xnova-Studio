@@ -6,6 +6,7 @@ import type {
   StudioBridgeApi,
   StudioHostState,
   StudioProjectSessionSummary,
+  StudioRunStatus,
   StudioScratchpadEntry,
   StudioSettingsApi,
   StudioShellSnapshot,
@@ -37,6 +38,7 @@ interface RecoveryState {
 interface SubmitPromptResult {
   ok: boolean
   error?: string
+  reportedToTimeline?: boolean
 }
 
 export interface ContextState {
@@ -71,6 +73,16 @@ function appendSystemMessageUnique(
   message: string,
 ): string[] {
   return messages.at(-1) === message ? messages : [...messages, message]
+}
+
+function isActiveRunStatus(status: StudioRunStatus): boolean {
+  return (
+    status === 'starting' ||
+    status === 'running' ||
+    status === 'waiting_permission' ||
+    status === 'waiting_user_input' ||
+    status === 'tool_calling'
+  )
 }
 
 function buildShellRequest(
@@ -155,6 +167,7 @@ export function useStudioBridge() {
   const [currentProviderId, setCurrentProviderId] = useState<string | null>(null)
   const [currentModelId, setCurrentModelId] = useState<string | null>(null)
   const [isSubmitting, setIsSubmitting] = useState(false)
+  const [runStatus, setRunStatus] = useState<StudioRunStatus>('idle')
   const [liveConversation, setLiveConversation] = useState<LiveConversationState>({
     pendingUserText: null,
     assistantText: '',
@@ -287,7 +300,7 @@ export function useStudioBridge() {
   const inspectRuntime = async (
     activeBridge: StudioBridgeApi,
     refresh?: boolean,
-  ): Promise<void> => {
+  ): Promise<RuntimeInspectResult | null> => {
     setRuntimeStatus('loading')
     setRuntimeError(null)
 
@@ -300,15 +313,17 @@ export function useStudioBridge() {
       if (result.ok) {
         setRuntimeStatus(result.status === 'ready' ? 'ready' : 'not-ready')
         setRuntimeError(null)
-        return
+        return result
       }
 
       setRuntimeStatus('error')
       setRuntimeError(result.error)
+      return result
     } catch (error) {
       setRuntimeInspectResult(null)
       setRuntimeStatus('error')
       setRuntimeError(getErrorMessage(error))
+      return null
     }
   }
 
@@ -338,6 +353,7 @@ export function useStudioBridge() {
       setRuntimeStatus('disabled')
       setRuntimeError('宿主桥接不可用')
       setIsSubmitting(false)
+      setRunStatus('idle')
       setRuntimeInspectResult(null)
       setPendingPermissionRequest(null)
       setPendingUserInputRequest(null)
@@ -501,6 +517,45 @@ export function useStudioBridge() {
       }
 
       setLastRuntimeEvent(event)
+      switch (event.type) {
+        case 'run_started':
+          setRunStatus('running')
+          break
+        case 'text_delta':
+        case 'thinking':
+        case 'context_update':
+        case 'warning':
+          setRunStatus((current) =>
+            isActiveRunStatus(current) || current === 'idle'
+              ? 'running'
+              : current,
+          )
+          break
+        case 'tool_start':
+          setRunStatus('tool_calling')
+          break
+        case 'tool_end':
+          setRunStatus((current) =>
+            current === 'tool_calling' ? 'running' : current,
+          )
+          break
+        case 'permission.request':
+          setRunStatus('waiting_permission')
+          break
+        case 'permission.decision':
+          setRunStatus((current) =>
+            current === 'waiting_permission' ? 'running' : current,
+          )
+          break
+        case 'run_completed':
+          setRunStatus('completed')
+          break
+        case 'run_failed':
+          setRunStatus('failed')
+          break
+        default:
+          break
+      }
       setLiveConversation((current) => {
         switch (event.type) {
           case 'text_delta':
@@ -572,7 +627,8 @@ export function useStudioBridge() {
           }
           case 'warning':
           case 'error':
-          case 'runtime.error': {
+          case 'runtime.error':
+          case 'run_failed': {
             const message =
               typeof event.payload?.message === 'string'
                 ? event.payload.message
@@ -613,6 +669,7 @@ export function useStudioBridge() {
         }
 
         setPendingPermissionRequest(request)
+        setRunStatus('waiting_permission')
       }) ?? (() => undefined)
     const unsubscribeUserInput =
       bridge.userInput?.onRequest((request) => {
@@ -621,6 +678,7 @@ export function useStudioBridge() {
         }
 
         setPendingUserInputRequest(request)
+        setRunStatus('waiting_user_input')
       }) ?? (() => undefined)
 
     return () => {
@@ -876,8 +934,15 @@ export function useStudioBridge() {
         error: message,
       }
     }
+    if (isActiveRunStatus(runStatus)) {
+      return {
+        ok: false,
+        error: '当前 Agent run 仍在执行，请等待完成后再发送下一条。',
+      }
+    }
 
     setIsSubmitting(true)
+    setRunStatus('starting')
     setRuntimeError(null)
     setShellError(null)
     setLiveConversation({
@@ -893,6 +958,7 @@ export function useStudioBridge() {
       if (typeof bridge.runtime.submit !== 'function') {
         setRuntimeStatus('error')
         setRuntimeError('runtime.submit 不可用。')
+        setRunStatus('failed')
         return {
           ok: false,
           error: 'runtime.submit 不可用。',
@@ -909,6 +975,7 @@ export function useStudioBridge() {
       if (!submitResult.ok) {
         setRuntimeStatus('error')
         setRuntimeError(submitResult.error)
+        setRunStatus('failed')
         setLiveConversation((current) => ({
           ...current,
           systemMessages: appendSystemMessageUnique(
@@ -916,8 +983,13 @@ export function useStudioBridge() {
             submitResult.error,
           ),
         }))
-        return { ok: false, error: submitResult.error }
+        return {
+          ok: false,
+          error: submitResult.error,
+          reportedToTimeline: true,
+        }
       }
+      setRunStatus('completed')
 
       // 提交成功后立即返回，避免 getSnapshot/inspectRuntime 的异常影响 UI
       // 后续状态刷新通过异步任务完成，即使失败也不应阻止输入框清空
@@ -969,14 +1041,25 @@ export function useStudioBridge() {
             sources: restored.sources,
             projectDefaults: restored.projectDefaults,
           })
-          setLiveConversation({
-            pendingUserText: null,
-            assistantText: '',
-            thinkingText: '',
-            toolEvents: [],
-            systemMessages: [],
-          })
-          await inspectRuntime(bridge, true)
+          const inspectResult = await inspectRuntime(bridge, true)
+          const hasPersistedSubmittedSession =
+            submitResult.sessionId === null
+              ? Boolean(snapshot.activeSession?.messages.length)
+              : snapshot.activeSession?.sessionId === submitResult.sessionId &&
+                snapshot.activeSession.messages.length > 0
+          if (
+            inspectResult?.ok &&
+            inspectResult.status === 'ready' &&
+            hasPersistedSubmittedSession
+          ) {
+            setLiveConversation({
+              pendingUserText: null,
+              assistantText: '',
+              thinkingText: '',
+              toolEvents: [],
+              systemMessages: [],
+            })
+          }
         } catch (error) {
           console.error('submitPrompt 后台状态刷新失败', error)
           setShellStatus('error')
@@ -990,6 +1073,7 @@ export function useStudioBridge() {
       const message = getErrorMessage(error)
       setRuntimeStatus('error')
       setRuntimeError(message)
+      setRunStatus('failed')
       setShellStatus('error')
       setShellError(message)
       setLiveConversation((current) => ({
@@ -1018,6 +1102,9 @@ export function useStudioBridge() {
       setPendingPermissionRequest((current) =>
         current?.requestId === response.requestId ? null : current,
       )
+      setRunStatus((current) =>
+        current === 'waiting_permission' ? 'running' : current,
+      )
     } catch (error) {
       const message = getErrorMessage(error)
       setRuntimeError(message)
@@ -1043,6 +1130,9 @@ export function useStudioBridge() {
       await bridge.userInput.respond(response)
       setPendingUserInputRequest((current) =>
         current?.requestId === response.requestId ? null : current,
+      )
+      setRunStatus((current) =>
+        current === 'waiting_user_input' ? 'running' : current,
       )
     } catch (error) {
       const message = getErrorMessage(error)
@@ -1096,6 +1186,9 @@ export function useStudioBridge() {
     switchPrimaryAgent,
     submitPrompt,
     isSubmitting,
+    runStatus,
+    isRunActive: isActiveRunStatus(runStatus),
+    runtimeSubmitAvailable: typeof bridge?.runtime.submit === 'function',
     liveConversation,
     contextState,
     lastRuntimeEvent,

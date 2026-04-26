@@ -113,10 +113,82 @@ describe('studio runtime service', () => {
     )
     expect(emittedEvents).toEqual([
       expect.objectContaining({
+        type: 'run_started',
+      }),
+      expect.objectContaining({
         type: 'text_delta',
         sessionId: 'session-1',
       }),
+      expect.objectContaining({
+        type: 'run_completed',
+        sessionId: 'session-1',
+      }),
     ])
+  })
+
+  it('submit 失败时发出 run_failed，而不是只依赖 runtime.error', async () => {
+    const runtimeInstance: RuntimeInstance = {
+      submit: vi.fn(async () => ({
+        text: '',
+        thinking: '',
+        stopReason: 'error',
+        llmCallCount: 1,
+        toolCallCount: 0,
+        usage: {
+          inputTokens: 10,
+          outputTokens: 0,
+          cacheReadTokens: 0,
+          cacheWriteTokens: 0,
+        },
+        aborted: false,
+        historyCompacted: false,
+        sessionId: 'session-1',
+        error: 'provider failed',
+      })),
+      abort: vi.fn(),
+      dispose: vi.fn(async () => undefined),
+      getSnapshot: vi.fn(() => ({
+        sessionId: 'session-1',
+        isRunning: false,
+        provider: 'openai',
+        model: 'gpt-4o',
+        warnings: [],
+      })),
+    }
+    const service = createStudioRuntimeService({
+      createRuntimeFn: vi.fn(async () => runtimeInstance),
+      loadResolvedConfigFn: vi.fn(() => ({
+        effective: {
+          defaultProvider: 'openai',
+          defaultModel: 'gpt-4o',
+          providers: {},
+        },
+        source: {},
+        warnings: [],
+      })),
+    })
+    const emittedTypes: string[] = []
+
+    await expect(
+      service.submit(
+        {
+          text: '继续',
+          projectPath: 'D:/workspace/demo',
+        },
+        {
+          workspacePath: 'D:/workspace/demo',
+          lastSelection: null,
+        },
+        (event) => {
+          emittedTypes.push(event.type)
+        },
+      ),
+    ).resolves.toEqual({
+      ok: false,
+      error: 'provider failed',
+    })
+
+    expect(emittedTypes).toEqual(['run_started', 'run_failed'])
   })
 
   it('空文本会返回失败，且不会创建 runtime 实例', async () => {

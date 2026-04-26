@@ -104,6 +104,8 @@ export function StudioHomePage() {
     switchPrimaryAgent,
     submitPrompt,
     isSubmitting,
+    isRunActive,
+    runtimeSubmitAvailable,
     liveConversation,
     lastRuntimeEvent,
     pendingPermissionRequest,
@@ -327,8 +329,11 @@ export function StudioHomePage() {
 
   const canSubmitPrompt =
     Boolean(hostState.workspacePath?.trim()) &&
+    shellStatus === 'ready' &&
     runtimeStatus === 'ready' &&
-    !isSubmitting
+    runtimeSubmitAvailable &&
+    !isSubmitting &&
+    !isRunActive
 
   const activeSessionDetail =
     shellSnapshot?.activeSession?.sessionId === activeSession?.sessionId
@@ -461,7 +466,9 @@ export function StudioHomePage() {
     try {
       const result = await submitPrompt(nextText)
       if (!result.ok) {
-        setComposerFeedback(result.error ?? '提交失败')
+        if (!result.reportedToTimeline) {
+          setComposerFeedback(result.error ?? '提交失败')
+        }
         setComposerInput(nextText) // 发送失败时恢复内容，方便用户修改重发
         return
       }

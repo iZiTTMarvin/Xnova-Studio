@@ -1262,6 +1262,7 @@ export function parseStudioRuntimeSubmitResult(
       ok: true,
       sessionId:
         value.sessionId === undefined ? null : (value.sessionId as string | null),
+      ...(typeof value.runId === 'string' ? { runId: value.runId } : {}),
     }
   }
 
@@ -1269,6 +1270,7 @@ export function parseStudioRuntimeSubmitResult(
     return {
       ok: false,
       error: value.error,
+      ...(typeof value.runId === 'string' ? { runId: value.runId } : {}),
     }
   }
 
@@ -1286,6 +1288,7 @@ export function parseStudioRuntimeEvent(payload: unknown): StudioRuntimeEvent {
 
   const sessionId = parseOptionalString(value.sessionId, 'runtime.event.sessionId')
   const agentId = parseOptionalString(value.agentId, 'runtime.event.agentId')
+  const runId = parseOptionalString(value.runId, 'runtime.event.runId')
   if (
     value.payload !== undefined &&
     !isPlainObject(value.payload)
@@ -1296,6 +1299,7 @@ export function parseStudioRuntimeEvent(payload: unknown): StudioRuntimeEvent {
   return {
     type: value.type,
     timestamp: value.timestamp,
+    ...(runId ? { runId } : {}),
     ...(sessionId ? { sessionId } : {}),
     ...(agentId ? { agentId } : {}),
     ...(value.payload ? { payload: value.payload } : {}),

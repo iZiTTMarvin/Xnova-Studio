@@ -109,6 +109,7 @@ const INTERACTIVE_PERMISSION_TOOL_NAMES = new Set([
 
 let permissionRequestSequence = 0
 let userInputRequestSequence = 0
+let runtimeRunSequence = 0
 
 function toStudioRuntimeEvent(event: RuntimeEvent): StudioRuntimeEvent {
   return {
@@ -118,6 +119,31 @@ function toStudioRuntimeEvent(event: RuntimeEvent): StudioRuntimeEvent {
     ...(event.agentId ? { agentId: event.agentId } : {}),
     ...(event.payload ? { payload: event.payload } : {}),
   }
+}
+
+function createRuntimeRunId(): string {
+  runtimeRunSequence += 1
+  return `run-${Date.now()}-${runtimeRunSequence}`
+}
+
+function emitRunLifecycleEvent(
+  emitRuntimeEvent: (event: StudioRuntimeEvent) => void,
+  input: {
+    type: 'run_started' | 'run_completed' | 'run_failed'
+    runId: string
+    sessionId?: string | null
+    agentId?: string | null
+    payload?: Record<string, unknown>
+  },
+): void {
+  emitRuntimeEvent({
+    type: input.type,
+    timestamp: new Date().toISOString(),
+    runId: input.runId,
+    ...(input.sessionId ? { sessionId: input.sessionId } : {}),
+    ...(input.agentId ? { agentId: input.agentId } : {}),
+    ...(input.payload ? { payload: input.payload } : {}),
+  })
 }
 
 function resolveRuntimeCwd(
@@ -708,8 +734,23 @@ export function createStudioRuntimeService(
       }
 
       let runtimeEntry: StudioManagedRuntimeEntry | null = null
+      const runId = createRuntimeRunId()
+      let hasEmittedRunFailed = false
 
       try {
+        emitRunLifecycleEvent(emitRuntimeEvent, {
+          type: 'run_started',
+          runId,
+          sessionId: request.sessionId ?? null,
+          agentId: request.agentId ?? null,
+          payload: {
+            projectPath: cwd,
+            providerId: request.providerId ?? null,
+            modelId: request.modelId ?? null,
+            status: 'running',
+          },
+        })
+
         const resolved = loadResolvedConfigFn(cwd)
         const workspaceRoot = hostState.workspacePath ?? cwd
         const engineServiceApi = runtimeManager.getEngineServiceApi(workspaceRoot)
@@ -849,6 +890,18 @@ export function createStudioRuntimeService(
         logger.info('runtimeInstance.submit 返回', { hasError: Boolean(turnResult.error) })
 
         if (turnResult.error) {
+          hasEmittedRunFailed = true
+          emitRunLifecycleEvent(emitRuntimeEvent, {
+            type: 'run_failed',
+            runId,
+            sessionId: turnResult.sessionId,
+            agentId: request.agentId ?? null,
+            payload: {
+              message: turnResult.error,
+              stopReason: turnResult.stopReason,
+              aborted: turnResult.aborted,
+            },
+          })
           return {
             ok: false,
             error: turnResult.error,
@@ -856,6 +909,19 @@ export function createStudioRuntimeService(
         }
 
         runtimeManager.commitSession(runtimeHandle.entry, turnResult.sessionId)
+        emitRunLifecycleEvent(emitRuntimeEvent, {
+          type: 'run_completed',
+          runId,
+          sessionId: turnResult.sessionId,
+          agentId: request.agentId ?? null,
+          payload: {
+            sessionId: turnResult.sessionId,
+            stopReason: turnResult.stopReason,
+            llmCallCount: turnResult.llmCallCount,
+            toolCallCount: turnResult.toolCallCount,
+            aborted: turnResult.aborted,
+          },
+        })
 
         logger.info('runtime submit 完成', {
           cwd,
@@ -869,6 +935,17 @@ export function createStudioRuntimeService(
       } catch (error) {
         const message = error instanceof Error ? error.message : String(error)
         logger.error('runtime submit 执行失败', error)
+        if (!hasEmittedRunFailed) {
+          emitRunLifecycleEvent(emitRuntimeEvent, {
+            type: 'run_failed',
+            runId,
+            sessionId: request.sessionId ?? null,
+            agentId: request.agentId ?? null,
+            payload: {
+              message: `runtime submit 失败: ${message}`,
+            },
+          })
+        }
         return {
           ok: false,
           error: `runtime submit 失败: ${message}`,

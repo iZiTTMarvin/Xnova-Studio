@@ -37,10 +37,12 @@ export type RuntimeSubmitResult =
   | {
       ok: true
       sessionId: string | null
+      runId?: string
     }
   | {
       ok: false
       error: string
+      runId?: string
     }
 
 export interface PermissionDialogRequest {
@@ -120,9 +122,46 @@ export type RuntimeInspectResult =
       issues: StudioStatusIssue[]
     }
 
+export type StudioRunStatus =
+  | 'idle'
+  | 'starting'
+  | 'running'
+  | 'waiting_permission'
+  | 'waiting_user_input'
+  | 'tool_calling'
+  | 'completed'
+  | 'failed'
+  | 'cancelled'
+
+export type StudioRunLifecycleEventType =
+  | 'run_started'
+  | 'text_delta'
+  | 'thinking'
+  | 'tool_start'
+  | 'tool_end'
+  | 'context_update'
+  | 'warning'
+  | 'run_completed'
+  | 'run_failed'
+
+export type StudioRuntimeEventType =
+  | StudioRunLifecycleEventType
+  | 'runtime.snapshot'
+  | 'runtime.error'
+  | 'permission.request'
+  | 'permission.decision'
+  | 'subagent_spawn'
+  | 'subagent_progress'
+  | 'subagent_done'
+  | 'turn_end'
+  | 'session_end'
+  | 'error'
+  | (string & {})
+
 export interface StudioRuntimeEvent {
-  type: string
+  type: StudioRuntimeEventType
   timestamp: string
+  runId?: string
   sessionId?: string
   agentId?: string
   payload?: Record<string, unknown>

@@ -105,17 +105,21 @@ describe('studio preload validators', () => {
 
     expect(
       parseStudioRuntimeEvent({
-        type: 'runtime.snapshot',
+        type: 'run_started',
         timestamp: '2026-04-22T00:00:00.000Z',
+        runId: 'run-1',
+        sessionId: 'session-1',
         payload: {
-          refresh: true,
+          status: 'running',
         },
       }),
     ).toEqual({
-      type: 'runtime.snapshot',
+      type: 'run_started',
       timestamp: '2026-04-22T00:00:00.000Z',
+      runId: 'run-1',
+      sessionId: 'session-1',
       payload: {
-        refresh: true,
+        status: 'running',
       },
     })
   })
