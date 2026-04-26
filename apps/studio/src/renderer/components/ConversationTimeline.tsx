@@ -3,29 +3,16 @@ import type {
   StudioActiveSessionDetail,
   StudioConversationMessage,
 } from '../../shared/studio-bridge-contract'
+import type {
+  LiveConversationBlock,
+  LiveConversationState,
+} from '../hooks/useStudioBridge'
 import { IconChevronRight, IconChevronDown, IconCheck, IconCross } from './Icons'
 import {
   createToolArgumentDetails,
   createToolEventSummary,
 } from '../utils/tool-event-summary'
 import { MarkdownContent } from '../utils/markdown-renderer'
-
-interface LiveConversationState {
-  pendingUserText: string | null
-  assistantText: string
-  thinkingText: string
-  toolEvents: Array<{
-    toolCallId: string
-    toolName: string
-    args: Record<string, unknown>
-    status: 'running' | 'done'
-    durationMs?: number
-    success?: boolean
-    resultSummary?: string
-    resultFull?: string
-  }>
-  systemMessages: string[]
-}
 
 export interface ConversationTimelineProps {
   session: StudioActiveSessionDetail | null
@@ -231,18 +218,6 @@ function renderPersistedToolEvents(
 }
 
 function renderPersistedMessage(message: StudioConversationMessage) {
-  // 工具调用消息
-  if (message.toolEvents && message.toolEvents.length > 0) {
-    return (
-      <article
-        key={message.id}
-        className="conversation-message conversation-message-system"
-      >
-        {renderPersistedToolEvents(message.toolEvents)}
-      </article>
-    )
-  }
-
   // 用户消息
   if (message.role === 'user') {
     return (
@@ -252,6 +227,9 @@ function renderPersistedMessage(message: StudioConversationMessage) {
       >
         <div className="conversation-message-label">你</div>
         <div className="conversation-message-body">{message.content}</div>
+        {message.toolEvents && message.toolEvents.length > 0
+          ? renderPersistedToolEvents(message.toolEvents)
+          : null}
       </article>
     )
   }
@@ -270,6 +248,9 @@ function renderPersistedMessage(message: StudioConversationMessage) {
         {message.thinking ? (
           <ThinkingBlock text={message.thinking} isLive={false} />
         ) : null}
+        {message.toolEvents && message.toolEvents.length > 0
+          ? renderPersistedToolEvents(message.toolEvents)
+          : null}
       </article>
     )
   }
@@ -282,17 +263,54 @@ function renderPersistedMessage(message: StudioConversationMessage) {
     >
       <div className="conversation-message-label">系统</div>
       <div className="conversation-message-body">{message.content}</div>
+      {message.toolEvents && message.toolEvents.length > 0
+        ? renderPersistedToolEvents(message.toolEvents)
+        : null}
     </article>
   )
 }
 
-function createStableSystemMessageKey(message: string, occurrence: number): string {
-  let hash = 0
-  for (let index = 0; index < message.length; index += 1) {
-    hash = (hash * 31 + message.charCodeAt(index)) >>> 0
+function renderLiveBlock(block: LiveConversationBlock, showTypingCursor: boolean) {
+  switch (block.type) {
+    case 'text':
+      return (
+        <div key={block.id} className="conversation-live-block conversation-live-text">
+          <MarkdownContent text={block.content} />
+          {showTypingCursor ? <span className="typing-cursor">▋</span> : null}
+        </div>
+      )
+    case 'thinking':
+      return <ThinkingBlock key={block.id} text={block.content} isLive={true} />
+    case 'tool':
+      return (
+        <div key={block.id} className="tool-call-group tool-call-group--live">
+          <ToolCallRow
+            toolName={block.toolName}
+            args={block.args}
+            status={block.status}
+            success={block.success}
+            durationMs={block.durationMs}
+            resultSummary={block.resultSummary}
+            resultFull={block.resultFull}
+          />
+        </div>
+      )
+    case 'status':
+      return (
+        <div key={block.id} className="conversation-live-status">
+          {block.content}
+        </div>
+      )
+    case 'system':
+      return (
+        <div
+          key={block.id}
+          className={`conversation-live-system conversation-live-system--${block.level}`}
+        >
+          {block.content}
+        </div>
+      )
   }
-
-  return `live-system-${hash.toString(36)}-${occurrence}`
 }
 
 // ============================================================
@@ -302,12 +320,10 @@ function createStableSystemMessageKey(message: string, occurrence: number): stri
 export function ConversationTimeline(props: ConversationTimelineProps) {
   const bottomRef = useRef<HTMLDivElement>(null)
   const persistedMessages = props.session?.messages ?? []
+  const liveBlocks = props.liveConversation.blocks
   const hasLiveContent =
     props.liveConversation.pendingUserText !== null ||
-    props.liveConversation.toolEvents.length > 0 ||
-    props.liveConversation.assistantText.length > 0 ||
-    props.liveConversation.thinkingText.length > 0 ||
-    props.liveConversation.systemMessages.length > 0
+    liveBlocks.length > 0
 
   useEffect(() => {
     const bottomElement = bottomRef.current
@@ -317,10 +333,7 @@ export function ConversationTimeline(props: ConversationTimelineProps) {
     bottomElement.scrollIntoView({ behavior: 'smooth' })
   }, [
     persistedMessages.length,
-    props.liveConversation.assistantText,
-    props.liveConversation.thinkingText,
-    props.liveConversation.toolEvents.length,
-    props.liveConversation.systemMessages.length,
+    liveBlocks,
   ])
 
   if (persistedMessages.length === 0 && !hasLiveContent) {
@@ -346,59 +359,19 @@ export function ConversationTimeline(props: ConversationTimelineProps) {
         </article>
       ) : null}
 
-      {/* 实时思考块 */}
-      {props.liveConversation.thinkingText ? (
-        <ThinkingBlock
-          text={props.liveConversation.thinkingText}
-          isLive={true}
-        />
-      ) : null}
-
-      {/* 实时工具调用 */}
-      {props.liveConversation.toolEvents.length > 0 ? (
-        <div className="tool-call-group tool-call-group--live">
-          {props.liveConversation.toolEvents.map((toolEvent) => (
-            <ToolCallRow
-              key={toolEvent.toolCallId}
-              toolName={toolEvent.toolName}
-              args={toolEvent.args}
-              status={toolEvent.status}
-              success={toolEvent.success}
-              durationMs={toolEvent.durationMs}
-              resultSummary={toolEvent.resultSummary}
-              resultFull={toolEvent.resultFull}
-            />
-          ))}
-        </div>
-      ) : null}
-
-      {/* 实时 AI 回复 + 打字光标 */}
-      {props.liveConversation.assistantText ? (
+      {/* 实时 Xnova turn：按 runtime event 到达顺序渲染文本、思考、工具与状态 */}
+      {liveBlocks.length > 0 ? (
         <article className="conversation-message conversation-message-assistant conversation-message-live">
           <div className="conversation-message-label">Xnova</div>
           <div className="conversation-message-body">
-            <MarkdownContent text={props.liveConversation.assistantText} />
-            <span className="typing-cursor">▋</span>
+            {liveBlocks.map((block, index) =>
+              renderLiveBlock(
+                block,
+                block.type === 'text' && index === liveBlocks.length - 1,
+              ))}
           </div>
         </article>
       ) : null}
-
-      {/* 实时系统消息 */}
-      {props.liveConversation.systemMessages.map((message, index, messages) => {
-        const occurrence = messages
-          .slice(0, index + 1)
-          .filter((candidate) => candidate === message).length
-
-        return (
-          <article
-            key={createStableSystemMessageKey(message, occurrence)}
-            className="conversation-message conversation-message-system conversation-message-live"
-          >
-            <div className="conversation-message-label">⚠️ 系统</div>
-            <div className="conversation-message-body">{message}</div>
-          </article>
-        )
-      })}
       <div ref={bottomRef} />
     </section>
   )

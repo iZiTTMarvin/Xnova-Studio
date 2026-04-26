@@ -50,20 +50,50 @@ export interface ContextState {
   level: 'normal' | 'warning' | 'critical' | 'overflow'
 }
 
-interface LiveConversationState {
+export type LiveConversationBlock =
+  | {
+      id: string
+      type: 'text'
+      content: string
+    }
+  | {
+      id: string
+      type: 'thinking'
+      content: string
+    }
+  | {
+      id: string
+      type: 'tool'
+      toolCallId: string
+      toolName: string
+      args: Record<string, unknown>
+      status: 'running' | 'done'
+      durationMs?: number
+      success?: boolean
+      resultSummary?: string
+      resultFull?: string
+    }
+  | {
+      id: string
+      type: 'status'
+      content: string
+    }
+  | {
+      id: string
+      type: 'system'
+      content: string
+      level: 'info' | 'warning' | 'error'
+    }
+
+type LiveConversationToolEvent = Extract<LiveConversationBlock, { type: 'tool' }>
+
+export interface LiveConversationState {
   pendingUserText: string | null
+  blocks: LiveConversationBlock[]
+  // 兼容旧测试和页面门禁：这些字段由 blocks 派生，不再作为渲染事实源。
   assistantText: string
   thinkingText: string
-  toolEvents: Array<{
-    toolCallId: string
-    toolName: string
-    args: Record<string, unknown>
-    status: 'running' | 'done'
-    durationMs?: number
-    success?: boolean
-    resultSummary?: string
-    resultFull?: string
-  }>
+  toolEvents: Array<Omit<LiveConversationToolEvent, 'id' | 'type'>>
   systemMessages: string[]
 }
 
@@ -75,11 +105,173 @@ function getErrorMessage(error: unknown): string {
   return error instanceof Error ? error.message : String(error)
 }
 
-function appendSystemMessageUnique(
-  messages: string[],
-  message: string,
-): string[] {
-  return messages.at(-1) === message ? messages : [...messages, message]
+function createEmptyLiveConversation(
+  pendingUserText: string | null = null,
+): LiveConversationState {
+  return deriveLiveConversation(pendingUserText, [])
+}
+
+function toLiveToolEvent(
+  block: LiveConversationToolEvent,
+): Omit<LiveConversationToolEvent, 'id' | 'type'> {
+  return {
+    toolCallId: block.toolCallId,
+    toolName: block.toolName,
+    args: block.args,
+    status: block.status,
+    ...(block.durationMs === undefined ? {} : { durationMs: block.durationMs }),
+    ...(block.success === undefined ? {} : { success: block.success }),
+    ...(block.resultSummary === undefined
+      ? {}
+      : { resultSummary: block.resultSummary }),
+    ...(block.resultFull === undefined ? {} : { resultFull: block.resultFull }),
+  }
+}
+
+function deriveLiveConversation(
+  pendingUserText: string | null,
+  blocks: LiveConversationBlock[],
+): LiveConversationState {
+  return {
+    pendingUserText,
+    blocks,
+    assistantText: blocks
+      .filter((block): block is Extract<LiveConversationBlock, { type: 'text' }> =>
+        block.type === 'text')
+      .map((block) => block.content)
+      .join(''),
+    thinkingText: blocks
+      .filter((block): block is Extract<LiveConversationBlock, { type: 'thinking' }> =>
+        block.type === 'thinking')
+      .map((block) => block.content)
+      .join(''),
+    toolEvents: blocks
+      .filter((block): block is LiveConversationToolEvent => block.type === 'tool')
+      .map(toLiveToolEvent),
+    systemMessages: blocks
+      .filter((block): block is Extract<LiveConversationBlock, { type: 'system' }> =>
+        block.type === 'system')
+      .map((block) => block.content),
+  }
+}
+
+function replaceLiveBlocks(
+  current: LiveConversationState,
+  blocks: LiveConversationBlock[],
+): LiveConversationState {
+  return deriveLiveConversation(current.pendingUserText, blocks)
+}
+
+function appendLiveTextBlock(
+  current: LiveConversationState,
+  id: string,
+  content: string,
+): LiveConversationState {
+  if (!content) {
+    return current
+  }
+
+  const lastBlock = current.blocks.at(-1)
+  if (lastBlock?.type === 'text') {
+    return replaceLiveBlocks(current, [
+      ...current.blocks.slice(0, -1),
+      {
+        ...lastBlock,
+        content: lastBlock.content + content,
+      },
+    ])
+  }
+
+  return replaceLiveBlocks(current, [
+    ...current.blocks,
+    {
+      id,
+      type: 'text',
+      content,
+    },
+  ])
+}
+
+function appendLiveThinkingBlock(
+  current: LiveConversationState,
+  id: string,
+  content: string,
+): LiveConversationState {
+  if (!content) {
+    return current
+  }
+
+  const lastBlock = current.blocks.at(-1)
+  if (lastBlock?.type === 'thinking') {
+    return replaceLiveBlocks(current, [
+      ...current.blocks.slice(0, -1),
+      {
+        ...lastBlock,
+        content: lastBlock.content + content,
+      },
+    ])
+  }
+
+  return replaceLiveBlocks(current, [
+    ...current.blocks,
+    {
+      id,
+      type: 'thinking',
+      content,
+    },
+  ])
+}
+
+function appendLiveStatusBlock(
+  current: LiveConversationState,
+  id: string,
+  content: string,
+): LiveConversationState {
+  if (!content) {
+    return current
+  }
+
+  const lastBlock = current.blocks.at(-1)
+  if (lastBlock?.type === 'status' && lastBlock.content === content) {
+    return current
+  }
+
+  return replaceLiveBlocks(current, [
+    ...current.blocks,
+    {
+      id,
+      type: 'status',
+      content,
+    },
+  ])
+}
+
+function appendLiveSystemBlock(
+  current: LiveConversationState,
+  id: string,
+  content: string,
+  level: 'info' | 'warning' | 'error',
+): LiveConversationState {
+  if (!content) {
+    return current
+  }
+
+  const hasSameMessage = current.blocks.some(
+    (block) => block.type === 'system' && block.content === content,
+  )
+  if (hasSameMessage) {
+    return current
+  }
+
+  return replaceLiveBlocks(current, [
+    ...current.blocks,
+    {
+      id,
+      type: 'system',
+      content,
+      level,
+    },
+  ])
 }
 
 function isActiveRunStatus(status: StudioRunStatus): boolean {
@@ -192,13 +384,10 @@ export function useStudioBridge() {
   const [runIdleWarning, setRunIdleWarning] = useState<string | null>(null)
   const [currentRunStep, setCurrentRunStep] = useState<string | null>(null)
   const cancelRequestedRef = useRef(false)
-  const [liveConversation, setLiveConversation] = useState<LiveConversationState>({
-    pendingUserText: null,
-    assistantText: '',
-    thinkingText: '',
-    toolEvents: [],
-    systemMessages: [],
-  })
+  const liveBlockSequenceRef = useRef(0)
+  const [liveConversation, setLiveConversation] = useState<LiveConversationState>(
+    () => createEmptyLiveConversation(),
+  )
   const [contextState, setContextState] = useState<ContextState>({
     usedPercentage: 0,
     lastInputTokens: 0,
@@ -222,6 +411,11 @@ export function useStudioBridge() {
       modelId: null,
     },
   })
+
+  const createLiveBlockId = (kind: LiveConversationBlock['type']): string => {
+    liveBlockSequenceRef.current += 1
+    return `live-${kind}-${liveBlockSequenceRef.current}`
+  }
 
   const startupRoute: StartupRouteResult = useMemo(
     () =>
@@ -389,13 +583,7 @@ export function useStudioBridge() {
       setCurrentAgentId(null)
       setCurrentProviderId(null)
       setCurrentModelId(null)
-      setLiveConversation({
-        pendingUserText: null,
-        assistantText: '',
-        thinkingText: '',
-        toolEvents: [],
-        systemMessages: [],
-      })
+      setLiveConversation(createEmptyLiveConversation())
       setRecoveryState({
         status: {
           kind: 'empty',
@@ -631,25 +819,25 @@ export function useStudioBridge() {
       }
       setLiveConversation((current) => {
         switch (event.type) {
+          case 'run_started':
+            return deriveLiveConversation(current.pendingUserText, [])
           case 'text_delta':
-            return {
-              ...current,
-              assistantText:
-                current.assistantText +
-                (typeof event.payload?.text === 'string' ? event.payload.text : ''),
-            }
+            return appendLiveTextBlock(
+              current,
+              createLiveBlockId('text'),
+              typeof event.payload?.text === 'string' ? event.payload.text : '',
+            )
           case 'thinking':
-            return {
-              ...current,
-              thinkingText:
-                current.thinkingText +
-                (typeof event.payload?.text === 'string' ? event.payload.text : ''),
-            }
+            return appendLiveThinkingBlock(
+              current,
+              createLiveBlockId('thinking'),
+              typeof event.payload?.text === 'string' ? event.payload.text : '',
+            )
           case 'tool_start': {
             const toolCallId =
               typeof event.payload?.toolCallId === 'string'
                 ? event.payload.toolCallId
-                : `tool-${Date.now()}`
+                : createLiveBlockId('tool')
             const toolName =
               typeof event.payload?.toolName === 'string'
                 ? event.payload.toolName
@@ -658,49 +846,79 @@ export function useStudioBridge() {
               event.payload?.args && typeof event.payload.args === 'object'
                 ? (event.payload.args as Record<string, unknown>)
                 : {}
+            const runningStep = createToolRunningStep(toolName, args)
+            const lastBlock = current.blocks.at(-1)
+            const shouldInsertStatus =
+              current.blocks.length === 0 ||
+              (lastBlock?.type !== 'text' && lastBlock?.type !== 'status')
+            const blocks: LiveConversationBlock[] = shouldInsertStatus
+              ? [
+                  ...current.blocks,
+                  {
+                    id: createLiveBlockId('status'),
+                    type: 'status',
+                    content: runningStep,
+                  },
+                ]
+              : current.blocks
 
-            return {
-              ...current,
-              toolEvents: [
-                ...current.toolEvents,
+            return replaceLiveBlocks(current, [
+              ...blocks,
                 {
+                  id: createLiveBlockId('tool'),
+                  type: 'tool',
                   toolCallId,
                   toolName,
                   args,
                   status: 'running',
                 },
-              ],
-            }
+            ])
           }
           case 'tool_end': {
             const toolCallId =
               typeof event.payload?.toolCallId === 'string'
                 ? event.payload.toolCallId
                 : ''
-            return {
-              ...current,
-              toolEvents: current.toolEvents.map((toolEvent) =>
-                toolEvent.toolCallId === toolCallId
-                  ? {
-                      ...toolEvent,
-                      status: 'done',
-                      ...(typeof event.payload?.durationMs === 'number'
-                        ? { durationMs: event.payload.durationMs }
-                        : {}),
-                      ...(typeof event.payload?.success === 'boolean'
-                        ? { success: event.payload.success }
-                        : {}),
-                      ...(typeof event.payload?.resultSummary === 'string'
-                        ? { resultSummary: event.payload.resultSummary }
-                        : {}),
-                      ...(typeof event.payload?.resultFull === 'string'
-                        ? { resultFull: event.payload.resultFull }
-                        : {}),
-                    }
-                  : toolEvent,
-              ),
-            }
+            let changed = false
+            const nextBlocks = current.blocks.map((block) => {
+              if (block.type !== 'tool' || block.toolCallId !== toolCallId) {
+                return block
+              }
+              changed = true
+              return {
+                ...block,
+                status: 'done' as const,
+                ...(typeof event.payload?.durationMs === 'number'
+                  ? { durationMs: event.payload.durationMs }
+                  : {}),
+                ...(typeof event.payload?.success === 'boolean'
+                  ? { success: event.payload.success }
+                  : {}),
+                ...(typeof event.payload?.resultSummary === 'string'
+                  ? { resultSummary: event.payload.resultSummary }
+                  : {}),
+                ...(typeof event.payload?.resultFull === 'string'
+                  ? { resultFull: event.payload.resultFull }
+                  : {}),
+              }
+            })
+            return changed ? replaceLiveBlocks(current, nextBlocks) : current
           }
+          case 'run_completed':
+          case 'session_end':
+            return appendLiveStatusBlock(
+              current,
+              createLiveBlockId('status'),
+              '运行已完成',
+            )
+          case 'turn_end':
+            return appendLiveStatusBlock(
+              current,
+              createLiveBlockId('status'),
+              event.payload?.error || event.payload?.aborted === true
+                ? '运行失败'
+                : '运行已完成',
+            )
           case 'warning':
           case 'error':
           case 'runtime.error':
@@ -712,15 +930,21 @@ export function useStudioBridge() {
                 : typeof event.payload?.error === 'string'
                   ? event.payload.error
                   : null
-            return message
-              ? {
-                  ...current,
-                  systemMessages: appendSystemMessageUnique(
-                    current.systemMessages,
-                    message,
-                  ),
-                }
-              : current
+            if (!message) {
+              return current
+            }
+            const level =
+              event.type === 'warning'
+                ? 'warning'
+                : event.type === 'run_cancelled'
+                  ? 'info'
+                  : 'error'
+            return appendLiveSystemBlock(
+              current,
+              createLiveBlockId('system'),
+              message,
+              level,
+            )
           }
           default:
             return current
@@ -1051,13 +1275,7 @@ export function useStudioBridge() {
     cancelRequestedRef.current = false
     setRuntimeError(null)
     setShellError(null)
-    setLiveConversation({
-      pendingUserText: prompt,
-      assistantText: '',
-      thinkingText: '',
-      toolEvents: [],
-      systemMessages: [],
-    })
+    setLiveConversation(createEmptyLiveConversation(prompt))
     const projectPath = selectedProjectPath ?? hostState.workspacePath ?? null
 
     try {
@@ -1087,13 +1305,14 @@ export function useStudioBridge() {
         setRuntimeError(submitResult.error)
         setRunStatus('failed')
         setCurrentRunStep('运行失败')
-        setLiveConversation((current) => ({
-          ...current,
-          systemMessages: appendSystemMessageUnique(
-            current.systemMessages,
+        setLiveConversation((current) =>
+          appendLiveSystemBlock(
+            current,
+            createLiveBlockId('system'),
             submitResult.error,
+            'error',
           ),
-        }))
+        )
         return {
           ok: false,
           error: submitResult.error,
@@ -1164,13 +1383,7 @@ export function useStudioBridge() {
             inspectResult.status === 'ready' &&
             hasPersistedSubmittedSession
           ) {
-            setLiveConversation({
-              pendingUserText: null,
-              assistantText: '',
-              thinkingText: '',
-              toolEvents: [],
-              systemMessages: [],
-            })
+            setLiveConversation(createEmptyLiveConversation())
           }
         } catch (error) {
           console.error('submitPrompt 后台状态刷新失败', error)
@@ -1192,13 +1405,14 @@ export function useStudioBridge() {
       setCurrentRunStep('运行失败')
       setShellStatus('error')
       setShellError(message)
-      setLiveConversation((current) => ({
-        ...current,
-        systemMessages: appendSystemMessageUnique(
-          current.systemMessages,
+      setLiveConversation((current) =>
+        appendLiveSystemBlock(
+          current,
+          createLiveBlockId('system'),
           message,
+          'error',
         ),
-      }))
+      )
       return { ok: false, error: message }
     } finally {
       setIsSubmitting(false)
@@ -1236,13 +1450,14 @@ export function useStudioBridge() {
         setRunStatus('failed')
         setCurrentRunStep('运行失败')
         setRuntimeError(result.error)
-        setLiveConversation((current) => ({
-          ...current,
-          systemMessages: appendSystemMessageUnique(
-            current.systemMessages,
+        setLiveConversation((current) =>
+          appendLiveSystemBlock(
+            current,
+            createLiveBlockId('system'),
             result.error,
+            'error',
           ),
-        }))
+        )
         return result
       }
 
@@ -1257,13 +1472,14 @@ export function useStudioBridge() {
       setRunStatus('failed')
       setCurrentRunStep('运行失败')
       setRuntimeError(message)
-      setLiveConversation((current) => ({
-        ...current,
-        systemMessages: appendSystemMessageUnique(
-          current.systemMessages,
+      setLiveConversation((current) =>
+        appendLiveSystemBlock(
+          current,
+          createLiveBlockId('system'),
           message,
+          'error',
         ),
-      }))
+      )
       return {
         ok: false,
         error: message,
@@ -1291,13 +1507,14 @@ export function useStudioBridge() {
     } catch (error) {
       const message = getErrorMessage(error)
       setRuntimeError(message)
-      setLiveConversation((current) => ({
-        ...current,
-        systemMessages: appendSystemMessageUnique(
-          current.systemMessages,
+      setLiveConversation((current) =>
+        appendLiveSystemBlock(
+          current,
+          createLiveBlockId('system'),
           message,
+          'error',
         ),
-      }))
+      )
     }
   }
 
@@ -1321,13 +1538,14 @@ export function useStudioBridge() {
     } catch (error) {
       const message = getErrorMessage(error)
       setRuntimeError(message)
-      setLiveConversation((current) => ({
-        ...current,
-        systemMessages: appendSystemMessageUnique(
-          current.systemMessages,
+      setLiveConversation((current) =>
+        appendLiveSystemBlock(
+          current,
+          createLiveBlockId('system'),
           message,
+          'error',
         ),
-      }))
+      )
     }
   }
 

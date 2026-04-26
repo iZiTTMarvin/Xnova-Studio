@@ -1,4 +1,8 @@
 ## 2026-04-26
+- **Studio ConversationTimeline 顺序修复**：修复实时工具调用脱离 assistant 回答的问题
+  - `liveConversation` 改为 ordered blocks，保留 `text_delta / tool_start / tool_end / text_delta` 到达顺序
+  - persisted assistant message 带 `toolEvents` 时继续显示正文，并把工具调用归入 assistant turn
+  - 补齐 hook 与 Timeline 回归测试，继续防止 `write_file.content` 和大 read 结果默认泄漏
 - **Studio Run 后台工具停止与可视化**：修复 Agent 仍在后台调用工具但界面难以判断进展的问题
   - Stop / app quit / 窗口关闭会中断 active run，`AgentLoop` 收到停止后不再启动后续危险工具
   - 工具调用改为 read/write/edit/bash/git 摘要展示，默认不展开 `write_file.content` 与大结果

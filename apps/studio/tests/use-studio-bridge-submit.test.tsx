@@ -84,6 +84,22 @@ function createShellSnapshot(sessionId: string | null) {
 function HookHarness() {
   const bridgeState = useStudioBridge()
   const [submitResult, setSubmitResult] = useState('')
+  const liveBlockSummary = bridgeState.liveConversation.blocks
+    .map((block) => {
+      switch (block.type) {
+        case 'text':
+          return `text:${block.content}`
+        case 'thinking':
+          return `thinking:${block.content}`
+        case 'tool':
+          return `tool:${block.toolName}:${block.status}`
+        case 'status':
+          return `status:${block.content}`
+        case 'system':
+          return `system:${block.level}:${block.content}`
+      }
+    })
+    .join('|')
 
   return (
     <div>
@@ -123,6 +139,7 @@ function HookHarness() {
       <div data-testid="system-messages">
         {bridgeState.liveConversation.systemMessages.join('|')}
       </div>
+      <div data-testid="live-blocks">{liveBlockSummary}</div>
       <div data-testid="run-idle-warning">{bridgeState.runIdleWarning ?? ''}</div>
       <div data-testid="current-run-step">{bridgeState.currentRunStep ?? ''}</div>
     </div>
@@ -500,6 +517,221 @@ describe('useStudioBridge runtime submit', () => {
     expect(screen.getByTestId('assistant-text').textContent).toBe('正在分析')
     expect(screen.getByTestId('tool-events').textContent).toBe('read_file:done')
     expect(screen.getByTestId('current-run-step').textContent).toBe('运行已完成')
+  })
+
+  it('liveConversation.blocks 会保留 text_delta / tool_start / tool_end / text_delta 的真实顺序', async () => {
+    let runtimeEventHandler: ((event: {
+      type: string
+      timestamp: string
+      payload?: Record<string, unknown>
+    }) => void) | null = null
+    const submit = vi.fn(async () => {
+      runtimeEventHandler?.({
+        type: 'run_started',
+        timestamp: '2026-04-26T00:00:00.000Z',
+      })
+      runtimeEventHandler?.({
+        type: 'text_delta',
+        timestamp: '2026-04-26T00:00:01.000Z',
+        payload: {
+          text: '我先查看目录',
+        },
+      })
+      runtimeEventHandler?.({
+        type: 'tool_start',
+        timestamp: '2026-04-26T00:00:02.000Z',
+        payload: {
+          toolCallId: 'tool-1',
+          toolName: 'ls',
+          args: {
+            path: '.',
+          },
+        },
+      })
+      runtimeEventHandler?.({
+        type: 'tool_end',
+        timestamp: '2026-04-26T00:00:03.000Z',
+        payload: {
+          toolCallId: 'tool-1',
+          success: true,
+        },
+      })
+      runtimeEventHandler?.({
+        type: 'text_delta',
+        timestamp: '2026-04-26T00:00:04.000Z',
+        payload: {
+          text: '目录看完了',
+        },
+      })
+      runtimeEventHandler?.({
+        type: 'run_completed',
+        timestamp: '2026-04-26T00:00:05.000Z',
+      })
+      return {
+        ok: true as const,
+        sessionId: 'session-2',
+      }
+    })
+
+    ;(window as Window & { xnovaStudio?: unknown }).xnovaStudio = {
+      host: {
+        getState: vi.fn(async () => ({
+          workspacePath: 'D:/workspace/demo',
+          lastSelection: null,
+        })),
+        openWorkspace: vi.fn(),
+        onStateChanged: () => () => {},
+      },
+      runtime: {
+        inspect: vi.fn(async () => createRuntimeInspectResult()),
+        submit,
+        onEvent: (listener: (event: {
+          type: string
+          timestamp: string
+          payload?: Record<string, unknown>
+        }) => void) => {
+          runtimeEventHandler = listener
+          return () => {
+            runtimeEventHandler = null
+          }
+        },
+      },
+      shell: {
+        getSnapshot: vi
+          .fn()
+          .mockResolvedValueOnce(createShellSnapshot(null))
+          .mockResolvedValueOnce(createShellSnapshot('session-2')),
+      },
+      settings: {
+        getProviderSettings: vi.fn(),
+        saveProviderSettings: vi.fn(),
+        testProviderConnection: vi.fn(),
+      },
+      memory: {
+        getOverview: vi.fn(),
+        rebuild: vi.fn(),
+      },
+      mcp: {
+        getOverview: vi.fn(),
+        addServer: vi.fn(),
+        deleteServer: vi.fn(),
+      },
+      skillsPlugins: {
+        getOverview: vi.fn(),
+      },
+    }
+
+    render(<HookHarness />)
+
+    await waitFor(() => {
+      expect(screen.getByTestId('shell-status').textContent).toBe('ready')
+    })
+
+    fireEvent.click(screen.getByRole('button', { name: '提交' }))
+
+    await waitFor(() => {
+      expect(screen.getByTestId('run-status').textContent).toBe('completed')
+    })
+    expect(screen.getByTestId('live-blocks').textContent).toContain(
+      'text:我先查看目录|tool:ls:done|text:目录看完了',
+    )
+  })
+
+  it('tool_start 作为首个 live 内容时插入状态块，tool_end 只更新原工具块', async () => {
+    let runtimeEventHandler: ((event: {
+      type: string
+      timestamp: string
+      payload?: Record<string, unknown>
+    }) => void) | null = null
+
+    ;(window as Window & { xnovaStudio?: unknown }).xnovaStudio = {
+      host: {
+        getState: vi.fn(async () => ({
+          workspacePath: 'D:/workspace/demo',
+          lastSelection: null,
+        })),
+        openWorkspace: vi.fn(),
+        onStateChanged: () => () => {},
+      },
+      runtime: {
+        inspect: vi.fn(async () => createRuntimeInspectResult()),
+        submit: vi.fn(() => {
+          runtimeEventHandler?.({
+            type: 'run_started',
+            timestamp: '2026-04-26T00:00:00.000Z',
+          })
+          runtimeEventHandler?.({
+            type: 'tool_start',
+            timestamp: '2026-04-26T00:00:01.000Z',
+            payload: {
+              toolCallId: 'tool-1',
+              toolName: 'write_file',
+              args: {
+                path: 'D:/workspace/demo/SPEC.md',
+                content: 'hello\nworld',
+              },
+            },
+          })
+          runtimeEventHandler?.({
+            type: 'tool_end',
+            timestamp: '2026-04-26T00:00:02.000Z',
+            payload: {
+              toolCallId: 'tool-1',
+              success: true,
+              durationMs: 12,
+            },
+          })
+          return new Promise(() => undefined)
+        }),
+        onEvent: (listener: (event: {
+          type: string
+          timestamp: string
+          payload?: Record<string, unknown>
+        }) => void) => {
+          runtimeEventHandler = listener
+          return () => {
+            runtimeEventHandler = null
+          }
+        },
+      },
+      shell: {
+        getSnapshot: vi.fn(async () => createShellSnapshot(null)),
+      },
+      settings: {
+        getProviderSettings: vi.fn(),
+        saveProviderSettings: vi.fn(),
+        testProviderConnection: vi.fn(),
+      },
+      memory: {
+        getOverview: vi.fn(),
+        rebuild: vi.fn(),
+      },
+      mcp: {
+        getOverview: vi.fn(),
+        addServer: vi.fn(),
+        deleteServer: vi.fn(),
+      },
+      skillsPlugins: {
+        getOverview: vi.fn(),
+      },
+    }
+
+    render(<HookHarness />)
+
+    await waitFor(() => {
+      expect(screen.getByTestId('shell-status').textContent).toBe('ready')
+    })
+
+    fireEvent.click(screen.getByRole('button', { name: '提交' }))
+
+    await waitFor(() => {
+      expect(screen.getByTestId('live-blocks').textContent).toContain(
+        'tool:write_file:done',
+      )
+    })
+    expect(screen.getByTestId('live-blocks').textContent).toBe(
+      'status:正在写入 SPEC.md|tool:write_file:done',
+    )
   })
 
   it('submit 成功后若 runtime inspect 刷新失败，不应提前清空 liveConversation', async () => {

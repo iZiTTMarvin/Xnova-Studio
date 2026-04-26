@@ -363,10 +363,7 @@ export function StudioHomePage() {
       : null
   const hasVisibleLiveConversation =
     liveConversation.pendingUserText !== null ||
-    liveConversation.assistantText.length > 0 ||
-    liveConversation.thinkingText.length > 0 ||
-    liveConversation.toolEvents.length > 0 ||
-    liveConversation.systemMessages.length > 0
+    liveConversation.blocks.length > 0
 
   const composerArea = (
     <div className="composer-shell composer-shell-codex">
