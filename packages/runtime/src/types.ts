@@ -43,6 +43,7 @@ export type RuntimeEventType =
   | 'model_first_chunk'     // 收到首个 chunk
   | 'model_request_finished' // 模型请求结束
   | 'model_request_failed'  // 模型请求失败
+  | 'timing_mark'       // 非敏感性能阶段打点
   | 'text_delta'        // LLM 流式文本片段
   | 'thinking'          // 思考过程片段
   | 'tool_start'        // 工具调用开始

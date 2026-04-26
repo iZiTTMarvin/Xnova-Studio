@@ -31,6 +31,13 @@ export interface RuntimeSubmitRequest {
   agentId?: string | null
   providerId?: string | null
   modelId?: string | null
+  timing?: RuntimeSubmitTimingMarks
+}
+
+export interface RuntimeSubmitTimingMarks {
+  userSubmitClickedAt?: number
+  rendererRuntimeSubmitInvokedAt?: number
+  ipcRuntimeSubmitReceivedAt?: number
 }
 
 export type RuntimeSubmitResult =

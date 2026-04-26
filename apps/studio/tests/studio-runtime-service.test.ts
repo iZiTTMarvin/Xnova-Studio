@@ -410,6 +410,495 @@ describe('studio runtime service', () => {
     expect(emittedEvents[2]?.runId).toBe(emittedEvents[0]?.runId)
   })
 
+  it('model_request_started 后 45s 内没有 model_first_chunk 时，会发 model_request_failed 与 run_failed', async () => {
+    vi.useFakeTimers()
+    let runtimeBridge: RuntimeHostBridge | null = null
+
+    try {
+      const runtimeInstance: RuntimeInstance = {
+        submit: vi.fn((): Promise<RuntimeTurnResult> => {
+          runtimeBridge?.emit({
+            type: 'model_request_started',
+            timestamp: '2026-04-26T00:00:00.000Z',
+            sessionId: 'session-1',
+            payload: {
+              providerId: 'minimax',
+              modelId: 'MiniMax-M2.7',
+              phase: 'initial',
+            },
+          })
+          return new Promise(() => undefined)
+        }),
+        abort: vi.fn(),
+        dispose: vi.fn(async () => undefined),
+        getSnapshot: vi.fn(() => ({
+          sessionId: 'session-1',
+          isRunning: true,
+          provider: 'minimax',
+          model: 'MiniMax-M2.7',
+          warnings: [],
+        })),
+      }
+      const service = createStudioRuntimeService({
+        firstChunkTimeoutMs: 45_000,
+        createRuntimeFn: vi.fn(async (_input, bridge) => {
+          runtimeBridge = bridge
+          return runtimeInstance
+        }),
+        loadResolvedConfigFn: vi.fn(() => ({
+          effective: {
+            defaultProvider: 'minimax',
+            defaultModel: 'MiniMax-M2.7',
+            providers: {},
+          },
+          source: {},
+          warnings: [],
+        })),
+      })
+      const emittedTypes: string[] = []
+
+      const submitPromise = service.submit(
+        {
+          text: '继续',
+          projectPath: 'D:/workspace/demo',
+          providerId: 'minimax',
+          modelId: 'MiniMax-M2.7',
+        },
+        {
+          workspacePath: 'D:/workspace/demo',
+          lastSelection: null,
+        },
+        (event) => {
+          emittedTypes.push(event.type)
+        },
+      )
+
+      await vi.advanceTimersByTimeAsync(45_000)
+
+      await expect(submitPromise).resolves.toEqual({
+        ok: false,
+        error: '模型请求长时间没有返回首个响应，请检查网络、模型服务或稍后重试。',
+      })
+      expect(runtimeInstance.abort).toHaveBeenCalledTimes(1)
+      expect(emittedTypes).toEqual([
+        'run_started',
+        'model_request_started',
+        'model_request_failed',
+        'run_failed',
+      ])
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+
+  it('model_request_started 后收到 model_first_chunk，会清除 first chunk timer', async () => {
+    vi.useFakeTimers()
+    let runtimeBridge: RuntimeHostBridge | null = null
+
+    try {
+      const runtimeInstance: RuntimeInstance = {
+        submit: vi.fn(
+          (): Promise<RuntimeTurnResult> =>
+            new Promise((resolve) => {
+              runtimeBridge?.emit({
+                type: 'model_request_started',
+                timestamp: '2026-04-26T00:00:00.000Z',
+                sessionId: 'session-1',
+                payload: {
+                  providerId: 'minimax',
+                  modelId: 'MiniMax-M2.7',
+                  phase: 'initial',
+                },
+              })
+              setTimeout(() => {
+                runtimeBridge?.emit({
+                  type: 'model_first_chunk',
+                  timestamp: '2026-04-26T00:00:01.000Z',
+                  sessionId: 'session-1',
+                  payload: {
+                    elapsedMs: 1_000,
+                  },
+                })
+              }, 10)
+              setTimeout(() => {
+                runtimeBridge?.emit({
+                  type: 'model_request_finished',
+                  timestamp: '2026-04-26T00:00:02.000Z',
+                  sessionId: 'session-1',
+                  payload: {
+                    elapsedMs: 2_000,
+                  },
+                })
+                resolve({
+                  text: 'done',
+                  thinking: '',
+                  stopReason: 'end_turn',
+                  llmCallCount: 1,
+                  toolCallCount: 0,
+                  usage: {
+                    inputTokens: 1,
+                    outputTokens: 1,
+                    cacheReadTokens: 0,
+                    cacheWriteTokens: 0,
+                  },
+                  aborted: false,
+                  historyCompacted: false,
+                  sessionId: 'session-1',
+                })
+              }, 20)
+            }),
+        ),
+        abort: vi.fn(),
+        dispose: vi.fn(async () => undefined),
+        getSnapshot: vi.fn(() => ({
+          sessionId: 'session-1',
+          isRunning: true,
+          provider: 'minimax',
+          model: 'MiniMax-M2.7',
+          warnings: [],
+        })),
+      }
+      const service = createStudioRuntimeService({
+        firstChunkTimeoutMs: 45_000,
+        createRuntimeFn: vi.fn(async (_input, bridge) => {
+          runtimeBridge = bridge
+          return runtimeInstance
+        }),
+        loadResolvedConfigFn: vi.fn(() => ({
+          effective: {
+            defaultProvider: 'minimax',
+            defaultModel: 'MiniMax-M2.7',
+            providers: {},
+          },
+          source: {},
+          warnings: [],
+        })),
+      })
+
+      const submitPromise = service.submit(
+        {
+          text: '继续',
+          projectPath: 'D:/workspace/demo',
+        },
+        {
+          workspacePath: 'D:/workspace/demo',
+          lastSelection: null,
+        },
+        vi.fn(),
+      )
+
+      await vi.advanceTimersByTimeAsync(50_000)
+
+      await expect(submitPromise).resolves.toEqual({
+        ok: true,
+        sessionId: 'session-1',
+      })
+      expect(runtimeInstance.abort).not.toHaveBeenCalled()
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+
+  it('用户 cancel 会清除 first chunk timer，不会再发 run_failed', async () => {
+    vi.useFakeTimers()
+    let runtimeBridge: RuntimeHostBridge | null = null
+
+    try {
+      const runtimeInstance: RuntimeInstance = {
+        submit: vi.fn((): Promise<RuntimeTurnResult> => {
+          runtimeBridge?.emit({
+            type: 'model_request_started',
+            timestamp: '2026-04-26T00:00:00.000Z',
+            sessionId: 'session-1',
+            payload: {
+              providerId: 'minimax',
+              modelId: 'MiniMax-M2.7',
+              phase: 'initial',
+            },
+          })
+          return new Promise(() => undefined)
+        }),
+        abort: vi.fn(),
+        dispose: vi.fn(async () => undefined),
+        getSnapshot: vi.fn(() => ({
+          sessionId: 'session-1',
+          isRunning: true,
+          provider: 'minimax',
+          model: 'MiniMax-M2.7',
+          warnings: [],
+        })),
+      }
+      const service = createStudioRuntimeService({
+        firstChunkTimeoutMs: 45_000,
+        createRuntimeFn: vi.fn(async (_input, bridge) => {
+          runtimeBridge = bridge
+          return runtimeInstance
+        }),
+        loadResolvedConfigFn: vi.fn(() => ({
+          effective: {
+            defaultProvider: 'minimax',
+            defaultModel: 'MiniMax-M2.7',
+            providers: {},
+          },
+          source: {},
+          warnings: [],
+        })),
+      })
+      const emittedTypes: string[] = []
+
+      const submitPromise = service.submit(
+        {
+          text: '继续',
+          projectPath: 'D:/workspace/demo',
+        },
+        {
+          workspacePath: 'D:/workspace/demo',
+          lastSelection: null,
+        },
+        (event) => {
+          emittedTypes.push(event.type)
+        },
+      )
+
+      await Promise.resolve()
+      await Promise.resolve()
+      await expect(
+        service.cancel({
+          reason: 'user-stop',
+        }),
+      ).resolves.toMatchObject({
+        ok: true,
+      })
+
+      await vi.advanceTimersByTimeAsync(45_000)
+
+      expect(emittedTypes).toEqual([
+        'run_started',
+        'model_request_started',
+        'run_cancelled',
+      ])
+      await expect(submitPromise).resolves.toMatchObject({
+        ok: false,
+        error: expect.stringContaining('已停止当前运行'),
+      })
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+
+  it('工具调用结束后的第二轮 model_request_started 也会重新启动 timeout', async () => {
+    vi.useFakeTimers()
+    let runtimeBridge: RuntimeHostBridge | null = null
+
+    try {
+      const runtimeInstance: RuntimeInstance = {
+        submit: vi.fn((): Promise<RuntimeTurnResult> => {
+          runtimeBridge?.emit({
+            type: 'model_request_started',
+            timestamp: '2026-04-26T00:00:00.000Z',
+            sessionId: 'session-1',
+            payload: {
+              providerId: 'minimax',
+              modelId: 'MiniMax-M2.7',
+              phase: 'initial',
+            },
+          })
+          setTimeout(() => {
+            runtimeBridge?.emit({
+              type: 'model_first_chunk',
+              timestamp: '2026-04-26T00:00:01.000Z',
+              sessionId: 'session-1',
+              payload: {
+                elapsedMs: 1_000,
+              },
+            })
+            runtimeBridge?.emit({
+              type: 'tool_start',
+              timestamp: '2026-04-26T00:00:02.000Z',
+              sessionId: 'session-1',
+              payload: {
+                toolCallId: 'tool-1',
+                toolName: 'read_file',
+                args: {
+                  path: 'src/index.ts',
+                },
+              },
+            })
+            runtimeBridge?.emit({
+              type: 'tool_end',
+              timestamp: '2026-04-26T00:00:03.000Z',
+              sessionId: 'session-1',
+              payload: {
+                toolCallId: 'tool-1',
+                success: true,
+              },
+            })
+            runtimeBridge?.emit({
+              type: 'model_request_started',
+              timestamp: '2026-04-26T00:00:04.000Z',
+              sessionId: 'session-1',
+              payload: {
+                providerId: 'minimax',
+                modelId: 'MiniMax-M2.7',
+                phase: 'after_tool_result',
+              },
+            })
+          }, 10)
+          return new Promise(() => undefined)
+        }),
+        abort: vi.fn(),
+        dispose: vi.fn(async () => undefined),
+        getSnapshot: vi.fn(() => ({
+          sessionId: 'session-1',
+          isRunning: true,
+          provider: 'minimax',
+          model: 'MiniMax-M2.7',
+          warnings: [],
+        })),
+      }
+      const service = createStudioRuntimeService({
+        firstChunkTimeoutMs: 100,
+        createRuntimeFn: vi.fn(async (_input, bridge) => {
+          runtimeBridge = bridge
+          return runtimeInstance
+        }),
+        loadResolvedConfigFn: vi.fn(() => ({
+          effective: {
+            defaultProvider: 'minimax',
+            defaultModel: 'MiniMax-M2.7',
+            providers: {},
+          },
+          source: {},
+          warnings: [],
+        })),
+      })
+      const emittedTypes: string[] = []
+
+      const submitPromise = service.submit(
+        {
+          text: '继续',
+          projectPath: 'D:/workspace/demo',
+        },
+        {
+          workspacePath: 'D:/workspace/demo',
+          lastSelection: null,
+        },
+        (event) => {
+          emittedTypes.push(event.type)
+        },
+      )
+
+      await vi.advanceTimersByTimeAsync(200)
+
+      await expect(submitPromise).resolves.toEqual({
+        ok: false,
+        error: '模型请求长时间没有返回首个响应，请检查网络、模型服务或稍后重试。',
+      })
+      expect(emittedTypes).toEqual([
+        'run_started',
+        'model_request_started',
+        'model_first_chunk',
+        'tool_start',
+        'tool_end',
+        'model_request_started',
+        'model_request_failed',
+        'run_failed',
+      ])
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+
+  it('timeout 后 late model_first_chunk 不会再覆盖 failed 状态', async () => {
+    vi.useFakeTimers()
+    let runtimeBridge: RuntimeHostBridge | null = null
+
+    try {
+      const runtimeInstance: RuntimeInstance = {
+        submit: vi.fn((): Promise<RuntimeTurnResult> => {
+          runtimeBridge?.emit({
+            type: 'model_request_started',
+            timestamp: '2026-04-26T00:00:00.000Z',
+            sessionId: 'session-1',
+            payload: {
+              providerId: 'minimax',
+              modelId: 'MiniMax-M2.7',
+              phase: 'initial',
+            },
+          })
+          return new Promise(() => undefined)
+        }),
+        abort: vi.fn(),
+        dispose: vi.fn(async () => undefined),
+        getSnapshot: vi.fn(() => ({
+          sessionId: 'session-1',
+          isRunning: true,
+          provider: 'minimax',
+          model: 'MiniMax-M2.7',
+          warnings: [],
+        })),
+      }
+      const service = createStudioRuntimeService({
+        firstChunkTimeoutMs: 100,
+        createRuntimeFn: vi.fn(async (_input, bridge) => {
+          runtimeBridge = bridge
+          return runtimeInstance
+        }),
+        loadResolvedConfigFn: vi.fn(() => ({
+          effective: {
+            defaultProvider: 'minimax',
+            defaultModel: 'MiniMax-M2.7',
+            providers: {},
+          },
+          source: {},
+          warnings: [],
+        })),
+      })
+      const emittedTypes: string[] = []
+
+      const submitPromise = service.submit(
+        {
+          text: '继续',
+          projectPath: 'D:/workspace/demo',
+        },
+        {
+          workspacePath: 'D:/workspace/demo',
+          lastSelection: null,
+        },
+        (event) => {
+          emittedTypes.push(event.type)
+        },
+      )
+
+      await vi.advanceTimersByTimeAsync(100)
+
+      const lateRuntimeBridge = runtimeBridge as RuntimeHostBridge | null
+      if (lateRuntimeBridge) {
+        lateRuntimeBridge.emit({
+          type: 'model_first_chunk',
+          timestamp: '2026-04-26T00:00:02.000Z',
+          sessionId: 'session-1',
+          payload: {
+            elapsedMs: 2_000,
+          },
+        })
+      }
+
+      await expect(submitPromise).resolves.toEqual({
+        ok: false,
+        error: '模型请求长时间没有返回首个响应，请检查网络、模型服务或稍后重试。',
+      })
+      expect(emittedTypes).toEqual([
+        'run_started',
+        'model_request_started',
+        'model_request_failed',
+        'run_failed',
+      ])
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+
   it('runtime 发出 turn_end 后，即使 submit 暂不 resolve，也会收敛为 run_completed', async () => {
     let runtimeBridge: RuntimeHostBridge | null = null
 

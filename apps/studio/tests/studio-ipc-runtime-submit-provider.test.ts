@@ -75,12 +75,15 @@ describe('studio ipc runtime submit provider bridge', () => {
     })
 
     expect(submitRuntime).toHaveBeenCalledWith(
-      {
+      expect.objectContaining({
         text: '继续当前项目',
         projectPath: 'D:/workspace/demo',
         providerId: 'openai',
         modelId: 'gpt-4.1-mini',
-      },
+        timing: expect.objectContaining({
+          ipcRuntimeSubmitReceivedAt: expect.any(Number),
+        }),
+      }),
       {
         workspacePath: 'D:/workspace/demo',
         lastSelection: {

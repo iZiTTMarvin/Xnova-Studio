@@ -275,12 +275,15 @@ describe('studio main ipc handlers', () => {
     })
 
     expect(submitRuntime).toHaveBeenCalledWith(
-      {
+      expect.objectContaining({
         text: '分析当前项目',
         projectPath: 'D:/workspace/demo',
         agentId: 'general',
         modelId: 'claude-sonnet-4-6',
-      },
+        timing: expect.objectContaining({
+          ipcRuntimeSubmitReceivedAt: expect.any(Number),
+        }),
+      }),
       {
         workspacePath: 'D:/workspace/demo',
         lastSelection: {

@@ -62,8 +62,73 @@ const RUN_IDLE_WARNING_MS = 90_000
 const RUN_IDLE_WARNING_MESSAGE = '运行长时间没有新进展，可以停止后重试'
 const RUN_STEP_CALLING_MODEL = '正在调用模型'
 
+type RendererSubmitTimingStatus = 'completed' | 'failed' | 'cancelled'
+
+interface RendererSubmitTimingState {
+  enabled: boolean
+  marks: Map<string, number>
+  finished: boolean
+}
+
 function getErrorMessage(error: unknown): string {
   return error instanceof Error ? error.message : String(error)
+}
+
+function isRendererSubmitTimingEnabled(): boolean {
+  const isDev = import.meta.env.DEV === true && import.meta.env.MODE !== 'test'
+  try {
+    return isDev || window.localStorage.getItem('XNOVA_TIMING_DEBUG') === '1'
+  } catch {
+    return isDev
+  }
+}
+
+function formatRendererTimingDuration(ms: number): string {
+  if (ms < 1_000) {
+    return `${Math.max(0, Math.round(ms))}ms`
+  }
+  return `${Math.round((ms / 1_000) * 10) / 10}s`
+}
+
+function buildRendererTimingSummary(
+  marks: Map<string, number>,
+): string[] {
+  const lines: Array<{ label: string; from: string; to: string }> = [
+    {
+      label: 'user submit clicked -> runtime submit invoked',
+      from: 'user_submit_clicked',
+      to: 'renderer_runtime_submit_invoked',
+    },
+    {
+      label: 'runtime submit invoked -> run_started received',
+      from: 'renderer_runtime_submit_invoked',
+      to: 'renderer_received_run_started',
+    },
+    {
+      label: 'run_started -> model request started received',
+      from: 'renderer_received_run_started',
+      to: 'renderer_received_model_request_started',
+    },
+    {
+      label: 'model request started -> model first chunk received',
+      from: 'renderer_received_model_request_started',
+      to: 'renderer_received_model_first_chunk',
+    },
+    {
+      label: 'runtime submit invoked -> first visible progress received',
+      from: 'renderer_runtime_submit_invoked',
+      to: 'renderer_received_first_visible_progress',
+    },
+  ]
+
+  return lines.flatMap((line) => {
+    const from = marks.get(line.from)
+    const to = marks.get(line.to)
+    if (from === undefined || to === undefined || to < from) {
+      return []
+    }
+    return [`- ${line.label}: ${formatRendererTimingDuration(to - from)}`]
+  })
 }
 
 function createEmptyLiveConversation(
@@ -348,6 +413,11 @@ export function useStudioBridge() {
   const [runIdleWarning, setRunIdleWarning] = useState<string | null>(null)
   const [currentRunStep, setCurrentRunStep] = useState<string | null>(null)
   const cancelRequestedRef = useRef(false)
+  const rendererSubmitTimingRef = useRef<RendererSubmitTimingState>({
+    enabled: false,
+    marks: new Map(),
+    finished: false,
+  })
   const liveBlockSequenceRef = useRef(0)
   const [liveConversation, setLiveConversation] = useState<LiveConversationState>(
     () => createEmptyLiveConversation(),
@@ -382,6 +452,40 @@ export function useStudioBridge() {
   const createLiveBlockId = (kind: LiveConversationBlock['type']): string => {
     liveBlockSequenceRef.current += 1
     return `live-${kind}-${liveBlockSequenceRef.current}`
+  }
+
+  const resetRendererSubmitTiming = (): void => {
+    rendererSubmitTimingRef.current = {
+      enabled: isRendererSubmitTimingEnabled(),
+      marks: new Map(),
+      finished: false,
+    }
+  }
+
+  const markRendererSubmitTiming = (stage: string, at = Date.now()): void => {
+    const timing = rendererSubmitTimingRef.current
+    if (!timing.enabled || timing.marks.has(stage)) {
+      return
+    }
+    timing.marks.set(stage, at)
+  }
+
+  const finishRendererSubmitTiming = (
+    status: RendererSubmitTimingStatus,
+  ): void => {
+    const timing = rendererSubmitTimingRef.current
+    if (!timing.enabled || timing.finished) {
+      return
+    }
+    timing.finished = true
+    const lines = buildRendererTimingSummary(timing.marks)
+    if (lines.length === 0) {
+      return
+    }
+    console.info(`Submit timing (renderer):\n${lines.join('\n')}`, {
+      status,
+      marks: [...timing.marks.entries()].map(([stage, at]) => ({ stage, at })),
+    })
   }
 
   const startupRoute: StartupRouteResult = useMemo(
@@ -736,6 +840,26 @@ export function useStudioBridge() {
       setRunIdleWarning(null)
       switch (event.type) {
         case 'run_started':
+          markRendererSubmitTiming('renderer_received_run_started')
+          break
+        case 'model_request_started':
+          markRendererSubmitTiming('renderer_received_model_request_started')
+          break
+        case 'model_first_chunk':
+          markRendererSubmitTiming('renderer_received_model_first_chunk')
+          break
+        case 'text_delta':
+        case 'tool_start':
+        case 'tool_end':
+        case 'context_update':
+        case 'warning':
+          markRendererSubmitTiming('renderer_received_first_visible_progress')
+          break
+        default:
+          break
+      }
+      switch (event.type) {
+        case 'run_started':
           cancelRequestedRef.current = false
           activeRunIdRef.current = event.runId ?? null
           setCurrentRunId(event.runId ?? null)
@@ -767,6 +891,7 @@ export function useStudioBridge() {
           )
           break
         case 'model_request_failed':
+          finishRendererSubmitTiming('failed')
           if (event.runId) {
             finalizedRunIdsRef.current.add(event.runId)
           }
@@ -816,6 +941,7 @@ export function useStudioBridge() {
           break
         case 'run_completed':
         case 'session_end':
+          finishRendererSubmitTiming('completed')
           if (event.runId) {
             finalizedRunIdsRef.current.add(event.runId)
           }
@@ -827,6 +953,11 @@ export function useStudioBridge() {
           setCurrentRunStep('运行已完成')
           break
         case 'turn_end':
+          finishRendererSubmitTiming(
+            event.payload?.error || event.payload?.aborted === true
+              ? 'failed'
+              : 'completed',
+          )
           if (event.runId) {
             finalizedRunIdsRef.current.add(event.runId)
           }
@@ -849,6 +980,7 @@ export function useStudioBridge() {
           )
           break
         case 'run_failed':
+          finishRendererSubmitTiming('failed')
           if (event.runId) {
             finalizedRunIdsRef.current.add(event.runId)
           }
@@ -860,6 +992,7 @@ export function useStudioBridge() {
           setCurrentRunStep('运行失败')
           break
         case 'run_cancelled':
+          finishRendererSubmitTiming('cancelled')
           if (event.runId) {
             finalizedRunIdsRef.current.add(event.runId)
           }
@@ -1298,6 +1431,9 @@ export function useStudioBridge() {
 
   const submitPrompt = async (text: string): Promise<SubmitPromptResult> => {
     const prompt = text.trim()
+    const userSubmitClickedAt = Date.now()
+    resetRendererSubmitTiming()
+    markRendererSubmitTiming('user_submit_clicked', userSubmitClickedAt)
     if (!prompt || !bridge) {
       return { ok: false, error: '宿主桥接不可用。' }
     }
@@ -1350,6 +1486,11 @@ export function useStudioBridge() {
           error: 'runtime.submit 不可用。',
         }
       }
+      const rendererRuntimeSubmitInvokedAt = Date.now()
+      markRendererSubmitTiming(
+        'renderer_runtime_submit_invoked',
+        rendererRuntimeSubmitInvokedAt,
+      )
       const submitResult = await bridge.runtime.submit({
         text: prompt,
         projectPath,
@@ -1357,11 +1498,17 @@ export function useStudioBridge() {
         agentId: currentAgentId,
         providerId: currentProviderId,
         modelId: currentModelId,
+        timing: {
+          userSubmitClickedAt,
+          rendererRuntimeSubmitInvokedAt,
+        },
       })
       if (!submitResult.ok) {
         if (cancelRequestedRef.current) {
+          finishRendererSubmitTiming('cancelled')
           return { ok: true }
         }
+        finishRendererSubmitTiming('failed')
         setRuntimeStatus('error')
         setRuntimeError(submitResult.error)
         setRunStatus('failed')
@@ -1382,6 +1529,7 @@ export function useStudioBridge() {
       }
       setRunStatus('completed')
       setCurrentRunStep('运行已完成')
+      finishRendererSubmitTiming('completed')
 
       // 提交成功后立即返回，避免 getSnapshot/inspectRuntime 的异常影响 UI
       // 后续状态刷新通过异步任务完成，即使失败也不应阻止输入框清空
@@ -1458,8 +1606,10 @@ export function useStudioBridge() {
     } catch (error) {
       const message = getErrorMessage(error)
       if (cancelRequestedRef.current) {
+        finishRendererSubmitTiming('cancelled')
         return { ok: true }
       }
+      finishRendererSubmitTiming('failed')
       setRuntimeStatus('error')
       setRuntimeError(message)
       setRunStatus('failed')
@@ -1526,6 +1676,7 @@ export function useStudioBridge() {
       setRunStatus((current) =>
         current === 'cancelling' ? 'cancelled' : current,
       )
+      finishRendererSubmitTiming('cancelled')
       setCurrentRunId(null)
       setCurrentRunStep('已停止当前运行')
       return result

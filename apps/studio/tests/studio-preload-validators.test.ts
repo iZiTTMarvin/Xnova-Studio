@@ -134,6 +134,10 @@ describe('studio preload validators', () => {
         sessionId: 'session-1',
         agentId: 'general',
         modelId: 'claude-sonnet-4-6',
+        timing: {
+          userSubmitClickedAt: 1_000,
+          rendererRuntimeSubmitInvokedAt: 1_010,
+        },
       }),
     ).toEqual({
       text: '分析当前项目结构',
@@ -141,6 +145,10 @@ describe('studio preload validators', () => {
       sessionId: 'session-1',
       agentId: 'general',
       modelId: 'claude-sonnet-4-6',
+      timing: {
+        userSubmitClickedAt: 1_000,
+        rendererRuntimeSubmitInvokedAt: 1_010,
+      },
     })
 
     expect(

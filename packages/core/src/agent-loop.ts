@@ -95,6 +95,7 @@ export type AgentEvent =
     | { type: 'done'; reason?: 'complete' | 'max_turns' | 'aborted' | 'stopped' }
     // 观测事件
     | { type: 'llm_start'; provider: string; model: string; messageCount: number; systemPrompt?: string }
+    | { type: 'timing_mark'; stage: string; elapsedMs?: number }
     | {
     type: 'llm_done';
     inputTokens: number;
@@ -364,6 +365,15 @@ export class AgentLoop {
 
         try {
             for await (const chunk of this.#provider.chat(chatRequest)) {
+                if (chunk.type === 'timing' && typeof chunk.stage === 'string') {
+                    yield {
+                        type: 'timing_mark',
+                        stage: chunk.stage,
+                        ...(typeof chunk.elapsedMs === 'number' ? {elapsedMs: chunk.elapsedMs} : {}),
+                    }
+                    continue
+                }
+
                 // 性能层：首个有内容的 chunk 才算 TTFT
                 // 部分 Provider 第一个 chunk 可能是 message_start 或空 content_block_start，
                 // 只在 text / thinking / tool_call 类型时才记录

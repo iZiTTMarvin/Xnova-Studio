@@ -58,6 +58,12 @@ export class OpenAICompatProvider implements LLMProvider {
   }
 
   async *chat(request: ChatRequest): AsyncIterable<StreamChunk> {
+    const chatStartedAt = Date.now()
+    yield {
+      type: 'timing',
+      stage: 'provider_chat_start',
+    }
+
     const baseModel = this.#getOrCreateModel(request.model)
 
     // 有工具时绑定，转换为 OpenAI function calling 标准格式
@@ -82,25 +88,45 @@ export class OpenAICompatProvider implements LLMProvider {
 
     // withRetry 包装：在连接建立阶段自动重试 429/5xx/网络错误
     const providerName = this.name
-    const createStream = () => this.#chatOnce(model, langchainMsgs, request)
+    const createStream = () => this.#chatOnce(model, langchainMsgs, request, chatStartedAt)
     try {
       yield* withRetry(createStream, providerName)
     } catch (err) {
       dbg(`[DEBUG][${providerName}] error after retries: ${err}\n`)
+      yield {
+        type: 'timing',
+        stage: 'provider_stream_error',
+        elapsedMs: Date.now() - chatStartedAt,
+      }
       yield { type: 'error', error: friendlyErrorMessage(err instanceof Error ? err : new Error(String(err))) }
     }
   }
 
   /** 单次 LLM 调用（不含重试），供 withRetry 包装 */
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  async *#chatOnce(model: any, langchainMsgs: any[], request: ChatRequest): AsyncIterable<StreamChunk> {
+  async *#chatOnce(model: any, langchainMsgs: any[], request: ChatRequest, chatStartedAt: number): AsyncIterable<StreamChunk> {
     const streamOpts = request.signal !== undefined ? { signal: request.signal } : {}
+    const streamOpenStartedAt = Date.now()
+    yield {
+      type: 'timing',
+      stage: 'provider_stream_open_start',
+      elapsedMs: streamOpenStartedAt - chatStartedAt,
+    }
     const stream = await model.stream(langchainMsgs, streamOpts)
 
     dbg(`[DEBUG][${this.name}] stream opened, receiving chunks...\n`)
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const allChunks: any[] = []
+    let hasSeenRawChunk = false
     for await (const chunk of stream) {
+      if (!hasSeenRawChunk) {
+        hasSeenRawChunk = true
+        yield {
+          type: 'timing',
+          stage: 'provider_stream_first_chunk',
+          elapsedMs: Date.now() - streamOpenStartedAt,
+        }
+      }
       const text = typeof chunk.content === 'string' ? chunk.content : ''
       dbg(`[DEBUG][${this.name}] chunk: ${JSON.stringify(chunk)}\n`)
       if (text) {
@@ -196,6 +222,11 @@ export class OpenAICompatProvider implements LLMProvider {
         ?? (final.tool_calls?.length > 0 ? 'tool_calls' : 'stop')
     }
 
+    yield {
+      type: 'timing',
+      stage: 'provider_stream_done',
+      elapsedMs: Date.now() - chatStartedAt,
+    }
     yield { type: 'done', stopReason: finishReason }
   }
 

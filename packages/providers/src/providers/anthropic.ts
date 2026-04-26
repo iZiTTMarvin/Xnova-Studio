@@ -155,6 +155,12 @@ export class AnthropicProvider implements LLMProvider {
   }
 
   async *chat(request: ChatRequest): AsyncIterable<StreamChunk> {
+    const chatStartedAt = Date.now()
+    yield {
+      type: 'timing',
+      stage: 'provider_chat_start',
+    }
+
     // 提取 system prompt
     const systemPrompt = request.systemPrompt
     const anthropicMessages = toAnthropicMessages(request.messages)
@@ -171,11 +177,23 @@ export class AnthropicProvider implements LLMProvider {
     dbg(`  messages: ${JSON.stringify(anthropicMessages, null, 2)}\n`)
 
     // withRetry 包装：在连接建立阶段自动重试 429/5xx/网络错误
-    const createStream = () => this.#chatOnce(request.model, anthropicMessages, tools, systemPrompt, request)
+    const createStream = () => this.#chatOnce(
+      request.model,
+      anthropicMessages,
+      tools,
+      systemPrompt,
+      request,
+      chatStartedAt,
+    )
     try {
       yield* withRetry(createStream, this.name)
     } catch (err) {
       dbg(`[DEBUG][anthropic] error after retries: ${err}\n`)
+      yield {
+        type: 'timing',
+        stage: 'provider_stream_error',
+        elapsedMs: Date.now() - chatStartedAt,
+      }
       yield { type: 'error', error: friendlyErrorMessage(err instanceof Error ? err : new Error(String(err))) }
     }
   }
@@ -187,6 +205,7 @@ export class AnthropicProvider implements LLMProvider {
     tools: Anthropic.Tool[] | undefined,
     systemPrompt: string | undefined,
     request: ChatRequest,
+    chatStartedAt: number,
   ): AsyncIterable<StreamChunk> {
     // Prompt caching：system prompt 与 tools 定义在会话内稳定不变，打上 cache_control 断点让 Anthropic
     // 缓存这段前缀（默认 TTL 5min），长会话多轮请求里这部分 input token 基本走 cache_read 计费。
@@ -213,6 +232,12 @@ export class AnthropicProvider implements LLMProvider {
       )
     }
 
+    const streamOpenStartedAt = Date.now()
+    yield {
+      type: 'timing',
+      stage: 'provider_stream_open_start',
+      elapsedMs: streamOpenStartedAt - chatStartedAt,
+    }
     const stream = this.#client.messages.stream({
       model,
       max_tokens: request.maxTokens ?? 8192,
@@ -226,7 +251,16 @@ export class AnthropicProvider implements LLMProvider {
 
     dbg(`[DEBUG][anthropic] stream opened, receiving events...\n`)
 
+    let hasSeenRawChunk = false
     for await (const event of stream) {
+      if (!hasSeenRawChunk) {
+        hasSeenRawChunk = true
+        yield {
+          type: 'timing',
+          stage: 'provider_stream_first_chunk',
+          elapsedMs: Date.now() - streamOpenStartedAt,
+        }
+      }
       dbg(`[DEBUG][anthropic] event: ${JSON.stringify(event)}\n`)
 
       if (event.type === 'content_block_delta') {
@@ -269,6 +303,11 @@ export class AnthropicProvider implements LLMProvider {
       }
     }
 
+    yield {
+      type: 'timing',
+      stage: 'provider_stream_done',
+      elapsedMs: Date.now() - chatStartedAt,
+    }
     yield { type: 'done', stopReason: finalMsg.stop_reason ?? 'end_turn' }
   }
 

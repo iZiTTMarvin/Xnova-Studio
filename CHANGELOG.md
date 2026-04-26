@@ -1,4 +1,14 @@
 ## 2026-04-26
+- **Studio Submit 非敏感性能打点**：新增 submit 全链路耗时诊断
+  - Renderer / IPC / main runtime / shared runtime / provider stream 记录非敏感阶段时间，dev 或 `XNOVA_TIMING_DEBUG=1` 时输出 summary
+  - summary 只包含阶段耗时与低敏字段，并补充 API Key / Authorization 不泄露测试
+- **Studio 事件链路诊断测试**：补充 tool visibility / AgentLoop 时序 instrumentation
+  - 新增 `AgentLoop` 时序测试，锁定 `tool_start` 早于 `write_file` 执行、`tool_end` 晚于文件写入完成、第二轮模型请求发生在工具结束之后
+  - 新增 `useStudioBridge + ConversationTimeline` 端到端可见性测试，区分“存在 running 时间窗会显示进行中”和“tool_start/tool_end 同步到达时最终只剩 done”
+- **Studio 模型首包守卫**：为每轮模型请求补齐独立 first-chunk guard
+  - `studio-runtime-service` 基于 `model_request_started / model_first_chunk / model_request_finished / model_request_failed` 维护每轮独立首包计时，默认 45 秒无首响应即 abort 当前 run
+  - 用户 Stop、模型首包到达、模型请求结束或失败时都会清理 timer，避免 cancel 后再被 timeout 误判成 failed
+  - 补齐 second-turn model request、late first chunk、cancel 清理与 renderer 恢复输入的回归测试
 - **Studio Run 终态与模型阶段可视化修复**：收口 late runtime event、thinking 生命周期与模型请求阶段状态
   - `useStudioBridge / studio-runtime-service / ConversationTimeline` 改为按 `runId` 保持 terminal state 单调，`run_cancelled` 后 late `turn_end/session_end` 不再覆盖 UI
   - thinking block 新增可选生命周期字段并在 `text/tool/status/system/cancel/terminal` 前统一 finalize，Stop 后不再继续显示“思考中...”或持续计时

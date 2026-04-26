@@ -248,6 +248,10 @@ describe('renderer project-aware shell', () => {
         agentId: null,
         providerId: 'anthropic',
         modelId: 'claude-sonnet-4-6',
+        timing: {
+          userSubmitClickedAt: expect.any(Number),
+          rendererRuntimeSubmitInvokedAt: expect.any(Number),
+        },
       })
   })
 

@@ -247,6 +247,10 @@ describe('useStudioBridge runtime submit', () => {
       agentId: 'general',
       providerId: 'anthropic',
       modelId: 'claude-sonnet-4-6',
+      timing: {
+        userSubmitClickedAt: expect.any(Number),
+        rendererRuntimeSubmitInvokedAt: expect.any(Number),
+      },
     })
     await waitFor(() => {
       expect(getSnapshot).toHaveBeenCalledTimes(2)

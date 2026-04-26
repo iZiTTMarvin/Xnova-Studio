@@ -334,6 +334,10 @@ describe('studio main flow regression', () => {
         agentId: 'general',
         providerId: 'openai',
         modelId: 'gpt-4.1-mini',
+        timing: {
+          userSubmitClickedAt: expect.any(Number),
+          rendererRuntimeSubmitInvokedAt: expect.any(Number),
+        },
       })
     })
   })

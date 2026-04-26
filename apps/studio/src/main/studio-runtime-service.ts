@@ -39,6 +39,10 @@ import type {
   StudioRuntimeEvent,
 } from '../shared/studio-bridge-contract'
 import { STUDIO_BRIDGE_CHANNELS } from '../shared/studio-bridge-contract'
+import {
+  createStudioSubmitTiming,
+  isStudioSubmitTimingEnabled,
+} from './studio-submit-timing'
 
 export interface StudioRuntimeService {
   submit(
@@ -73,6 +77,8 @@ export interface CreateStudioRuntimeServiceOptions {
   ) => Promise<PermissionResolution & { reason?: string }>
   fallbackCwd?: string
   submitTimeoutMs?: number
+  firstChunkTimeoutMs?: number
+  timingDebug?: boolean
   permissionRequestTimeoutMs?: number
   userInputRequestTimeoutMs?: number
   mainWindowManager?: {
@@ -114,6 +120,8 @@ const INTERACTIVE_PERMISSION_TOOL_NAMES = new Set([
 let permissionRequestSequence = 0
 let userInputRequestSequence = 0
 let runtimeRunSequence = 0
+const MODEL_FIRST_CHUNK_TIMEOUT_MESSAGE =
+  '模型请求长时间没有返回首个响应，请检查网络、模型服务或稍后重试。'
 
 function toStudioRuntimeEvent(event: RuntimeEvent): StudioRuntimeEvent {
   return {
@@ -460,6 +468,15 @@ interface ActiveStudioRun {
   settled: boolean
   released: boolean
   submitActivity: SubmitActivityController | null
+  timing: ReturnType<typeof createStudioSubmitTiming> | null
+  firstChunkTimer: ReturnType<typeof setTimeout> | null
+  pendingModelRequest:
+    | {
+        providerId?: string | null
+        modelId?: string | null
+        phase?: 'initial' | 'after_tool_result' | 'retry'
+      }
+    | null
   resolveSubmit?: (result: RuntimeTurnResult) => void
   rejectSubmit?: (error: Error) => void
 }
@@ -545,6 +562,8 @@ export function createStudioRuntimeService(
     })
   const loadResolvedConfigFn = options.loadResolvedConfigFn ?? loadResolvedConfig
   const submitTimeoutMs = options.submitTimeoutMs ?? 60_000
+  const firstChunkTimeoutMs = options.firstChunkTimeoutMs ?? 45_000
+  const timingDebug = options.timingDebug ?? isStudioSubmitTimingEnabled()
   const submitPostProgressTimeoutMs = Math.max(submitTimeoutMs, 10 * 60_000)
   const permissionRequestTimeoutMs = options.permissionRequestTimeoutMs ?? 30_000
   const userInputRequestTimeoutMs = options.userInputRequestTimeoutMs ?? 60_000
@@ -689,12 +708,101 @@ export function createStudioRuntimeService(
     return true
   }
 
+  function clearFirstChunkGuard(run: ActiveStudioRun): void {
+    if (run.firstChunkTimer) {
+      clearTimeout(run.firstChunkTimer)
+      run.firstChunkTimer = null
+    }
+    run.pendingModelRequest = null
+  }
+
+  function startFirstChunkGuard(
+    run: ActiveStudioRun,
+    payload?: Record<string, unknown>,
+  ): void {
+    clearFirstChunkGuard(run)
+    run.pendingModelRequest = {
+      ...(typeof payload?.providerId === 'string' || payload?.providerId === null
+        ? { providerId: payload.providerId as string | null }
+        : {}),
+      ...(typeof payload?.modelId === 'string' || payload?.modelId === null
+        ? { modelId: payload.modelId as string | null }
+        : {}),
+      ...(payload?.phase === 'initial' ||
+      payload?.phase === 'after_tool_result' ||
+      payload?.phase === 'retry'
+        ? { phase: payload.phase }
+        : {}),
+    }
+
+    if (firstChunkTimeoutMs <= 0) {
+      return
+    }
+
+    run.firstChunkTimer = setTimeout(() => {
+      if (currentRun?.runId !== run.runId || run.settled || run.released) {
+        return
+      }
+
+      logger.warn('模型请求首包超时，调用 abort', {
+        runId: run.runId,
+        timeoutMs: firstChunkTimeoutMs,
+        providerId: run.pendingModelRequest?.providerId ?? null,
+        modelId: run.pendingModelRequest?.modelId ?? null,
+        phase: run.pendingModelRequest?.phase ?? 'initial',
+      })
+
+      try {
+        run.runtimeInstance.abort()
+      } catch (error) {
+        logger.warn('first chunk timeout 调用 abort 失败', {
+          runId: run.runId,
+          error: error instanceof Error ? error.message : String(error),
+        })
+      }
+
+      cancelPendingRuntimeInteractions('first-chunk-timeout')
+      run.emitRuntimeEvent({
+        type: 'model_request_failed',
+        timestamp: new Date().toISOString(),
+        runId: run.runId,
+        ...(run.sessionId ? { sessionId: run.sessionId } : {}),
+        ...(run.agentId ? { agentId: run.agentId } : {}),
+        payload: {
+          ...(run.pendingModelRequest?.providerId !== undefined
+            ? { providerId: run.pendingModelRequest.providerId }
+            : {}),
+          ...(run.pendingModelRequest?.modelId !== undefined
+            ? { modelId: run.pendingModelRequest.modelId }
+            : {}),
+          ...(run.pendingModelRequest?.phase !== undefined
+            ? { phase: run.pendingModelRequest.phase }
+            : {}),
+          elapsedMs: firstChunkTimeoutMs,
+          message: MODEL_FIRST_CHUNK_TIMEOUT_MESSAGE,
+        },
+      })
+      settleActiveRun(run, {
+        type: 'run_failed',
+        sessionId: run.sessionId,
+        payload: {
+          message: MODEL_FIRST_CHUNK_TIMEOUT_MESSAGE,
+          timeoutMs: firstChunkTimeoutMs,
+          reason: 'first-chunk-timeout',
+        },
+      })
+      run.rejectSubmit?.(new Error(MODEL_FIRST_CHUNK_TIMEOUT_MESSAGE))
+      releaseActiveRun(run)
+    }, firstChunkTimeoutMs)
+  }
+
   function releaseActiveRun(run: ActiveStudioRun): void {
     if (run.released) {
       return
     }
 
     run.released = true
+    clearFirstChunkGuard(run)
     run.submitActivity?.clear()
     run.runtimeEntry.bridgeState.submitActivity = null
     runtimeManager.releaseRuntime(run.runtimeEntry)
@@ -794,22 +902,42 @@ export function createStudioRuntimeService(
   ): RuntimeHostBridge => ({
     emit(event: RuntimeEvent) {
       const activeRun = currentRun
-      const isRuntimeTerminalEvent =
-        event.type === 'turn_end' || event.type === 'session_end'
-      if (isRuntimeTerminalEvent && (!activeRun || activeRun.settled)) {
+      if (!activeRun || activeRun.settled) {
         return
       }
-      bridgeState.submitActivity?.touch()
-      if (activeRun) {
-        touchActiveRun(activeRun, event.sessionId)
+
+      if (event.type === 'timing_mark') {
+        activeRun.timing?.markRuntimeEvent({
+          ...toStudioRuntimeEvent(event),
+          runId: activeRun.runId,
+        })
+        return
       }
+
+      if (event.type === 'model_request_started') {
+        startFirstChunkGuard(
+          activeRun,
+          event.payload && typeof event.payload === 'object'
+            ? event.payload
+            : undefined,
+        )
+      } else if (
+        event.type === 'model_first_chunk' ||
+        event.type === 'model_request_finished' ||
+        event.type === 'model_request_failed'
+      ) {
+        clearFirstChunkGuard(activeRun)
+      }
+
+      bridgeState.submitActivity?.touch()
+      touchActiveRun(activeRun, event.sessionId)
       const studioEvent: StudioRuntimeEvent = {
         ...toStudioRuntimeEvent(event),
-        ...(activeRun ? { runId: activeRun.runId } : {}),
+        runId: activeRun.runId,
       }
+      activeRun.timing?.markRuntimeEvent(studioEvent)
       bridgeState.eventSink?.(studioEvent)
       if (
-        activeRun &&
         (event.type === 'turn_end' || event.type === 'session_end')
       ) {
         settleRunFromRuntimeTerminalEvent(activeRun, studioEvent)
@@ -919,6 +1047,7 @@ export function createStudioRuntimeService(
 
       const reason = request.reason?.trim() || 'user-requested'
       cancelPendingRuntimeInteractions(reason)
+      clearFirstChunkGuard(activeRun)
       try {
         activeRun.runtimeInstance.abort()
       } catch (error) {
@@ -936,6 +1065,8 @@ export function createStudioRuntimeService(
           reason,
         },
       })
+      activeRun.timing?.markFirst('runtime_submit_resolved_or_rejected')
+      activeRun.timing?.finish('cancelled')
       activeRun.rejectSubmit?.(new Error('已停止当前运行。'))
       releaseActiveRun(activeRun)
 
@@ -962,6 +1093,13 @@ export function createStudioRuntimeService(
         }
       }
 
+      const submitTiming = createStudioSubmitTiming({
+        enabled: timingDebug,
+        logger,
+        ...(request.timing === undefined ? {} : { clientMarks: request.timing }),
+      })
+      submitTiming.mark('runtime_service_submit_start')
+
       let runtimeEntry: StudioManagedRuntimeEntry | null = null
       let activeRun: ActiveStudioRun | null = null
       const runId = createRuntimeRunId()
@@ -981,7 +1119,9 @@ export function createStudioRuntimeService(
           },
         })
 
+        submitTiming.mark('config_load_start')
         const resolved = loadResolvedConfigFn(cwd)
+        submitTiming.mark('config_load_done')
         const workspaceRoot = hostState.workspacePath ?? cwd
         const engineServiceApi = runtimeManager.getEngineServiceApi(workspaceRoot)
         const runtimeConfig = {
@@ -1009,6 +1149,7 @@ export function createStudioRuntimeService(
           sessionId: request.sessionId?.trim() || null,
           agentId: request.agentId?.trim() || null,
         }
+        submitTiming.mark('runtime_acquire_start')
         const runtimeHandle = await runtimeManager.acquireRuntime({
           selection,
           config: runtimeConfig,
@@ -1017,6 +1158,7 @@ export function createStudioRuntimeService(
           createRuntimeFn,
           createBridge: (bridgeState) => createRuntimeBridge(bridgeState),
         })
+        submitTiming.mark('runtime_acquire_done')
         runtimeEntry = runtimeHandle.entry
 
         for (const warning of resolved.warnings) {
@@ -1048,6 +1190,9 @@ export function createStudioRuntimeService(
           settled: false,
           released: false,
           submitActivity: null,
+          timing: submitTiming,
+          firstChunkTimer: null,
+          pendingModelRequest: null,
         }
         currentRun = activeRun
         const runtimeSubmitInput: RuntimeSubmitInput = {
@@ -1068,6 +1213,7 @@ export function createStudioRuntimeService(
           model: request.modelId,
           cwd,
         })
+        submitTiming.mark('runtime_instance_submit_start')
         let turnResult: RuntimeTurnResult
         try {
           turnResult = await new Promise<RuntimeTurnResult>((resolve, reject) => {
@@ -1157,6 +1303,7 @@ export function createStudioRuntimeService(
         }
 
         logger.info('runtimeInstance.submit 返回', { hasError: Boolean(turnResult.error) })
+        submitTiming.mark('runtime_submit_resolved_or_rejected')
 
         if (turnResult.error) {
           if (!activeRun?.settled) {
@@ -1176,6 +1323,7 @@ export function createStudioRuntimeService(
               activeRun.settled = true
             }
           }
+          submitTiming.finish('failed')
           return {
             ok: false,
             error: turnResult.error,
@@ -1206,6 +1354,7 @@ export function createStudioRuntimeService(
           cwd,
           sessionId: turnResult.sessionId,
         })
+        submitTiming.finish('completed')
 
         return {
           ok: true,
@@ -1214,6 +1363,7 @@ export function createStudioRuntimeService(
       } catch (error) {
         const message = error instanceof Error ? error.message : String(error)
         logger.error('runtime submit 执行失败', error)
+        submitTiming.markFirst('runtime_submit_resolved_or_rejected')
         if (!hasEmittedRunFailed && !activeRun?.settled) {
           emitRunLifecycleEvent(emitRuntimeEvent, {
             type: 'run_failed',
@@ -1228,9 +1378,13 @@ export function createStudioRuntimeService(
             activeRun.settled = true
           }
         }
+        submitTiming.finish('failed')
         return {
           ok: false,
-          error: `runtime submit 失败: ${message}`,
+          error:
+            message === MODEL_FIRST_CHUNK_TIMEOUT_MESSAGE
+              ? message
+              : `runtime submit 失败: ${message}`,
         }
       } finally {
         if (activeRun) {
@@ -1245,6 +1399,7 @@ export function createStudioRuntimeService(
       const activeRun = currentRun
       if (activeRun && !activeRun.released) {
         cancelPendingRuntimeInteractions('runtime-disposed')
+        clearFirstChunkGuard(activeRun)
         try {
           activeRun.runtimeInstance.abort()
         } catch (error) {
@@ -1261,6 +1416,8 @@ export function createStudioRuntimeService(
             reason: 'runtime-disposed',
           },
         })
+        activeRun.timing?.markFirst('runtime_submit_resolved_or_rejected')
+        activeRun.timing?.finish('cancelled')
         activeRun.rejectSubmit?.(new Error('应用正在退出，已停止当前运行。'))
         releaseActiveRun(activeRun)
       }

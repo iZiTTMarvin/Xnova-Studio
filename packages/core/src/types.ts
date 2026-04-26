@@ -45,7 +45,7 @@ export interface TokenUsage {
 }
 
 export interface StreamChunk {
-  type: 'text' | 'tool_call' | 'usage' | 'done' | 'error' | 'thinking'
+  type: 'text' | 'tool_call' | 'usage' | 'done' | 'error' | 'thinking' | 'timing'
   text?: string
   /** 思考过程内容（thinking 类型时有值） */
   thinking?: string
@@ -54,4 +54,8 @@ export interface StreamChunk {
   error?: string
   /** LLM 调用结束原因（done 类型时有值） */
   stopReason?: string
+  /** 非敏感性能阶段名（timing 类型时有值） */
+  stage?: string
+  /** 当前阶段相对耗时（毫秒），不包含 prompt / key / content */
+  elapsedMs?: number
 }

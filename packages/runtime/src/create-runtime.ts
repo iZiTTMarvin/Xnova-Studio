@@ -254,13 +254,25 @@ export async function createRuntime(
       let assistantBlockSequence = 0
       let modelRequestCount = 0
       let currentModelRequestPhase: 'initial' | 'after_tool_result' | 'retry' = 'initial'
+      const emitTimingMark = (
+        stage: string,
+        payload?: Record<string, unknown>,
+      ) => {
+        bridge.emit(makeEvent('timing_mark', {
+          stage,
+          ...(payload ?? {}),
+        }, lastSessionId ?? undefined))
+      }
       const nextAssistantBlockId = (type: SessionConversationBlock['type']) => {
         assistantBlockSequence += 1
         return `assistant-${type}-${assistantBlockSequence}`
       }
 
       try {
+        emitTimingMark('createRuntime.submit_start')
+        emitTimingMark('runtime_bootstrap_start')
         const bootstrapResult = await bootstrapAll(input.cwd)
+        emitTimingMark('runtime_bootstrap_done')
         warnings = [...bootstrapResult.warnings]
         agentCatalog.ensureInitialized()
 
@@ -270,6 +282,7 @@ export async function createRuntime(
 
         const registry = getRegistry()
         registerMcpTools(registry)
+        emitTimingMark('tool_registry_ready')
 
         const globalProvider = getOrCreateProvider(providerName, config)
         activeProvider = globalProvider.createSession?.() ?? globalProvider
@@ -290,7 +303,10 @@ export async function createRuntime(
           getSystemPrompt(),
           primaryAgent.agent.getSystemPrompt(),
         ].filter(Boolean).join('\n\n') || undefined
+        emitTimingMark('history_hydration_start')
         const rawHistory = syncContextHistoryForSubmit(submitInput)
+        emitTimingMark('history_hydration_done')
+        emitTimingMark('context_build_start')
         const { history, compacted } = await contextManager.prepare(
           rawHistory,
           activeProvider as never,
@@ -299,6 +315,7 @@ export async function createRuntime(
             ...(systemPrompt !== undefined ? { systemPrompt } : {}),
           },
         )
+        emitTimingMark('context_build_done')
         result.historyCompacted = compacted
 
         const loop = new AgentLoop(activeProvider as never, registry, {
@@ -335,7 +352,15 @@ export async function createRuntime(
                 providerId: providerName,
                 modelId: modelName,
                 phase: currentModelRequestPhase,
+                chunkType: event.chunkType,
                 elapsedMs: event.elapsedMs,
+              }, lastSessionId ?? undefined))
+              break
+
+            case 'timing_mark':
+              bridge.emit(makeEvent('timing_mark', {
+                stage: event.stage,
+                ...(event.elapsedMs !== undefined ? { elapsedMs: event.elapsedMs } : {}),
               }, lastSessionId ?? undefined))
               break
 

@@ -146,11 +146,12 @@ export function parseStudioRuntimeSubmitRequest(
         key !== 'sessionId' &&
         key !== 'agentId' &&
         key !== 'providerId' &&
-        key !== 'modelId',
+        key !== 'modelId' &&
+        key !== 'timing',
     )
   ) {
     throw new StudioBridgeValidationError(
-      'runtime.submit 只允许 text/projectPath/sessionId/agentId/providerId/modelId 字段。',
+      'runtime.submit 只允许 text/projectPath/sessionId/agentId/providerId/modelId/timing 字段。',
     )
   }
   if (typeof value.text !== 'string') {
@@ -190,6 +191,7 @@ export function parseStudioRuntimeSubmitRequest(
     'runtime.submit.providerId',
   )
   const modelId = parseNullableField(value.modelId, 'runtime.submit.modelId')
+  const timing = parseRuntimeSubmitTimingMarks(value.timing)
 
   return {
     text,
@@ -198,7 +200,68 @@ export function parseStudioRuntimeSubmitRequest(
     ...(agentId === undefined ? {} : { agentId }),
     ...(providerId === undefined ? {} : { providerId }),
     ...(modelId === undefined ? {} : { modelId }),
+    ...(timing === undefined ? {} : { timing }),
   }
+}
+
+function parseRuntimeSubmitTimingMarks(
+  payload: unknown,
+): RuntimeSubmitRequest['timing'] | undefined {
+  if (payload === undefined) {
+    return undefined
+  }
+
+  const value = assertPlainObject(payload, 'runtime.submit.timing')
+  if (
+    Object.keys(value).some(
+      (key) =>
+        key !== 'userSubmitClickedAt' &&
+        key !== 'rendererRuntimeSubmitInvokedAt' &&
+        key !== 'ipcRuntimeSubmitReceivedAt',
+    )
+  ) {
+    throw new StudioBridgeValidationError(
+      'runtime.submit.timing 只允许 userSubmitClickedAt/rendererRuntimeSubmitInvokedAt/ipcRuntimeSubmitReceivedAt 字段。',
+    )
+  }
+
+  const parseOptionalTimestamp = (
+    field: unknown,
+    subject: string,
+  ): number | undefined => {
+    if (field === undefined) {
+      return undefined
+    }
+    if (typeof field !== 'number' || !Number.isFinite(field) || field <= 0) {
+      throw new StudioBridgeValidationError(`${subject} 必须是正数时间戳。`)
+    }
+    return field
+  }
+
+  const userSubmitClickedAt = parseOptionalTimestamp(
+    value.userSubmitClickedAt,
+    'runtime.submit.timing.userSubmitClickedAt',
+  )
+  const rendererRuntimeSubmitInvokedAt = parseOptionalTimestamp(
+    value.rendererRuntimeSubmitInvokedAt,
+    'runtime.submit.timing.rendererRuntimeSubmitInvokedAt',
+  )
+  const ipcRuntimeSubmitReceivedAt = parseOptionalTimestamp(
+    value.ipcRuntimeSubmitReceivedAt,
+    'runtime.submit.timing.ipcRuntimeSubmitReceivedAt',
+  )
+
+  const timing = {
+    ...(userSubmitClickedAt === undefined ? {} : { userSubmitClickedAt }),
+    ...(rendererRuntimeSubmitInvokedAt === undefined
+      ? {}
+      : { rendererRuntimeSubmitInvokedAt }),
+    ...(ipcRuntimeSubmitReceivedAt === undefined
+      ? {}
+      : { ipcRuntimeSubmitReceivedAt }),
+  }
+
+  return Object.keys(timing).length > 0 ? timing : undefined
 }
 
 export function parseStudioRuntimeCancelRequest(
