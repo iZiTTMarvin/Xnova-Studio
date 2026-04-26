@@ -54,6 +54,18 @@ class FakeIpcRenderer {
       }
     }
 
+    if (channel === STUDIO_BRIDGE_CHANNELS.runtimeCancel) {
+      return {
+        ok: true,
+        runId: payload &&
+          typeof payload === 'object' &&
+          'runId' in payload &&
+          typeof payload.runId === 'string'
+          ? payload.runId
+          : null,
+      }
+    }
+
     if (channel === STUDIO_BRIDGE_CHANNELS.shellGetSnapshot) {
       return {
         startup: {
@@ -246,6 +258,37 @@ describe('studio preload bridge', () => {
         text: '   ',
       }),
     ).rejects.toThrow('runtime.submit.text 不能为空')
+  })
+
+  it('通过 IPC 取消 runtime run，并校验 cancel 参数', async () => {
+    const ipcRenderer = new FakeIpcRenderer()
+    const api = createStudioBridgeApi({
+      ipcRenderer,
+    })
+
+    await expect(
+      api.runtime.cancel({
+        runId: ' run-1 ',
+        reason: 'user-stop',
+      }),
+    ).resolves.toEqual({
+      ok: true,
+      runId: 'run-1',
+    })
+
+    expect(ipcRenderer.invoke).toHaveBeenCalledWith(
+      STUDIO_BRIDGE_CHANNELS.runtimeCancel,
+      {
+        runId: 'run-1',
+        reason: 'user-stop',
+      },
+    )
+
+    await expect(
+      (api.runtime.cancel as (payload: unknown) => Promise<unknown>)({
+        reason: 123,
+      }),
+    ).rejects.toThrow('runtime.cancel.reason 必须是字符串')
   })
 
   it('通过 IPC 读取 shell snapshot，并校验请求参数', async () => {

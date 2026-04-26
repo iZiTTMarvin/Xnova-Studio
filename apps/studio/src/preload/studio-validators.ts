@@ -14,6 +14,8 @@ import type {
   StudioProviderSettingsSnapshot,
   RuntimeInspectRequest,
   RuntimeInspectResult,
+  RuntimeCancelRequest,
+  RuntimeCancelResult,
   RuntimeSubmitRequest,
   RuntimeSubmitResult,
   RuntimeSnapshotView,
@@ -196,6 +198,49 @@ export function parseStudioRuntimeSubmitRequest(
     ...(agentId === undefined ? {} : { agentId }),
     ...(providerId === undefined ? {} : { providerId }),
     ...(modelId === undefined ? {} : { modelId }),
+  }
+}
+
+export function parseStudioRuntimeCancelRequest(
+  payload: unknown,
+): RuntimeCancelRequest {
+  if (payload === undefined) {
+    return {}
+  }
+
+  const value = assertPlainObject(payload, 'runtime.cancel 参数')
+  if (Object.keys(value).some((key) => key !== 'runId' && key !== 'reason')) {
+    throw new StudioBridgeValidationError(
+      'runtime.cancel 只允许 runId/reason 字段。',
+    )
+  }
+
+  const parseNullableString = (
+    field: unknown,
+    subject: string,
+  ): string | null | undefined => {
+    if (field === undefined) {
+      return undefined
+    }
+    if (field === null) {
+      return null
+    }
+    if (typeof field !== 'string') {
+      throw new StudioBridgeValidationError(`${subject} 必须是字符串或 null。`)
+    }
+    const normalized = field.trim()
+    return normalized ? normalized : null
+  }
+
+  if (value.reason !== undefined && typeof value.reason !== 'string') {
+    throw new StudioBridgeValidationError('runtime.cancel.reason 必须是字符串。')
+  }
+  const reason = typeof value.reason === 'string' ? value.reason.trim() : undefined
+  const runId = parseNullableString(value.runId, 'runtime.cancel.runId')
+
+  return {
+    ...(runId === undefined ? {} : { runId }),
+    ...(reason ? { reason } : {}),
   }
 }
 
@@ -1275,6 +1320,37 @@ export function parseStudioRuntimeSubmitResult(
   }
 
   throw new StudioBridgeValidationError('runtime submit 响应格式不合法。')
+}
+
+export function parseStudioRuntimeCancelResult(
+  payload: unknown,
+): RuntimeCancelResult {
+  const value = assertPlainObject(payload, 'runtime cancel 响应')
+  if (value.ok === true) {
+    if (
+      value.runId !== undefined &&
+      value.runId !== null &&
+      typeof value.runId !== 'string'
+    ) {
+      throw new StudioBridgeValidationError(
+        'runtime.cancel.runId 必须是字符串或 null。',
+      )
+    }
+
+    return {
+      ok: true,
+      ...(value.runId === undefined ? {} : { runId: value.runId as string | null }),
+    }
+  }
+
+  if (value.ok === false && typeof value.error === 'string') {
+    return {
+      ok: false,
+      error: value.error,
+    }
+  }
+
+  throw new StudioBridgeValidationError('runtime cancel 响应格式不合法。')
 }
 
 export function parseStudioRuntimeEvent(payload: unknown): StudioRuntimeEvent {

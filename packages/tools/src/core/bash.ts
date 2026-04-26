@@ -77,6 +77,8 @@ export class BashTool implements Tool {
     // 用 child_process.spawn 替代 execa（减少模块开销），手动实现 timeout
     return new Promise<ToolResult>((resolve) => {
       let timedOut = false
+      let aborted = false
+      let settled = false
       let stdout = ''
       let stderr = ''
 
@@ -85,6 +87,27 @@ export class BashTool implements Tool {
         stdio: 'pipe',
         windowsHide: true,
       })
+
+      const finish = (result: ToolResult) => {
+        if (settled) return
+        settled = true
+        if (ctx.signal) {
+          ctx.signal.removeEventListener('abort', abortHandler)
+        }
+        resolve(result)
+      }
+
+      const abortHandler = () => {
+        aborted = true
+        child.kill('SIGTERM')
+        setTimeout(() => { try { child.kill('SIGKILL') } catch { /* 进程可能已退出 */ } }, 500)
+      }
+
+      if (ctx.signal?.aborted) {
+        abortHandler()
+      } else {
+        ctx.signal?.addEventListener('abort', abortHandler, { once: true })
+      }
 
       // 手动 timeout：到时间 kill 进程
       const timer = setTimeout(() => {
@@ -108,18 +131,20 @@ export class BashTool implements Tool {
           timedOut,
         }
 
-        if (timedOut) {
-          resolve({ success: false, output, error: `Command timed out after ${timeout}ms`, meta })
+        if (aborted) {
+          finish({ success: false, output, error: '命令已中断', meta })
+        } else if (timedOut) {
+          finish({ success: false, output, error: `Command timed out after ${timeout}ms`, meta })
         } else if (code === 0) {
-          resolve({ success: true, output: output || '(no output)', meta })
+          finish({ success: true, output: output || '(no output)', meta })
         } else {
-          resolve({ success: false, output: output || '', error: `Exit code ${code}`, meta })
+          finish({ success: false, output: output || '', error: `Exit code ${code}`, meta })
         }
       })
 
       child.on('error', (err) => {
         clearTimeout(timer)
-        resolve({ success: false, output: '', error: err.message })
+        finish({ success: false, output: '', error: err.message })
       })
     })
   }

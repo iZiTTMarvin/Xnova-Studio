@@ -7,6 +7,8 @@ import {
   parseStudioShellSnapshot,
   parseStudioShellSnapshotRequest,
   parseStudioRuntimeEvent,
+  parseStudioRuntimeCancelRequest,
+  parseStudioRuntimeCancelResult,
   parseStudioRuntimeInspectRequest,
   parseStudioRuntimeInspectResult,
   parseStudioRuntimeSubmitRequest,
@@ -162,6 +164,35 @@ describe('studio preload validators', () => {
     })
 
     expect(() => parseStudioRuntimeSubmitRequest({ text: '   ' })).toThrow(
+      StudioBridgeValidationError,
+    )
+  })
+
+  it('校验 runtime cancel 请求与响应结构', () => {
+    expect(
+      parseStudioRuntimeCancelRequest({
+        runId: ' run-1 ',
+        reason: ' user-stop ',
+      }),
+    ).toEqual({
+      runId: 'run-1',
+      reason: 'user-stop',
+    })
+
+    expect(parseStudioRuntimeCancelRequest(undefined)).toEqual({})
+    expect(parseStudioRuntimeCancelResult({ ok: true, runId: 'run-1' })).toEqual({
+      ok: true,
+      runId: 'run-1',
+    })
+    expect(parseStudioRuntimeCancelResult({ ok: false, error: 'no run' })).toEqual({
+      ok: false,
+      error: 'no run',
+    })
+
+    expect(() => parseStudioRuntimeCancelRequest({ runId: 123 })).toThrow(
+      StudioBridgeValidationError,
+    )
+    expect(() => parseStudioRuntimeCancelResult({ ok: false })).toThrow(
       StudioBridgeValidationError,
     )
   })

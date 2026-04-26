@@ -17,7 +17,11 @@ function createBridge(options?: {
   runtimeEvent?: unknown
   memoryOverview?: unknown
   shellSnapshot?: unknown
-  runtimeSubmit?: (input: unknown) => Promise<unknown>
+  runtimeSubmit?: (
+    input: unknown,
+    emitRuntimeEvent: (event: unknown) => void,
+  ) => Promise<unknown>
+  runtimeCancel?: (input: unknown) => Promise<unknown>
 }) {
   const getState = vi.fn(async () => ({
     workspacePath: null,
@@ -25,6 +29,10 @@ function createBridge(options?: {
     ...(options?.hostState ?? {}),
   }))
 
+  let runtimeEventListener: ((event: unknown) => void) | null = null
+  const emitRuntimeEvent = (event: unknown) => {
+    runtimeEventListener?.(event)
+  }
   const runtimeApi = {
     inspect: vi.fn(async () => options?.runtimeInspectResult ?? {
       ok: true as const,
@@ -41,19 +49,31 @@ function createBridge(options?: {
       issues: [],
     }),
     onEvent: (listener: (event: unknown) => void) => {
+      runtimeEventListener = listener
       if (options?.runtimeEvent) {
         queueMicrotask(() => {
           listener(options.runtimeEvent)
         })
       }
-      return () => {}
+      return () => {
+        if (runtimeEventListener === listener) {
+          runtimeEventListener = null
+        }
+      }
     },
     submit: vi.fn(async (input) =>
       options?.runtimeSubmit
-        ? options.runtimeSubmit(input)
+        ? options.runtimeSubmit(input, emitRuntimeEvent)
         : {
             ok: true as const,
             sessionId: 'session-1',
+          }),
+    cancel: vi.fn(async (input) =>
+      options?.runtimeCancel
+        ? options.runtimeCancel(input)
+        : {
+            ok: true as const,
+            runId: null,
           }),
   }
 
@@ -219,7 +239,9 @@ describe('renderer project-aware shell', () => {
     fireEvent.click(screen.getByRole('button', { name: '发送提示词' }))
 
     await waitFor(() => {
-      expect(runtimeSubmit).toHaveBeenCalledWith({
+      expect(runtimeSubmit).toHaveBeenCalled()
+    })
+    expect(runtimeSubmit.mock.calls[0]?.[0]).toEqual({
         text: '实现项目脚手架并补测试',
         projectPath: 'D:/workspace/demo',
         sessionId: null,
@@ -227,7 +249,78 @@ describe('renderer project-aware shell', () => {
         providerId: 'anthropic',
         modelId: 'claude-sonnet-4-6',
       })
+  })
+
+  it('run_started 后输入禁用，并把发送按钮切换为停止当前运行', async () => {
+    let emitRuntimeEvent: ((event: unknown) => void) | null = null
+    const runtimeSubmit = vi.fn(
+      async (_input: unknown, emit: (event: unknown) => void) => {
+        emitRuntimeEvent = emit
+        emit({
+          type: 'run_started',
+          timestamp: '2026-04-26T00:00:00.000Z',
+          runId: 'run-1',
+          payload: {
+            status: 'running',
+          },
+        })
+        return new Promise(() => undefined)
+      },
+    )
+    const runtimeCancel = vi.fn(async () => {
+      emitRuntimeEvent?.({
+        type: 'run_cancelled',
+        timestamp: '2026-04-26T00:00:01.000Z',
+        runId: 'run-1',
+        payload: {
+          message: '已停止当前运行',
+          reason: 'user-requested',
+        },
+      })
+      return {
+        ok: true as const,
+        runId: 'run-1',
+      }
     })
+    ;(window as Window & { xnovaStudio?: unknown }).xnovaStudio = createBridge({
+      hostState: {
+        workspacePath: 'D:/workspace/demo',
+        lastSelection: null,
+      },
+      runtimeSubmit,
+      runtimeCancel,
+    })
+
+    render(<App />)
+
+    const input = await screen.findByRole('textbox', { name: '项目级新对话输入' })
+    fireEvent.change(input, { target: { value: '实现项目脚手架并补测试' } })
+    fireEvent.click(screen.getByRole('button', { name: '发送提示词' }))
+
+    await waitFor(() => {
+      expect(screen.getByRole('button', { name: '停止当前运行' })).toBeTruthy()
+    })
+    expect(screen.getByText('当前正在运行')).toBeTruthy()
+    expect(screen.getByText('正在调用模型')).toBeTruthy()
+    expect(screen.getByText(/^最后进展:/)).toBeTruthy()
+    const runningInput = screen.getByRole('textbox', { name: '项目级新对话输入' })
+    expect((runningInput as HTMLTextAreaElement).disabled).toBe(true)
+
+    fireEvent.click(screen.getByRole('button', { name: '停止当前运行' }))
+
+    await waitFor(() => {
+      expect(runtimeCancel).toHaveBeenCalledWith({
+        runId: 'run-1',
+        reason: 'user-requested',
+      })
+    })
+    await waitFor(() => {
+      expect(
+        (screen.getByRole('textbox', { name: '项目级新对话输入' }) as HTMLTextAreaElement)
+          .disabled,
+      ).toBe(false)
+    })
+    expect(screen.getByText('已停止当前运行')).toBeTruthy()
   })
 
   it('首轮提交尚未生成持久化 session 时，仍会立即进入可见对话流', async () => {

@@ -71,6 +71,7 @@ export async function createRuntime(
 ): Promise<RuntimeInstance> {
   let isRunning = false
   let abortController: AbortController | null = null
+  let activeLoop: AgentLoop | null = null
   let activeProvider: { dispose?: () => void } | null = null
   let lastSessionId: string | null = null
   let lastProvider = input.config.defaultProvider
@@ -154,6 +155,7 @@ export async function createRuntime(
           ...(sessionId ? { sessionId } : {}),
           ...(submitInput.nonInteractive ? { nonInteractive: true } : {}),
         })
+        activeLoop = loop
 
         for await (const event of loop.run(history)) {
           sessionLogger.consume(event)
@@ -310,6 +312,7 @@ export async function createRuntime(
 
         activeProvider?.dispose?.()
         activeProvider = null
+        activeLoop = null
         abortController = null
         isRunning = false
       }
@@ -318,13 +321,16 @@ export async function createRuntime(
     },
 
     abort(): void {
+      activeLoop?.requestStop()
       abortController?.abort()
     },
 
     async dispose(): Promise<void> {
+      activeLoop?.requestStop()
       abortController?.abort()
       activeProvider?.dispose?.()
       activeProvider = null
+      activeLoop = null
       isRunning = false
     },
 

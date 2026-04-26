@@ -363,6 +363,66 @@ describe('studio main ipc handlers', () => {
     expect(runtimeEventPayloads.map((event) => event.type)).toEqual(['run_failed'])
   })
 
+  it('runtime.cancel 通过 main process 委托 runtime service，并校验 payload', async () => {
+    const handlers = new Map<string, (_event: unknown, payload: unknown) => unknown>()
+    const cancelRuntime = vi.fn(async () => ({
+      ok: true as const,
+      runId: 'run-1',
+    }))
+
+    registerStudioMainIpcHandlers({
+      ipcMainLike: {
+        handle(channel, handler) {
+          handlers.set(channel, handler)
+        },
+      },
+      selectWorkspaceDirectory: vi.fn(async () => ({
+        ok: true as const,
+        code: 'selected' as const,
+        path: 'D:/workspace/demo',
+      })),
+      mainWindowManager: {
+        getMainWindow: () => null,
+      },
+      inspectRuntime: vi.fn(),
+      cancelRuntime,
+      inspectShell: vi.fn(async () => createShellSnapshot()),
+      logger: createLogger(),
+    })
+
+    const runtimeCancelHandler = handlers.get(STUDIO_BRIDGE_CHANNELS.runtimeCancel)
+    await expect(
+      Promise.resolve(
+        runtimeCancelHandler?.({}, {
+          runId: ' run-1 ',
+          reason: 'user-stop',
+        }),
+      ),
+    ).resolves.toEqual({
+      ok: true,
+      runId: 'run-1',
+    })
+
+    expect(cancelRuntime).toHaveBeenCalledWith(
+      {
+        runId: 'run-1',
+        reason: 'user-stop',
+      },
+      {
+        workspacePath: null,
+        lastSelection: null,
+      },
+    )
+
+    await expect(
+      Promise.resolve(
+        runtimeCancelHandler?.({}, {
+          runId: 123,
+        }),
+      ),
+    ).rejects.toThrow('studio.runtime.cancel.runId 必须是字符串或 null')
+  })
+
   it('openWorkspace 会串行处理，避免并发对话框竞争共享 host state', async () => {
     const handlers = new Map<string, (_event: unknown, payload: unknown) => unknown>()
     const firstSelection = createDeferred<WorkspaceSelectionResult>()

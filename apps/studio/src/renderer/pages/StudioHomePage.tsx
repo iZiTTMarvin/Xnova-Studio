@@ -13,7 +13,7 @@ import { ScratchpadList } from '../components/ScratchpadList'
 import { StudioSettingsDialog } from '../components/StudioSettingsDialog'
 import { PermissionDialog } from '../components/PermissionDialog'
 import { UserQuestionDialog } from '../components/UserQuestionDialog'
-import { IconSend, IconFolder, IconSuggestionExplore } from '../components/Icons'
+import { IconSend, IconFolder, IconSuggestionExplore, IconCross } from '../components/Icons'
 import { useStudioBridge } from '../hooks/useStudioBridge'
 import { useMemoryOverview } from '../hooks/useMemoryOverview'
 import { useSettingsToolsPageModel } from '../hooks/useSettingsToolsPageModel'
@@ -63,6 +63,22 @@ function normalizeKeyword(value: string): string {
   return value.trim().toLowerCase()
 }
 
+function formatLastProgressTime(timestamp: number | null): string {
+  if (timestamp === null) {
+    return '最后进展: 暂无'
+  }
+
+  const elapsedSeconds = Math.max(0, Math.floor((Date.now() - timestamp) / 1000))
+  if (elapsedSeconds < 5) {
+    return '最后进展: 刚刚'
+  }
+  if (elapsedSeconds < 60) {
+    return `最后进展: ${elapsedSeconds} 秒前`
+  }
+
+  return `最后进展: ${Math.floor(elapsedSeconds / 60)} 分钟前`
+}
+
 export function StudioHomePage() {
   const {
     hostStatus,
@@ -103,9 +119,14 @@ export function StudioHomePage() {
     switchMode,
     switchPrimaryAgent,
     submitPrompt,
+    cancelCurrentRun,
     isSubmitting,
+    runStatus,
     isRunActive,
     runtimeSubmitAvailable,
+    runIdleWarning,
+    currentRunStep,
+    lastRuntimeEventAt,
     liveConversation,
     lastRuntimeEvent,
     pendingPermissionRequest,
@@ -334,6 +355,7 @@ export function StudioHomePage() {
     runtimeSubmitAvailable &&
     !isSubmitting &&
     !isRunActive
+  const canCancelRun = isRunActive && runStatus !== 'cancelling'
 
   const activeSessionDetail =
     shellSnapshot?.activeSession?.sessionId === activeSession?.sessionId
@@ -354,6 +376,7 @@ export function StudioHomePage() {
         value={composerInput}
         aria-label="项目级新对话输入"
         placeholder="描述你要在当前项目完成的目标"
+        disabled={isRunActive}
         onChange={(event) => {
           setComposerInput(event.currentTarget.value)
         }}
@@ -376,7 +399,7 @@ export function StudioHomePage() {
             settingsApi={settingsApi}
             currentProviderId={currentProviderId}
             currentModelId={currentModelId}
-            disabled={isSubmitting}
+            disabled={isSubmitting || isRunActive}
             onChange={(providerId, modelId) => {
               setCurrentProviderModel(providerId, modelId)
               setComposerFeedback(null)
@@ -385,17 +408,36 @@ export function StudioHomePage() {
         </div>
         <button
           className="composer-send"
-          aria-label="发送提示词"
-          disabled={!canSubmitPrompt || composerInput.trim().length === 0}
+          aria-label={isRunActive ? '停止当前运行' : '发送提示词'}
+          disabled={
+            isRunActive
+              ? !canCancelRun
+              : !canSubmitPrompt || composerInput.trim().length === 0
+          }
           onClick={() => {
+            if (isRunActive) {
+              void handleCancelRun()
+              return
+            }
             void handleSubmitPrompt()
           }}
         >
-          <IconSend />
+          {isRunActive ? <IconCross /> : <IconSend />}
         </button>
       </div>
+      {isRunActive ? (
+        <div className="composer-feedback" role="status">
+          <strong>当前正在运行</strong>
+          {' '}
+          <span>{currentRunStep ?? '正在运行'}</span>
+          {' · '}
+          <span>{formatLastProgressTime(lastRuntimeEventAt)}</span>
+        </div>
+      ) : null}
       {composerFeedback ? (
         <p className="composer-feedback">{composerFeedback}</p>
+      ) : runIdleWarning ? (
+        <p className="composer-feedback">{runIdleWarning}</p>
       ) : null}
     </div>
   )
@@ -456,7 +498,7 @@ export function StudioHomePage() {
 
   const handleSubmitPrompt = async (): Promise<void> => {
     const nextText = composerInput.trim()
-    if (!nextText || isSubmitting) {
+    if (!nextText || isSubmitting || isRunActive) {
       return
     }
 
@@ -476,6 +518,14 @@ export function StudioHomePage() {
       const message = error instanceof Error ? error.message : String(error)
       setComposerFeedback(`发送异常: ${message}`)
       setComposerInput(nextText) // 异常时恢复输入内容
+    }
+  }
+
+  const handleCancelRun = async (): Promise<void> => {
+    setComposerFeedback(null)
+    const result = await cancelCurrentRun()
+    if (!result.ok) {
+      setComposerFeedback(result.error)
     }
   }
 

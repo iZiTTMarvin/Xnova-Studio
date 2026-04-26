@@ -4,7 +4,10 @@ import type {
   StudioConversationMessage,
 } from '../../shared/studio-bridge-contract'
 import { IconChevronRight, IconChevronDown, IconCheck, IconCross } from './Icons'
-import { getToolDisplayLabel } from '../utils/tool-display-utils'
+import {
+  createToolArgumentDetails,
+  createToolEventSummary,
+} from '../utils/tool-event-summary'
 import { MarkdownContent } from '../utils/markdown-renderer'
 
 interface LiveConversationState {
@@ -19,6 +22,7 @@ interface LiveConversationState {
     durationMs?: number
     success?: boolean
     resultSummary?: string
+    resultFull?: string
   }>
   systemMessages: string[]
 }
@@ -104,14 +108,21 @@ interface ToolCallRowProps {
   success?: boolean | undefined
   durationMs?: number | undefined
   resultSummary?: string | undefined
+  resultFull?: string | undefined
 }
 
 function ToolCallRow(props: ToolCallRowProps) {
   const [isExpanded, setIsExpanded] = useState(false)
-  const display = getToolDisplayLabel(props.toolName, props.args)
+  const summary = createToolEventSummary(props.toolName, props.args, props.resultSummary)
+  const argumentDetails = createToolArgumentDetails(props.toolName, props.args)
   const isRunning = props.status === 'running'
   const isSuccess = props.status === 'done' && props.success !== false
   const isError = props.status === 'done' && props.success === false
+  const statusText = isRunning ? '进行中' : isError ? '失败' : '成功'
+  const hasResultFull =
+    typeof props.resultFull === 'string' &&
+    props.resultFull.trim().length > 0 &&
+    props.resultFull !== props.resultSummary
 
   const durationText = props.durationMs !== undefined
     ? `${(props.durationMs / 1000).toFixed(1)}s`
@@ -138,15 +149,17 @@ function ToolCallRow(props: ToolCallRowProps) {
           )}
         </span>
 
-        {/* 动词 + 目标 */}
         <span className={`tool-call-verb ${!isRunning ? 'tool-call-verb--done' : ''}`}>
-          {display.verb}
+          {summary.title}
         </span>
-        {display.target ? (
-          <span className="tool-call-target">{display.target}</span>
+        {summary.target ? (
+          <span className="tool-call-target">{summary.target}</span>
         ) : null}
+        {summary.detail ? (
+          <span className="tool-call-target">{summary.detail}</span>
+        ) : null}
+        <span className="tool-call-duration">{statusText}</span>
 
-        {/* 耗时 */}
         {durationText ? (
           <span className="tool-call-duration">{durationText}</span>
         ) : null}
@@ -160,10 +173,18 @@ function ToolCallRow(props: ToolCallRowProps) {
       {/* 展开详情 */}
       {isExpanded ? (
         <div className="tool-call-details">
-          {Object.keys(props.args).length > 0 ? (
+          {argumentDetails.length > 0 ? (
             <div className="tool-call-detail-section">
               <span className="tool-call-detail-label">参数</span>
-              <pre className="tool-call-detail-code">{JSON.stringify(props.args, null, 2)}</pre>
+              <div className="tool-call-detail-result">
+                {argumentDetails.map((detail) => (
+                  <div key={`${detail.label}:${detail.value}`}>
+                    <strong>{detail.label}</strong>
+                    {': '}
+                    <span>{detail.value}</span>
+                  </div>
+                ))}
+              </div>
             </div>
           ) : null}
           {props.resultSummary ? (
@@ -171,6 +192,12 @@ function ToolCallRow(props: ToolCallRowProps) {
               <span className="tool-call-detail-label">结果</span>
               <div className="tool-call-detail-result">{props.resultSummary}</div>
             </div>
+          ) : null}
+          {hasResultFull ? (
+            <details className="tool-call-detail-section">
+              <summary className="tool-call-detail-label">完整结果</summary>
+              <pre className="tool-call-detail-code">{props.resultFull}</pre>
+            </details>
           ) : null}
         </div>
       ) : null}
@@ -196,6 +223,7 @@ function renderPersistedToolEvents(
           success={toolEvent.success}
           durationMs={toolEvent.durationMs}
           resultSummary={toolEvent.resultSummary}
+          resultFull={toolEvent.resultFull}
         />
       ))}
     </div>
@@ -338,6 +366,7 @@ export function ConversationTimeline(props: ConversationTimelineProps) {
               success={toolEvent.success}
               durationMs={toolEvent.durationMs}
               resultSummary={toolEvent.resultSummary}
+              resultFull={toolEvent.resultFull}
             />
           ))}
         </div>

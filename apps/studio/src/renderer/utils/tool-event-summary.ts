@@ -1,0 +1,173 @@
+export type ToolEventSeverity = 'normal' | 'warning' | 'error'
+
+export interface ToolEventSummary {
+  title: string
+  target: string | null
+  detail: string | null
+  severity: ToolEventSeverity
+}
+
+const COMMAND_TARGET_MAX_LENGTH = 80
+
+function getStringArg(args: Record<string, unknown>, keys: string[]): string | null {
+  for (const key of keys) {
+    const value = args[key]
+    if (typeof value === 'string' && value.trim()) {
+      return value
+    }
+  }
+  return null
+}
+
+function getPathLeaf(pathValue: string | null): string | null {
+  if (!pathValue) {
+    return null
+  }
+
+  const normalized = pathValue.replace(/\\/g, '/').replace(/\/+$/, '')
+  const segments = normalized.split('/')
+  return segments[segments.length - 1] ?? normalized
+}
+
+function truncateText(value: string, maxLength: number): string {
+  if (value.length <= maxLength) {
+    return value
+  }
+  return `${value.slice(0, maxLength)}…`
+}
+
+function countLines(value: string): number {
+  if (value.length === 0) {
+    return 0
+  }
+  return value.split(/\r\n|\r|\n/).length
+}
+
+function resolveFileTarget(args: Record<string, unknown>): string | null {
+  return getPathLeaf(getStringArg(args, ['path', 'file', 'targetPath', 'filePath']))
+}
+
+function resolveGitTarget(args: Record<string, unknown>): string | null {
+  const subcommand = getStringArg(args, ['subcommand'])
+  const file = getStringArg(args, ['file'])
+  const branch = getStringArg(args, ['branch_name', 'target'])
+  const ref = getStringArg(args, ['ref'])
+  const pieces = [subcommand, file ?? branch ?? ref].filter(Boolean)
+  return pieces.length > 0 ? truncateText(pieces.join(' '), COMMAND_TARGET_MAX_LENGTH) : null
+}
+
+export function createToolEventSummary(
+  toolName: string,
+  args: Record<string, unknown>,
+  resultSummary?: string | null,
+): ToolEventSummary {
+  switch (toolName) {
+    case 'write_file': {
+      const content = typeof args['content'] === 'string' ? args['content'] : null
+      return {
+        title: '写入文件',
+        target: resolveFileTarget(args),
+        detail: content === null ? null : `${content.length} 字符 / ${countLines(content)} 行`,
+        severity: 'normal',
+      }
+    }
+
+    case 'read_file':
+      return {
+        title: '读取文件',
+        target: resolveFileTarget(args),
+        detail: null,
+        severity: 'normal',
+      }
+
+    case 'edit_file': {
+      const oldValue = getStringArg(args, ['old_str', 'oldString'])
+      const newValue = getStringArg(args, ['new_str', 'newString'])
+      const detail = newValue
+        ? `${newValue.length} 字符 / ${countLines(newValue)} 行新内容`
+        : oldValue
+          ? `${oldValue.length} 字符待替换`
+          : null
+      return {
+        title: '编辑文件',
+        target: resolveFileTarget(args),
+        detail,
+        severity: 'normal',
+      }
+    }
+
+    case 'bash': {
+      const command = getStringArg(args, ['command'])
+      return {
+        title: '执行命令',
+        target: command ? truncateText(command, COMMAND_TARGET_MAX_LENGTH) : null,
+        detail: getStringArg(args, ['cwd']),
+        severity: 'warning',
+      }
+    }
+
+    case 'git':
+      return {
+        title: '执行 Git',
+        target: resolveGitTarget(args),
+        detail: getStringArg(args, ['cwd']),
+        severity: 'warning',
+      }
+
+    default:
+      return {
+        title: toolName,
+        target:
+          resolveFileTarget(args) ??
+          getStringArg(args, ['command', 'query', 'pattern', 'name']) ??
+          null,
+        detail: resultSummary ? truncateText(resultSummary, 120) : null,
+        severity: 'normal',
+      }
+  }
+}
+
+export function createToolRunningStep(
+  toolName: string,
+  args: Record<string, unknown>,
+): string {
+  const summary = createToolEventSummary(toolName, args)
+  const target = summary.target ? ` ${summary.target}` : ''
+
+  switch (summary.title) {
+    case '写入文件':
+      return `正在写入${target}`
+    case '读取文件':
+      return `正在读取${target}`
+    case '编辑文件':
+      return `正在编辑${target}`
+    case '执行命令':
+      return '正在执行命令'
+    case '执行 Git':
+      return '正在执行 Git'
+    default:
+      return `正在执行 ${summary.title}`
+  }
+}
+
+export function createToolArgumentDetails(
+  toolName: string,
+  args: Record<string, unknown>,
+): Array<{ label: string; value: string }> {
+  const summary = createToolEventSummary(toolName, args)
+  const details: Array<{ label: string; value: string }> = []
+
+  if (summary.target) {
+    details.push({ label: '目标', value: summary.target })
+  }
+  if (summary.detail) {
+    details.push({ label: '详情', value: summary.detail })
+  }
+
+  const cwd = getStringArg(args, ['cwd'])
+  if (cwd && !details.some((detail) => detail.label === 'cwd')) {
+    details.push({ label: 'cwd', value: cwd })
+  }
+
+  return details
+}

@@ -1,7 +1,8 @@
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import type {
   PermissionDialogRequest,
   PermissionDialogResponse,
+  RuntimeCancelResult,
   RuntimeInspectResult,
   StudioBridgeApi,
   StudioHostState,
@@ -28,6 +29,7 @@ import {
   type WorkPreferenceRestoreStatus,
   type WorkPreferenceRestoreSources,
 } from '../utils/work-preferences'
+import { createToolRunningStep } from '../utils/tool-event-summary'
 
 interface RecoveryState {
   status: WorkPreferenceRestoreStatus
@@ -60,9 +62,14 @@ interface LiveConversationState {
     durationMs?: number
     success?: boolean
     resultSummary?: string
+    resultFull?: string
   }>
   systemMessages: string[]
 }
+
+const RUN_IDLE_WARNING_MS = 90_000
+const RUN_IDLE_WARNING_MESSAGE = '运行长时间没有新进展，可以停止后重试'
+const RUN_STEP_CALLING_MODEL = '正在调用模型'
 
 function getErrorMessage(error: unknown): string {
   return error instanceof Error ? error.message : String(error)
@@ -81,8 +88,20 @@ function isActiveRunStatus(status: StudioRunStatus): boolean {
     status === 'running' ||
     status === 'waiting_permission' ||
     status === 'waiting_user_input' ||
-    status === 'tool_calling'
+    status === 'tool_calling' ||
+    status === 'cancelling'
   )
+}
+
+function createRunningStepFromRuntimeEvent(event: StudioRuntimeEvent): string | null {
+  const toolName =
+    typeof event.payload?.toolName === 'string' ? event.payload.toolName : null
+  const args =
+    event.payload?.args && typeof event.payload.args === 'object'
+      ? (event.payload.args as Record<string, unknown>)
+      : {}
+
+  return toolName ? createToolRunningStep(toolName, args) : null
 }
 
 function buildShellRequest(
@@ -168,6 +187,11 @@ export function useStudioBridge() {
   const [currentModelId, setCurrentModelId] = useState<string | null>(null)
   const [isSubmitting, setIsSubmitting] = useState(false)
   const [runStatus, setRunStatus] = useState<StudioRunStatus>('idle')
+  const [currentRunId, setCurrentRunId] = useState<string | null>(null)
+  const [lastRuntimeEventAt, setLastRuntimeEventAt] = useState<number | null>(null)
+  const [runIdleWarning, setRunIdleWarning] = useState<string | null>(null)
+  const [currentRunStep, setCurrentRunStep] = useState<string | null>(null)
+  const cancelRequestedRef = useRef(false)
   const [liveConversation, setLiveConversation] = useState<LiveConversationState>({
     pendingUserText: null,
     assistantText: '',
@@ -357,6 +381,11 @@ export function useStudioBridge() {
       setRuntimeInspectResult(null)
       setPendingPermissionRequest(null)
       setPendingUserInputRequest(null)
+      setCurrentRunId(null)
+      setLastRuntimeEventAt(null)
+      setRunIdleWarning(null)
+      setCurrentRunStep(null)
+      cancelRequestedRef.current = false
       setCurrentAgentId(null)
       setCurrentProviderId(null)
       setCurrentModelId(null)
@@ -517,13 +546,26 @@ export function useStudioBridge() {
       }
 
       setLastRuntimeEvent(event)
+      setLastRuntimeEventAt(Date.now())
+      setRunIdleWarning(null)
       switch (event.type) {
         case 'run_started':
+          cancelRequestedRef.current = false
+          setCurrentRunId(event.runId ?? null)
+          setIsSubmitting(true)
           setRunStatus('running')
+          setCurrentRunStep(RUN_STEP_CALLING_MODEL)
           break
         case 'text_delta':
         case 'thinking':
         case 'context_update':
+          setCurrentRunStep(RUN_STEP_CALLING_MODEL)
+          setRunStatus((current) =>
+            isActiveRunStatus(current) || current === 'idle'
+              ? 'running'
+              : current,
+          )
+          break
         case 'warning':
           setRunStatus((current) =>
             isActiveRunStatus(current) || current === 'idle'
@@ -533,25 +575,56 @@ export function useStudioBridge() {
           break
         case 'tool_start':
           setRunStatus('tool_calling')
+          setCurrentRunStep(createRunningStepFromRuntimeEvent(event) ?? '正在执行工具')
           break
         case 'tool_end':
           setRunStatus((current) =>
             current === 'tool_calling' ? 'running' : current,
           )
+          setCurrentRunStep(RUN_STEP_CALLING_MODEL)
           break
         case 'permission.request':
           setRunStatus('waiting_permission')
+          setCurrentRunStep('等待用户确认')
           break
         case 'permission.decision':
           setRunStatus((current) =>
             current === 'waiting_permission' ? 'running' : current,
           )
+          setCurrentRunStep(RUN_STEP_CALLING_MODEL)
           break
         case 'run_completed':
+        case 'session_end':
+          setIsSubmitting(false)
           setRunStatus('completed')
+          setCurrentRunId(null)
+          setCurrentRunStep('运行已完成')
+          break
+        case 'turn_end':
+          setIsSubmitting(false)
+          setRunStatus(
+            event.payload?.error || event.payload?.aborted === true
+              ? 'failed'
+              : 'completed',
+          )
+          setCurrentRunId(null)
+          setCurrentRunStep(
+            event.payload?.error || event.payload?.aborted === true
+              ? '运行失败'
+              : '运行已完成',
+          )
           break
         case 'run_failed':
+          setIsSubmitting(false)
           setRunStatus('failed')
+          setCurrentRunId(null)
+          setCurrentRunStep('运行失败')
+          break
+        case 'run_cancelled':
+          setIsSubmitting(false)
+          setRunStatus('cancelled')
+          setCurrentRunId(null)
+          setCurrentRunStep('已停止当前运行')
           break
         default:
           break
@@ -620,6 +693,9 @@ export function useStudioBridge() {
                       ...(typeof event.payload?.resultSummary === 'string'
                         ? { resultSummary: event.payload.resultSummary }
                         : {}),
+                      ...(typeof event.payload?.resultFull === 'string'
+                        ? { resultFull: event.payload.resultFull }
+                        : {}),
                     }
                   : toolEvent,
               ),
@@ -628,7 +704,8 @@ export function useStudioBridge() {
           case 'warning':
           case 'error':
           case 'runtime.error':
-          case 'run_failed': {
+          case 'run_failed':
+          case 'run_cancelled': {
             const message =
               typeof event.payload?.message === 'string'
                 ? event.payload.message
@@ -670,6 +747,7 @@ export function useStudioBridge() {
 
         setPendingPermissionRequest(request)
         setRunStatus('waiting_permission')
+        setCurrentRunStep('等待用户确认')
       }) ?? (() => undefined)
     const unsubscribeUserInput =
       bridge.userInput?.onRequest((request) => {
@@ -679,6 +757,7 @@ export function useStudioBridge() {
 
         setPendingUserInputRequest(request)
         setRunStatus('waiting_user_input')
+        setCurrentRunStep('等待用户输入')
       }) ?? (() => undefined)
 
     return () => {
@@ -689,6 +768,28 @@ export function useStudioBridge() {
       unsubscribeUserInput()
     }
   }, [bridge])
+
+  useEffect(() => {
+    if (runStatus !== 'running' && runStatus !== 'tool_calling') {
+      setRunIdleWarning(null)
+      return
+    }
+
+    const updateWarning = () => {
+      if (
+        lastRuntimeEventAt !== null &&
+        Date.now() - lastRuntimeEventAt >= RUN_IDLE_WARNING_MS
+      ) {
+        setRunIdleWarning(RUN_IDLE_WARNING_MESSAGE)
+      }
+    }
+
+    updateWarning()
+    const timer = window.setInterval(updateWarning, 1_000)
+    return () => {
+      window.clearInterval(timer)
+    }
+  }, [lastRuntimeEventAt, runStatus])
 
   const openWorkspace = async (): Promise<void> => {
     if (!bridge) {
@@ -943,6 +1044,11 @@ export function useStudioBridge() {
 
     setIsSubmitting(true)
     setRunStatus('starting')
+    setCurrentRunId(null)
+    setLastRuntimeEventAt(Date.now())
+    setRunIdleWarning(null)
+    setCurrentRunStep('正在启动运行')
+    cancelRequestedRef.current = false
     setRuntimeError(null)
     setShellError(null)
     setLiveConversation({
@@ -959,6 +1065,7 @@ export function useStudioBridge() {
         setRuntimeStatus('error')
         setRuntimeError('runtime.submit 不可用。')
         setRunStatus('failed')
+        setCurrentRunStep('运行失败')
         return {
           ok: false,
           error: 'runtime.submit 不可用。',
@@ -973,9 +1080,13 @@ export function useStudioBridge() {
         modelId: currentModelId,
       })
       if (!submitResult.ok) {
+        if (cancelRequestedRef.current) {
+          return { ok: true }
+        }
         setRuntimeStatus('error')
         setRuntimeError(submitResult.error)
         setRunStatus('failed')
+        setCurrentRunStep('运行失败')
         setLiveConversation((current) => ({
           ...current,
           systemMessages: appendSystemMessageUnique(
@@ -990,6 +1101,7 @@ export function useStudioBridge() {
         }
       }
       setRunStatus('completed')
+      setCurrentRunStep('运行已完成')
 
       // 提交成功后立即返回，避免 getSnapshot/inspectRuntime 的异常影响 UI
       // 后续状态刷新通过异步任务完成，即使失败也不应阻止输入框清空
@@ -1071,9 +1183,13 @@ export function useStudioBridge() {
       return { ok: true }
     } catch (error) {
       const message = getErrorMessage(error)
+      if (cancelRequestedRef.current) {
+        return { ok: true }
+      }
       setRuntimeStatus('error')
       setRuntimeError(message)
       setRunStatus('failed')
+      setCurrentRunStep('运行失败')
       setShellStatus('error')
       setShellError(message)
       setLiveConversation((current) => ({
@@ -1086,6 +1202,72 @@ export function useStudioBridge() {
       return { ok: false, error: message }
     } finally {
       setIsSubmitting(false)
+    }
+  }
+
+  const cancelCurrentRun = async (): Promise<RuntimeCancelResult> => {
+    if (!bridge?.runtime || typeof bridge.runtime.cancel !== 'function') {
+      const error = 'runtime.cancel 不可用。'
+      setRuntimeError(error)
+      return {
+        ok: false,
+        error,
+      }
+    }
+    if (!isActiveRunStatus(runStatus)) {
+      return {
+        ok: false,
+        error: '当前没有正在运行的 Agent run。',
+      }
+    }
+
+    cancelRequestedRef.current = true
+    setRunStatus('cancelling')
+    setIsSubmitting(false)
+    setRunIdleWarning(null)
+    setCurrentRunStep('正在停止当前运行')
+
+    try {
+      const result = await bridge.runtime.cancel({
+        runId: currentRunId,
+        reason: 'user-requested',
+      })
+      if (!result.ok) {
+        setRunStatus('failed')
+        setCurrentRunStep('运行失败')
+        setRuntimeError(result.error)
+        setLiveConversation((current) => ({
+          ...current,
+          systemMessages: appendSystemMessageUnique(
+            current.systemMessages,
+            result.error,
+          ),
+        }))
+        return result
+      }
+
+      setRunStatus((current) =>
+        current === 'cancelling' ? 'cancelled' : current,
+      )
+      setCurrentRunId(null)
+      setCurrentRunStep('已停止当前运行')
+      return result
+    } catch (error) {
+      const message = getErrorMessage(error)
+      setRunStatus('failed')
+      setCurrentRunStep('运行失败')
+      setRuntimeError(message)
+      setLiveConversation((current) => ({
+        ...current,
+        systemMessages: appendSystemMessageUnique(
+          current.systemMessages,
+          message,
+        ),
+      }))
+      return {
+        ok: false,
+        error: message,
+      }
     }
   }
 
@@ -1105,6 +1287,7 @@ export function useStudioBridge() {
       setRunStatus((current) =>
         current === 'waiting_permission' ? 'running' : current,
       )
+      setCurrentRunStep(RUN_STEP_CALLING_MODEL)
     } catch (error) {
       const message = getErrorMessage(error)
       setRuntimeError(message)
@@ -1134,6 +1317,7 @@ export function useStudioBridge() {
       setRunStatus((current) =>
         current === 'waiting_user_input' ? 'running' : current,
       )
+      setCurrentRunStep(RUN_STEP_CALLING_MODEL)
     } catch (error) {
       const message = getErrorMessage(error)
       setRuntimeError(message)
@@ -1185,10 +1369,15 @@ export function useStudioBridge() {
     switchMode,
     switchPrimaryAgent,
     submitPrompt,
+    cancelCurrentRun,
     isSubmitting,
     runStatus,
     isRunActive: isActiveRunStatus(runStatus),
     runtimeSubmitAvailable: typeof bridge?.runtime.submit === 'function',
+    currentRunId,
+    currentRunStep,
+    lastRuntimeEventAt,
+    runIdleWarning,
     liveConversation,
     contextState,
     lastRuntimeEvent,

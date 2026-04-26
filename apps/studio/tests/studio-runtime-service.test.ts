@@ -4,7 +4,14 @@ import { STUDIO_BRIDGE_CHANNELS } from '../src/shared/studio-bridge-contract'
 import type {
   RuntimeHostBridge,
   RuntimeInstance,
+  RuntimeTurnResult,
 } from '@xnova/runtime'
+
+function flushMicrotasks(): Promise<void> {
+  return new Promise((resolve) => {
+    setTimeout(resolve, 0)
+  })
+}
 
 describe('studio runtime service', () => {
   it('调用 shared runtime submit，并把 runtime 事件透传给 renderer', async () => {
@@ -189,6 +196,226 @@ describe('studio runtime service', () => {
     })
 
     expect(emittedTypes).toEqual(['run_started', 'run_failed'])
+  })
+
+  it('runtime 发出可见输出但 submit 不 resolve 时，用户 cancel 会 abort 并发 run_cancelled', async () => {
+    let runtimeBridge: RuntimeHostBridge | null = null
+
+    const runtimeInstance: RuntimeInstance = {
+      submit: vi.fn((): Promise<RuntimeTurnResult> => {
+        runtimeBridge?.emit({
+          type: 'text_delta',
+          timestamp: '2026-04-26T00:00:01.000Z',
+          sessionId: 'session-1',
+          payload: {
+            text: '已经产生可见输出',
+          },
+        })
+        return new Promise(() => undefined)
+      }),
+      abort: vi.fn(),
+      dispose: vi.fn(async () => undefined),
+      getSnapshot: vi.fn(() => ({
+        sessionId: 'session-1',
+        isRunning: true,
+        provider: 'minimax',
+        model: 'MiniMax-M2.7',
+        warnings: [],
+      })),
+    }
+    const service = createStudioRuntimeService({
+      createRuntimeFn: vi.fn(async (_input, bridge) => {
+        runtimeBridge = bridge
+        return runtimeInstance
+      }),
+      loadResolvedConfigFn: vi.fn(() => ({
+        effective: {
+          defaultProvider: 'minimax',
+          defaultModel: 'MiniMax-M2.7',
+          providers: {},
+        },
+        source: {},
+        warnings: [],
+      })),
+    })
+    const emittedEvents: Array<{ type: string; payload?: Record<string, unknown> }> = []
+
+    const submitPromise = service.submit(
+      {
+        text: '继续',
+        projectPath: 'D:/workspace/demo',
+      },
+      {
+        workspacePath: 'D:/workspace/demo',
+        lastSelection: null,
+      },
+      (event) => {
+        emittedEvents.push(event)
+      },
+    )
+
+    await flushMicrotasks()
+    expect(emittedEvents.map((event) => event.type)).toContain('text_delta')
+
+    await expect(
+      service.cancel({
+        reason: 'user-stop',
+      }),
+    ).resolves.toMatchObject({
+      ok: true,
+    })
+
+    expect(runtimeInstance.abort).toHaveBeenCalledTimes(1)
+    expect(emittedEvents.map((event) => event.type)).toEqual([
+      'run_started',
+      'text_delta',
+      'run_cancelled',
+    ])
+    await expect(submitPromise).resolves.toMatchObject({
+      ok: false,
+      error: expect.stringContaining('已停止当前运行'),
+    })
+  })
+
+  it('runtime 发出 turn_end 后，即使 submit 暂不 resolve，也会收敛为 run_completed', async () => {
+    let runtimeBridge: RuntimeHostBridge | null = null
+
+    const runtimeInstance: RuntimeInstance = {
+      submit: vi.fn((): Promise<RuntimeTurnResult> => {
+        runtimeBridge?.emit({
+          type: 'text_delta',
+          timestamp: '2026-04-26T00:00:01.000Z',
+          sessionId: 'session-1',
+          payload: {
+            text: '写入完成',
+          },
+        })
+        runtimeBridge?.emit({
+          type: 'turn_end',
+          timestamp: '2026-04-26T00:00:02.000Z',
+          sessionId: 'session-1',
+          payload: {
+            stopReason: 'end_turn',
+            aborted: false,
+          },
+        })
+        return new Promise(() => undefined)
+      }),
+      abort: vi.fn(),
+      dispose: vi.fn(async () => undefined),
+      getSnapshot: vi.fn(() => ({
+        sessionId: 'session-1',
+        isRunning: false,
+        provider: 'minimax',
+        model: 'MiniMax-M2.7',
+        warnings: [],
+      })),
+    }
+    const service = createStudioRuntimeService({
+      createRuntimeFn: vi.fn(async (_input, bridge) => {
+        runtimeBridge = bridge
+        return runtimeInstance
+      }),
+      loadResolvedConfigFn: vi.fn(() => ({
+        effective: {
+          defaultProvider: 'minimax',
+          defaultModel: 'MiniMax-M2.7',
+          providers: {},
+        },
+        source: {},
+        warnings: [],
+      })),
+    })
+    const emittedTypes: string[] = []
+
+    await expect(
+      service.submit(
+        {
+          text: '继续',
+          projectPath: 'D:/workspace/demo',
+        },
+        {
+          workspacePath: 'D:/workspace/demo',
+          lastSelection: null,
+        },
+        (event) => {
+          emittedTypes.push(event.type)
+        },
+      ),
+    ).resolves.toMatchObject({
+      ok: true,
+      sessionId: 'session-1',
+    })
+
+    expect(emittedTypes).toEqual([
+      'run_started',
+      'text_delta',
+      'turn_end',
+      'run_completed',
+    ])
+    expect(emittedTypes.filter((type) => type === 'run_completed')).toHaveLength(1)
+  })
+
+  it('没有 active run 时 cancel 返回失败', async () => {
+    const service = createStudioRuntimeService()
+
+    await expect(service.cancel({})).resolves.toEqual({
+      ok: false,
+      error: '当前没有正在运行的 Agent run。',
+    })
+  })
+
+  it('dispose 会中断仍在后台执行的 active run 并释放 submit 等待', async () => {
+    const runtimeInstance: RuntimeInstance = {
+      submit: vi.fn((): Promise<RuntimeTurnResult> => new Promise(() => undefined)),
+      abort: vi.fn(),
+      dispose: vi.fn(async () => undefined),
+      getSnapshot: vi.fn(() => ({
+        sessionId: 'session-1',
+        isRunning: true,
+        provider: 'minimax',
+        model: 'MiniMax-M2.7',
+        warnings: [],
+      })),
+    }
+    const service = createStudioRuntimeService({
+      createRuntimeFn: vi.fn(async () => runtimeInstance),
+      loadResolvedConfigFn: vi.fn(() => ({
+        effective: {
+          defaultProvider: 'minimax',
+          defaultModel: 'MiniMax-M2.7',
+          providers: {},
+        },
+        source: {},
+        warnings: [],
+      })),
+    })
+    const emittedTypes: string[] = []
+
+    const submitPromise = service.submit(
+      {
+        text: '继续',
+        projectPath: 'D:/workspace/demo',
+      },
+      {
+        workspacePath: 'D:/workspace/demo',
+        lastSelection: null,
+      },
+      (event) => {
+        emittedTypes.push(event.type)
+      },
+    )
+
+    await flushMicrotasks()
+    await service.dispose()
+
+    expect(runtimeInstance.abort).toHaveBeenCalledTimes(1)
+    expect(runtimeInstance.dispose).toHaveBeenCalledTimes(1)
+    expect(emittedTypes).toContain('run_cancelled')
+    await expect(submitPromise).resolves.toMatchObject({
+      ok: false,
+      error: expect.stringContaining('应用正在退出，已停止当前运行'),
+    })
   })
 
   it('空文本会返回失败，且不会创建 runtime 实例', async () => {

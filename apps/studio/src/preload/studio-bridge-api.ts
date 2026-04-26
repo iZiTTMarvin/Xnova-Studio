@@ -12,6 +12,7 @@ import type {
   StudioProviderSettingsSaveResult,
   StudioProviderSettingsSnapshot,
   RuntimeInspectRequest,
+  RuntimeCancelRequest,
   RuntimeSubmitRequest,
   PermissionDialogRequest,
   PermissionDialogResponse,
@@ -261,6 +262,9 @@ export function createStudioBridgeApi(
       },
       async submit(input: RuntimeSubmitRequest) {
         return runtimeGateway.submit(input)
+      },
+      async cancel(input?: RuntimeCancelRequest) {
+        return runtimeGateway.cancel(input)
       },
       onEvent(listener: (event: StudioRuntimeEvent) => void) {
         return runtimeGateway.onEvent(listener)

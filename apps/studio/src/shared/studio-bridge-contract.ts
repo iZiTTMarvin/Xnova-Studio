@@ -45,6 +45,21 @@ export type RuntimeSubmitResult =
       runId?: string
     }
 
+export interface RuntimeCancelRequest {
+  runId?: string | null
+  reason?: string
+}
+
+export type RuntimeCancelResult =
+  | {
+      ok: true
+      runId?: string | null
+    }
+  | {
+      ok: false
+      error: string
+    }
+
 export interface PermissionDialogRequest {
   requestId: string
   toolName: string
@@ -129,6 +144,7 @@ export type StudioRunStatus =
   | 'waiting_permission'
   | 'waiting_user_input'
   | 'tool_calling'
+  | 'cancelling'
   | 'completed'
   | 'failed'
   | 'cancelled'
@@ -143,6 +159,7 @@ export type StudioRunLifecycleEventType =
   | 'warning'
   | 'run_completed'
   | 'run_failed'
+  | 'run_cancelled'
 
 export type StudioRuntimeEventType =
   | StudioRunLifecycleEventType
@@ -439,6 +456,7 @@ export interface StudioHostApi {
 export interface StudioRuntimeApi {
   inspect(input?: RuntimeInspectRequest): Promise<RuntimeInspectResult>
   submit(input: RuntimeSubmitRequest): Promise<RuntimeSubmitResult>
+  cancel(input?: RuntimeCancelRequest): Promise<RuntimeCancelResult>
   onEvent(listener: (event: StudioRuntimeEvent) => void): () => void
 }
 
@@ -501,6 +519,7 @@ export const STUDIO_BRIDGE_CHANNELS = {
   hostStateChanged: 'studio:host:state-changed',
   runtimeInspect: 'studio:runtime:inspect',
   runtimeSubmit: 'studio:runtime:submit',
+  runtimeCancel: 'studio:runtime:cancel',
   runtimeEvent: 'studio:runtime:event',
   permissionRequest: 'studio:permission:request',
   permissionRespond: 'studio:permission:respond',

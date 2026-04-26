@@ -1,6 +1,8 @@
 import type {
   RuntimeInspectRequest,
   RuntimeInspectResult,
+  RuntimeCancelRequest,
+  RuntimeCancelResult,
   RuntimeSubmitRequest,
   RuntimeSubmitResult,
   StudioRuntimeEvent,
@@ -8,6 +10,8 @@ import type {
 import { STUDIO_BRIDGE_CHANNELS, type StudioIpcRendererLike } from './studio-ipc-contract'
 import {
   parseStudioRuntimeEvent,
+  parseStudioRuntimeCancelRequest,
+  parseStudioRuntimeCancelResult,
   parseStudioRuntimeInspectResult,
   parseStudioRuntimeSubmitRequest,
   parseStudioRuntimeSubmitResult,
@@ -16,6 +20,7 @@ import {
 export interface StudioRuntimeGateway {
   inspect(request: RuntimeInspectRequest): Promise<RuntimeInspectResult>
   submit(request: RuntimeSubmitRequest): Promise<RuntimeSubmitResult>
+  cancel(request?: RuntimeCancelRequest): Promise<RuntimeCancelResult>
   onEvent(listener: (event: StudioRuntimeEvent) => void): () => void
   dispose(): Promise<void>
 }
@@ -52,6 +57,14 @@ export function createStudioRuntimeGateway(
         safeRequest,
       )
       return parseStudioRuntimeSubmitResult(payload)
+    },
+    async cancel(request) {
+      const safeRequest = parseStudioRuntimeCancelRequest(request)
+      const payload = await options.ipcRenderer.invoke(
+        STUDIO_BRIDGE_CHANNELS.runtimeCancel,
+        safeRequest,
+      )
+      return parseStudioRuntimeCancelResult(payload)
     },
     onEvent(listener) {
       listeners.add(listener)

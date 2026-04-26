@@ -29,15 +29,20 @@ const runtimeInspector = createStudioRuntimeInspector({
     return runtimeManager.getRuntimeSnapshot(hostState)
   },
 })
+let runtimeServiceRef: ReturnType<typeof createStudioRuntimeService> | null = null
 const mainWindowManager = createMainWindowManager({
   BrowserWindow,
   logger,
+  onBeforeWindowClose() {
+    void runtimeServiceRef?.dispose()
+  },
 })
 const runtimeService = createStudioRuntimeService({
   runtimeManager,
   mainWindowManager,
   logger,
 })
+runtimeServiceRef = runtimeService
 const shellInspector = createStudioShellInspector({
   onPerformanceSample(sample) {
     logger.info('shell inspector 性能采样', sample)
@@ -98,6 +103,7 @@ registerStudioMainIpcHandlers({
   inspectRuntime: (request, state) => runtimeInspector.inspect(request, state),
   submitRuntime: (request, state, emitRuntimeEvent) =>
     runtimeService.submit(request, state, emitRuntimeEvent),
+  cancelRuntime: (request) => runtimeService.cancel(request),
   respondPermission: (response) =>
     runtimeService.respondToPermissionRequest(response),
   respondUserInput: (response) =>

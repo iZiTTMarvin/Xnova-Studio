@@ -229,6 +229,10 @@ export class AgentLoop {
         this.#stopRequested = true
     }
 
+    #shouldStop(): boolean {
+        return this.#stopRequested || this.#config.signal?.aborted === true
+    }
+
     /**
      * 主循环：LLM 调用 → [工具执行 → LLM 调用]* → 文本回复
      *
@@ -255,7 +259,7 @@ export class AgentLoop {
 
         for (let turn = 0; turn < maxTurns; turn++) {
             // 检查点 1：新一轮开始前（安全 — history 末尾是 tool_result 或初始 user 消息）
-            if (this.#stopRequested) {
+            if (this.#shouldStop()) {
                 yield {type: 'done', reason: 'stopped'}
                 return
             }
@@ -300,7 +304,7 @@ export class AgentLoop {
             yield* this.#executeToolCalls(llmResult.toolCalls, history)
 
             // 检查点 2：工具执行完毕后（安全 — tool_result 已写入 history）
-            if (this.#stopRequested) {
+            if (this.#shouldStop()) {
                 yield {type: 'done', reason: 'stopped'}
                 return
             }
@@ -485,6 +489,7 @@ export class AgentLoop {
         // parallelTools === false → 全部串行（兼容模式）
         if (this.#config.parallelTools === false) {
             for (const tc of toolCalls) {
+                if (this.#shouldStop()) return
                 yield* this.#executeOneTool(tc, history)
             }
             return
@@ -499,6 +504,7 @@ export class AgentLoop {
 
         // 1. 并行执行安全工具
         if (safe.length > 0) {
+            if (this.#shouldStop()) return
             const events: AgentEvent[] = []
             const ctx = buildToolContext(this.#provider, this.#registry, this.#config, history)
             const results = await executeSafeToolsInParallel(
@@ -528,6 +534,7 @@ export class AgentLoop {
 
         // 2. 串行执行危险工具
         for (const tc of dangerous) {
+            if (this.#shouldStop()) return
             yield* this.#executeOneTool(tc, history)
         }
     }
@@ -541,6 +548,7 @@ export class AgentLoop {
      * yield: tool_start → [permission_request → permission_grant] → [subagent_progress*] → tool_done
      */
     async* #executeOneTool(tc: ToolCallContent, history: Message[]): AsyncGenerator<AgentEvent> {
+        if (this.#shouldStop()) return
         yield {type: 'tool_start', toolName: tc.toolName, toolCallId: tc.toolCallId, args: tc.args}
 
         // ── 重复调用检测 ──
@@ -625,6 +633,21 @@ export class AgentLoop {
 
         const start = Date.now()
         const tool = this.#registry.get(tc.toolName)
+        if (this.#shouldStop()) {
+            history.push({
+                role: 'user',
+                content: [{type: 'tool_result', toolCallId: tc.toolCallId, result: '执行前已停止', isError: true}]
+            })
+            yield {
+                type: 'tool_done',
+                toolName: tc.toolName,
+                toolCallId: tc.toolCallId,
+                durationMs: 0,
+                success: false,
+                resultSummary: '执行前已停止'
+            }
+            return
+        }
 
         // 【雷区一防御】工具执行必须 try/catch，确保任何异常都产生 tool_result，
         // 绝不能让 assistant 消息中的 tool_call 成为孤儿（无对应 tool_result）。
@@ -709,6 +732,7 @@ export class AgentLoop {
 
     /** 安全工具直接放行；危险工具 yield permission_request 暂停等待用户确认 */
     async* #checkPermission(tc: ToolCallContent): AsyncGenerator<AgentEvent, boolean> {
+        if (this.#shouldStop()) return false
         // isSidechain 模式：子 Agent 内所有工具自动批准（主 Agent 派发即授权）
         if (this.#config.isSidechain) return true
 

@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 
 import { useState } from 'react'
-import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
+import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { useStudioBridge } from '../src/renderer/hooks/useStudioBridge'
 
@@ -98,6 +98,17 @@ function HookHarness() {
       >
         提交
       </button>
+      <button
+        onClick={() => {
+          void bridgeState
+            .cancelCurrentRun()
+            .then((result) => {
+              setSubmitResult(result.ok ? 'cancel-ok' : result.error)
+            })
+        }}
+      >
+        停止
+      </button>
       <div data-testid="shell-status">{bridgeState.shellStatus}</div>
       <div data-testid="run-status">{bridgeState.runStatus}</div>
       <div data-testid="run-active">{bridgeState.isRunActive ? 'yes' : 'no'}</div>
@@ -112,6 +123,8 @@ function HookHarness() {
       <div data-testid="system-messages">
         {bridgeState.liveConversation.systemMessages.join('|')}
       </div>
+      <div data-testid="run-idle-warning">{bridgeState.runIdleWarning ?? ''}</div>
+      <div data-testid="current-run-step">{bridgeState.currentRunStep ?? ''}</div>
     </div>
   )
 }
@@ -486,6 +499,7 @@ describe('useStudioBridge runtime submit', () => {
     expect(screen.getByTestId('run-active').textContent).toBe('no')
     expect(screen.getByTestId('assistant-text').textContent).toBe('正在分析')
     expect(screen.getByTestId('tool-events').textContent).toBe('read_file:done')
+    expect(screen.getByTestId('current-run-step').textContent).toBe('运行已完成')
   })
 
   it('submit 成功后若 runtime inspect 刷新失败，不应提前清空 liveConversation', async () => {
@@ -578,5 +592,209 @@ describe('useStudioBridge runtime submit', () => {
     expect(screen.getByTestId('assistant-text').textContent).toBe(
       '刷新失败前的可见内容',
     )
+  })
+
+  it('Stop 会调用 runtime.cancel，收到 run_cancelled 后恢复为可继续发送', async () => {
+    let runtimeEventHandler: ((event: {
+      type: string
+      timestamp: string
+      runId?: string
+      payload?: Record<string, unknown>
+    }) => void) | null = null
+    const cancel = vi.fn(async () => {
+      runtimeEventHandler?.({
+        type: 'run_cancelled',
+        timestamp: '2026-04-26T00:00:02.000Z',
+        runId: 'run-1',
+        payload: {
+          message: '已停止当前运行',
+          reason: 'user-requested',
+        },
+      })
+      return {
+        ok: true as const,
+        runId: 'run-1',
+      }
+    })
+
+    ;(window as Window & { xnovaStudio?: unknown }).xnovaStudio = {
+      host: {
+        getState: vi.fn(async () => ({
+          workspacePath: 'D:/workspace/demo',
+          lastSelection: null,
+        })),
+        openWorkspace: vi.fn(),
+        onStateChanged: () => () => {},
+      },
+      runtime: {
+        inspect: vi.fn(async () => createRuntimeInspectResult()),
+        submit: vi.fn(() => {
+          runtimeEventHandler?.({
+            type: 'run_started',
+            timestamp: '2026-04-26T00:00:00.000Z',
+            runId: 'run-1',
+            payload: {
+              status: 'running',
+            },
+          })
+          return new Promise(() => undefined)
+        }),
+        cancel,
+        onEvent: (listener: (event: {
+          type: string
+          timestamp: string
+          runId?: string
+          payload?: Record<string, unknown>
+        }) => void) => {
+          runtimeEventHandler = listener
+          return () => {
+            runtimeEventHandler = null
+          }
+        },
+      },
+      shell: {
+        getSnapshot: vi.fn(async () => createShellSnapshot(null)),
+      },
+      settings: {
+        getProviderSettings: vi.fn(),
+        saveProviderSettings: vi.fn(),
+        testProviderConnection: vi.fn(),
+      },
+      memory: {
+        getOverview: vi.fn(),
+        rebuild: vi.fn(),
+      },
+      mcp: {
+        getOverview: vi.fn(),
+        addServer: vi.fn(),
+        deleteServer: vi.fn(),
+      },
+      skillsPlugins: {
+        getOverview: vi.fn(),
+      },
+    }
+
+    render(<HookHarness />)
+
+    await waitFor(() => {
+      expect(screen.getByTestId('shell-status').textContent).toBe('ready')
+    })
+
+    fireEvent.click(screen.getByRole('button', { name: '提交' }))
+
+    await waitFor(() => {
+      expect(screen.getByTestId('run-status').textContent).toBe('running')
+    })
+    expect(screen.getByTestId('run-active').textContent).toBe('yes')
+
+    fireEvent.click(screen.getByRole('button', { name: '停止' }))
+
+    await waitFor(() => {
+      expect(cancel).toHaveBeenCalledWith({
+        runId: 'run-1',
+        reason: 'user-requested',
+      })
+    })
+    await waitFor(() => {
+      expect(screen.getByTestId('run-status').textContent).toBe('cancelled')
+    })
+    expect(screen.getByTestId('run-active').textContent).toBe('no')
+    expect(screen.getByTestId('system-messages').textContent).toBe('已停止当前运行')
+  })
+
+  it('running 长时间没有新 runtime event 时显示可停止提示', async () => {
+    vi.useFakeTimers({ shouldAdvanceTime: true })
+    let runtimeEventHandler: ((event: {
+      type: string
+      timestamp: string
+      runId?: string
+      payload?: Record<string, unknown>
+    }) => void) | null = null
+
+    try {
+      ;(window as Window & { xnovaStudio?: unknown }).xnovaStudio = {
+        host: {
+          getState: vi.fn(async () => ({
+            workspacePath: 'D:/workspace/demo',
+            lastSelection: null,
+          })),
+          openWorkspace: vi.fn(),
+          onStateChanged: () => () => {},
+        },
+        runtime: {
+          inspect: vi.fn(async () => createRuntimeInspectResult()),
+          submit: vi.fn(() => {
+            runtimeEventHandler?.({
+              type: 'run_started',
+              timestamp: '2026-04-26T00:00:00.000Z',
+              runId: 'run-1',
+              payload: {
+                status: 'running',
+              },
+            })
+            return new Promise(() => undefined)
+          }),
+          cancel: vi.fn(async () => ({
+            ok: true as const,
+            runId: 'run-1',
+          })),
+          onEvent: (listener: (event: {
+            type: string
+            timestamp: string
+            runId?: string
+            payload?: Record<string, unknown>
+          }) => void) => {
+            runtimeEventHandler = listener
+            return () => {
+              runtimeEventHandler = null
+            }
+          },
+        },
+        shell: {
+          getSnapshot: vi.fn(async () => createShellSnapshot(null)),
+        },
+        settings: {
+          getProviderSettings: vi.fn(),
+          saveProviderSettings: vi.fn(),
+          testProviderConnection: vi.fn(),
+        },
+        memory: {
+          getOverview: vi.fn(),
+          rebuild: vi.fn(),
+        },
+        mcp: {
+          getOverview: vi.fn(),
+          addServer: vi.fn(),
+          deleteServer: vi.fn(),
+        },
+        skillsPlugins: {
+          getOverview: vi.fn(),
+        },
+      }
+
+      render(<HookHarness />)
+
+      await waitFor(() => {
+        expect(screen.getByTestId('shell-status').textContent).toBe('ready')
+      })
+
+      fireEvent.click(screen.getByRole('button', { name: '提交' }))
+
+      await waitFor(() => {
+        expect(screen.getByTestId('run-status').textContent).toBe('running')
+      })
+
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(90_000)
+      })
+
+      await waitFor(() => {
+        expect(screen.getByTestId('run-idle-warning').textContent).toBe(
+          '运行长时间没有新进展，可以停止后重试',
+        )
+      })
+    } finally {
+      vi.useRealTimers()
+    }
   })
 })

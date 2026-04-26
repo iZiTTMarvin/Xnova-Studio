@@ -28,6 +28,8 @@ import {
 import type {
   RuntimeSubmitRequest,
   RuntimeSubmitResult,
+  RuntimeCancelRequest,
+  RuntimeCancelResult,
   PermissionDialogRequest,
   PermissionDialogResponse,
   UserQuestionDialogRequest,
@@ -43,6 +45,7 @@ export interface StudioRuntimeService {
     hostState: StudioHostState,
     emitRuntimeEvent: (event: StudioRuntimeEvent) => void,
   ): Promise<RuntimeSubmitResult>
+  cancel(request: RuntimeCancelRequest): Promise<RuntimeCancelResult>
   respondToPermissionRequest(response: PermissionDialogResponse): boolean
   respondToUserInputRequest(response: UserQuestionDialogResponse): boolean
   dispose(): Promise<void>
@@ -129,7 +132,7 @@ function createRuntimeRunId(): string {
 function emitRunLifecycleEvent(
   emitRuntimeEvent: (event: StudioRuntimeEvent) => void,
   input: {
-    type: 'run_started' | 'run_completed' | 'run_failed'
+    type: 'run_started' | 'run_completed' | 'run_failed' | 'run_cancelled'
     runId: string
     sessionId?: string | null
     agentId?: string | null
@@ -249,13 +252,7 @@ function createSubmitActivityWatchdog(
       hasSeenProgress: boolean
     }): void
   },
-): {
-  start(): void
-  touch(): void
-  suspend(): void
-  resume(): void
-  clear(): void
-} {
+): SubmitActivityController {
   const initialTimeoutMs = Math.max(0, input.initialTimeoutMs)
   const postProgressTimeoutMs = Math.max(initialTimeoutMs, input.postProgressTimeoutMs)
 
@@ -439,6 +436,30 @@ interface PendingPermissionRequest {
 interface PendingUserInputRequest {
   timer: ReturnType<typeof setTimeout>
   resolve(result: UserQuestionResult): void
+}
+
+interface SubmitActivityController {
+  start(): void
+  touch(): void
+  suspend(): void
+  resume(): void
+  clear(): void
+}
+
+interface ActiveStudioRun {
+  runId: string
+  sessionId: string | null
+  agentId: string | null
+  runtimeInstance: RuntimeInstance
+  runtimeEntry: StudioManagedRuntimeEntry
+  emitRuntimeEvent: (event: StudioRuntimeEvent) => void
+  startedAt: number
+  lastProgressAt: number
+  settled: boolean
+  released: boolean
+  submitActivity: SubmitActivityController | null
+  resolveSubmit?: (result: RuntimeTurnResult) => void
+  rejectSubmit?: (error: Error) => void
 }
 
 async function defaultResolvePermission(
@@ -633,19 +654,170 @@ export function createStudioRuntimeService(
         (options.engineServiceApi as EngineServiceApi | undefined) ??
         createEngineServiceApi({ cwd: workspaceRoot }),
     })
+  let currentRun: ActiveStudioRun | null = null
+
+  function touchActiveRun(run: ActiveStudioRun, sessionId?: string): void {
+    run.lastProgressAt = Date.now()
+    if (sessionId?.trim()) {
+      run.sessionId = sessionId
+    }
+  }
+
+  function settleActiveRun(
+    run: ActiveStudioRun,
+    input: {
+      type: 'run_completed' | 'run_failed' | 'run_cancelled'
+      sessionId?: string | null
+      payload: Record<string, unknown>
+    },
+  ): boolean {
+    if (run.settled) {
+      return false
+    }
+
+    run.settled = true
+    run.sessionId = input.sessionId ?? run.sessionId
+    emitRunLifecycleEvent(run.emitRuntimeEvent, {
+      type: input.type,
+      runId: run.runId,
+      sessionId: run.sessionId,
+      agentId: run.agentId,
+      payload: input.payload,
+    })
+    return true
+  }
+
+  function releaseActiveRun(run: ActiveStudioRun): void {
+    if (run.released) {
+      return
+    }
+
+    run.released = true
+    run.submitActivity?.clear()
+    run.runtimeEntry.bridgeState.submitActivity = null
+    runtimeManager.releaseRuntime(run.runtimeEntry)
+    if (currentRun?.runId === run.runId) {
+      currentRun = null
+    }
+  }
+
+  function createSyntheticTurnResultFromEvent(
+    run: ActiveStudioRun,
+    event: StudioRuntimeEvent,
+  ): RuntimeTurnResult {
+    const payload = event.payload ?? {}
+    const stopReason =
+      typeof payload.stopReason === 'string' ? payload.stopReason : event.type
+    const error =
+      typeof payload.error === 'string'
+        ? payload.error
+        : typeof payload.message === 'string'
+          ? payload.message
+          : undefined
+
+    return {
+      text: '',
+      thinking: '',
+      stopReason,
+      llmCallCount: 0,
+      toolCallCount: 0,
+      usage: {
+        inputTokens: 0,
+        outputTokens: 0,
+        cacheReadTokens: 0,
+        cacheWriteTokens: 0,
+      },
+      aborted: payload.aborted === true,
+      historyCompacted: false,
+      sessionId: event.sessionId ?? run.sessionId,
+      ...(error ? { error } : {}),
+    }
+  }
+
+  function settleRunFromRuntimeTerminalEvent(
+    run: ActiveStudioRun,
+    event: StudioRuntimeEvent,
+  ): void {
+    if (run.settled) {
+      return
+    }
+
+    const result = createSyntheticTurnResultFromEvent(run, event)
+    const message = result.error ?? (result.aborted ? '运行已中断。' : null)
+    if (message) {
+      settleActiveRun(run, {
+        type: 'run_failed',
+        sessionId: result.sessionId,
+        payload: {
+          message,
+          stopReason: result.stopReason,
+          aborted: result.aborted,
+        },
+      })
+    } else {
+      settleActiveRun(run, {
+        type: 'run_completed',
+        sessionId: result.sessionId,
+        payload: {
+          sessionId: result.sessionId,
+          stopReason: result.stopReason,
+          aborted: result.aborted,
+        },
+      })
+    }
+    run.resolveSubmit?.(result)
+  }
+
+  function cancelPendingRuntimeInteractions(reason: string): void {
+    for (const [requestId, pending] of [...pendingPermissionRequests.entries()]) {
+      clearTimeout(pending.timer)
+      pendingPermissionRequests.delete(requestId)
+      pending.resolve({
+        allow: false,
+        reason,
+      })
+    }
+    for (const [requestId, pending] of [...pendingUserInputRequests.entries()]) {
+      clearTimeout(pending.timer)
+      pendingUserInputRequests.delete(requestId)
+      pending.resolve({
+        answers: {},
+        cancelled: true,
+      })
+    }
+  }
 
   const createRuntimeBridge = (
     bridgeState: StudioRuntimeBridgeState,
   ): RuntimeHostBridge => ({
     emit(event: RuntimeEvent) {
       bridgeState.submitActivity?.touch()
-      bridgeState.eventSink?.(toStudioRuntimeEvent(event))
+      const activeRun = currentRun
+      if (activeRun) {
+        touchActiveRun(activeRun, event.sessionId)
+      }
+      const studioEvent: StudioRuntimeEvent = {
+        ...toStudioRuntimeEvent(event),
+        ...(activeRun ? { runId: activeRun.runId } : {}),
+      }
+      bridgeState.eventSink?.(studioEvent)
+      if (
+        activeRun &&
+        (event.type === 'turn_end' || event.type === 'session_end')
+      ) {
+        settleRunFromRuntimeTerminalEvent(activeRun, studioEvent)
+      }
     },
     async requestPermission(input) {
       bridgeState.submitActivity?.touch()
+      const activeRun = currentRun
+      if (activeRun) {
+        touchActiveRun(activeRun, input.sessionId)
+      }
       bridgeState.eventSink?.({
         type: 'permission.request',
         timestamp: new Date().toISOString(),
+        ...(activeRun ? { runId: activeRun.runId } : {}),
         sessionId: input.sessionId,
         payload: toPermissionEventPayload(input),
       })
@@ -659,9 +831,13 @@ export function createStudioRuntimeService(
       }
 
       bridgeState.submitActivity?.touch()
+      if (activeRun) {
+        touchActiveRun(activeRun, input.sessionId)
+      }
       bridgeState.eventSink?.({
         type: 'permission.decision',
         timestamp: new Date().toISOString(),
+        ...(activeRun ? { runId: activeRun.runId } : {}),
         sessionId: input.sessionId,
         payload: toPermissionEventPayload(input, resolution),
       })
@@ -670,6 +846,10 @@ export function createStudioRuntimeService(
     },
     async requestUserInput(input) {
       bridgeState.submitActivity?.touch()
+      const activeRun = currentRun
+      if (activeRun) {
+        touchActiveRun(activeRun, input.sessionId)
+      }
       bridgeState.submitActivity?.suspend()
       try {
         return await requestUserInputFromRenderer(toUserQuestionDialogRequest(input))
@@ -716,6 +896,48 @@ export function createStudioRuntimeService(
       return true
     },
 
+    async cancel(request) {
+      const requestedRunId = request.runId?.trim() || null
+      const activeRun = currentRun
+      if (
+        !activeRun ||
+        activeRun.settled ||
+        (requestedRunId && activeRun.runId !== requestedRunId)
+      ) {
+        return {
+          ok: false,
+          error: '当前没有正在运行的 Agent run。',
+        }
+      }
+
+      const reason = request.reason?.trim() || 'user-requested'
+      cancelPendingRuntimeInteractions(reason)
+      try {
+        activeRun.runtimeInstance.abort()
+      } catch (error) {
+        logger.warn('runtime cancel 调用 abort 失败', {
+          runId: activeRun.runId,
+          error: error instanceof Error ? error.message : String(error),
+        })
+      }
+
+      settleActiveRun(activeRun, {
+        type: 'run_cancelled',
+        sessionId: activeRun.sessionId,
+        payload: {
+          message: '已停止当前运行',
+          reason,
+        },
+      })
+      activeRun.rejectSubmit?.(new Error('已停止当前运行。'))
+      releaseActiveRun(activeRun)
+
+      return {
+        ok: true,
+        runId: activeRun.runId,
+      }
+    },
+
     async submit(request, hostState, emitRuntimeEvent) {
       const text = request.text.trim()
       if (!text) {
@@ -734,6 +956,7 @@ export function createStudioRuntimeService(
       }
 
       let runtimeEntry: StudioManagedRuntimeEntry | null = null
+      let activeRun: ActiveStudioRun | null = null
       const runId = createRuntimeRunId()
       let hasEmittedRunFailed = false
 
@@ -806,6 +1029,20 @@ export function createStudioRuntimeService(
           : undefined
 
         const runtimeInstance = runtimeHandle.entry.instance
+        activeRun = {
+          runId,
+          sessionId: selection.sessionId,
+          agentId: selection.agentId,
+          runtimeInstance,
+          runtimeEntry: runtimeHandle.entry,
+          emitRuntimeEvent,
+          startedAt: Date.now(),
+          lastProgressAt: Date.now(),
+          settled: false,
+          released: false,
+          submitActivity: null,
+        }
+        currentRun = activeRun
         const runtimeSubmitInput: RuntimeSubmitInput = {
           text,
           ...(shouldHydrateHistory
@@ -841,6 +1078,8 @@ export function createStudioRuntimeService(
               initialTimeoutMs: submitTimeoutMs,
               postProgressTimeoutMs: submitPostProgressTimeoutMs,
               onTimeout: ({ timeoutMs, hasSeenProgress }) => {
+                const timeoutMessage =
+                  `LLM 请求连续 ${timeoutMs / 1000} 秒没有新的运行进展，已自动中断。请检查网络连接、API Key、baseURL 配置，或稍后重试。`
                 logger.warn('runtimeInstance.submit 长时间无进展，调用 abort', {
                   timeoutMs,
                   hasSeenProgress,
@@ -850,15 +1089,38 @@ export function createStudioRuntimeService(
                   model: request.modelId,
                 })
                 runtimeInstance.abort()
+                cancelPendingRuntimeInteractions('submit-timeout')
+                if (activeRun) {
+                  settleActiveRun(activeRun, {
+                    type: 'run_failed',
+                    sessionId: activeRun.sessionId,
+                    payload: {
+                      message: '长时间无运行进展，已自动中断。',
+                      detail: timeoutMessage,
+                      timeoutMs,
+                      hasSeenProgress,
+                    },
+                  })
+                  releaseActiveRun(activeRun)
+                }
                 finish(() => {
-                  reject(
-                    new Error(
-                      `LLM 请求连续 ${timeoutMs / 1000} 秒没有新的运行进展，已自动中断。请检查网络连接、API Key、baseURL 配置，或稍后重试。`,
-                    ),
-                  )
+                  reject(new Error(timeoutMessage))
                 })
               },
             })
+            if (activeRun) {
+              activeRun.submitActivity = submitActivity
+              activeRun.resolveSubmit = (result) => {
+                finish(() => {
+                  resolve(result)
+                })
+              }
+              activeRun.rejectSubmit = (error) => {
+                finish(() => {
+                  reject(error)
+                })
+              }
+            }
             runtimeHandle.entry.bridgeState.submitActivity = submitActivity
             submitActivity.start()
             let submitPromise: Promise<RuntimeTurnResult>
@@ -890,18 +1152,23 @@ export function createStudioRuntimeService(
         logger.info('runtimeInstance.submit 返回', { hasError: Boolean(turnResult.error) })
 
         if (turnResult.error) {
-          hasEmittedRunFailed = true
-          emitRunLifecycleEvent(emitRuntimeEvent, {
-            type: 'run_failed',
-            runId,
-            sessionId: turnResult.sessionId,
-            agentId: request.agentId ?? null,
-            payload: {
-              message: turnResult.error,
-              stopReason: turnResult.stopReason,
-              aborted: turnResult.aborted,
-            },
-          })
+          if (!activeRun?.settled) {
+            hasEmittedRunFailed = true
+            emitRunLifecycleEvent(emitRuntimeEvent, {
+              type: 'run_failed',
+              runId,
+              sessionId: turnResult.sessionId,
+              agentId: request.agentId ?? null,
+              payload: {
+                message: turnResult.error,
+                stopReason: turnResult.stopReason,
+                aborted: turnResult.aborted,
+              },
+            })
+            if (activeRun) {
+              activeRun.settled = true
+            }
+          }
           return {
             ok: false,
             error: turnResult.error,
@@ -909,19 +1176,24 @@ export function createStudioRuntimeService(
         }
 
         runtimeManager.commitSession(runtimeHandle.entry, turnResult.sessionId)
-        emitRunLifecycleEvent(emitRuntimeEvent, {
-          type: 'run_completed',
-          runId,
-          sessionId: turnResult.sessionId,
-          agentId: request.agentId ?? null,
-          payload: {
+        if (!activeRun?.settled) {
+          emitRunLifecycleEvent(emitRuntimeEvent, {
+            type: 'run_completed',
+            runId,
             sessionId: turnResult.sessionId,
-            stopReason: turnResult.stopReason,
-            llmCallCount: turnResult.llmCallCount,
-            toolCallCount: turnResult.toolCallCount,
-            aborted: turnResult.aborted,
-          },
-        })
+            agentId: request.agentId ?? null,
+            payload: {
+              sessionId: turnResult.sessionId,
+              stopReason: turnResult.stopReason,
+              llmCallCount: turnResult.llmCallCount,
+              toolCallCount: turnResult.toolCallCount,
+              aborted: turnResult.aborted,
+            },
+          })
+          if (activeRun) {
+            activeRun.settled = true
+          }
+        }
 
         logger.info('runtime submit 完成', {
           cwd,
@@ -935,7 +1207,7 @@ export function createStudioRuntimeService(
       } catch (error) {
         const message = error instanceof Error ? error.message : String(error)
         logger.error('runtime submit 执行失败', error)
-        if (!hasEmittedRunFailed) {
+        if (!hasEmittedRunFailed && !activeRun?.settled) {
           emitRunLifecycleEvent(emitRuntimeEvent, {
             type: 'run_failed',
             runId,
@@ -945,19 +1217,47 @@ export function createStudioRuntimeService(
               message: `runtime submit 失败: ${message}`,
             },
           })
+          if (activeRun) {
+            activeRun.settled = true
+          }
         }
         return {
           ok: false,
           error: `runtime submit 失败: ${message}`,
         }
       } finally {
-        if (runtimeEntry) {
+        if (activeRun) {
+          releaseActiveRun(activeRun)
+        } else if (runtimeEntry) {
           runtimeManager.releaseRuntime(runtimeEntry)
         }
       }
     },
 
     async dispose() {
+      const activeRun = currentRun
+      if (activeRun && !activeRun.released) {
+        cancelPendingRuntimeInteractions('runtime-disposed')
+        try {
+          activeRun.runtimeInstance.abort()
+        } catch (error) {
+          logger.warn('runtime dispose 调用 abort 失败', {
+            runId: activeRun.runId,
+            error: error instanceof Error ? error.message : String(error),
+          })
+        }
+        settleActiveRun(activeRun, {
+          type: 'run_cancelled',
+          sessionId: activeRun.sessionId,
+          payload: {
+            message: '应用正在退出，已停止当前运行。',
+            reason: 'runtime-disposed',
+          },
+        })
+        activeRun.rejectSubmit?.(new Error('应用正在退出，已停止当前运行。'))
+        releaseActiveRun(activeRun)
+      }
+
       for (const [requestId, pending] of pendingPermissionRequests) {
         clearTimeout(pending.timer)
         pending.resolve({

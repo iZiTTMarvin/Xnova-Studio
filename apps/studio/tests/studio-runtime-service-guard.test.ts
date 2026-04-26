@@ -164,6 +164,7 @@ describe('studio runtime service guards', () => {
       })),
       submitTimeoutMs: 5,
     })
+    const emittedTypes: string[] = []
 
     await expect(
       service.submit(
@@ -175,7 +176,9 @@ describe('studio runtime service guards', () => {
           workspacePath: 'D:/workspace/demo',
           lastSelection: null,
         },
-        vi.fn(),
+        (event) => {
+          emittedTypes.push(event.type)
+        },
       ),
     ).resolves.toEqual({
       ok: false,
@@ -183,6 +186,7 @@ describe('studio runtime service guards', () => {
     })
 
     expect(runtimeInstance.abort).toHaveBeenCalledTimes(1)
+    expect(emittedTypes).toEqual(['run_started', 'run_failed'])
   })
 
   it('runtime 持续输出事件时不会被固定总时长 watchdog 误杀', async () => {

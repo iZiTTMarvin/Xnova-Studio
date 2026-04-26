@@ -16,6 +16,8 @@ import {
   type StudioProviderSettingsSnapshot,
   type RuntimeInspectRequest,
   type RuntimeInspectResult,
+  type RuntimeCancelRequest,
+  type RuntimeCancelResult,
   type RuntimeSubmitRequest,
   type RuntimeSubmitResult,
   type PermissionDialogResponse,
@@ -137,6 +139,49 @@ function parseRuntimeSubmitPayload(payload: unknown): RuntimeSubmitRequest {
     ...(agentId === undefined ? {} : { agentId }),
     ...(providerId === undefined ? {} : { providerId }),
     ...(modelId === undefined ? {} : { modelId }),
+  }
+}
+
+function parseRuntimeCancelPayload(payload: unknown): RuntimeCancelRequest {
+  if (payload === undefined) {
+    return {}
+  }
+
+  if (!isPlainObject(payload)) {
+    throw new Error('studio.runtime.cancel 参数必须是对象。')
+  }
+
+  if (Object.keys(payload).some((key) => key !== 'runId' && key !== 'reason')) {
+    throw new Error('studio.runtime.cancel 只允许 runId/reason 字段。')
+  }
+
+  const parseNullableString = (
+    value: unknown,
+    subject: string,
+  ): string | null | undefined => {
+    if (value === undefined) {
+      return undefined
+    }
+    if (value === null) {
+      return null
+    }
+    if (typeof value !== 'string') {
+      throw new Error(`${subject} 必须是字符串或 null。`)
+    }
+    const normalized = value.trim()
+    return normalized ? normalized : null
+  }
+
+  if (payload.reason !== undefined && typeof payload.reason !== 'string') {
+    throw new Error('studio.runtime.cancel.reason 必须是字符串。')
+  }
+
+  const runId = parseNullableString(payload.runId, 'studio.runtime.cancel.runId')
+  const reason = typeof payload.reason === 'string' ? payload.reason.trim() : undefined
+
+  return {
+    ...(runId === undefined ? {} : { runId }),
+    ...(reason ? { reason } : {}),
   }
 }
 
@@ -501,6 +546,10 @@ export interface RegisterStudioMainIpcHandlersOptions {
     state: StudioHostState,
     emitRuntimeEvent: (event: StudioRuntimeEvent) => void,
   ) => Promise<RuntimeSubmitResult>
+  cancelRuntime?: (
+    request: RuntimeCancelRequest,
+    state: StudioHostState,
+  ) => Promise<RuntimeCancelResult> | RuntimeCancelResult
   respondPermission?: (response: PermissionDialogResponse) => boolean
   respondUserInput?: (response: UserQuestionDialogResponse) => boolean
   inspectShell: (
@@ -675,6 +724,34 @@ export function registerStudioMainIpcHandlers(
           },
         })
         options.logger.error('runtime submit 失败', error)
+        return result
+      }
+    },
+  )
+
+  options.ipcMainLike.handle(
+    STUDIO_BRIDGE_CHANNELS.runtimeCancel,
+    async (_event, payload): Promise<RuntimeCancelResult> => {
+      const request = parseRuntimeCancelPayload(payload)
+
+      if (!options.cancelRuntime) {
+        throw new Error('studio.runtime.cancel 尚未实现。')
+      }
+
+      try {
+        const result = await options.cancelRuntime(request, hostState)
+        options.logger.info('runtime cancel 已完成', {
+          ok: result.ok,
+          workspacePath: hostState.workspacePath,
+        })
+        return result
+      } catch (error) {
+        const message = error instanceof Error ? error.message : String(error)
+        const result: RuntimeCancelResult = {
+          ok: false,
+          error: `runtime cancel 失败: ${message}`,
+        }
+        options.logger.error('runtime cancel 失败', error)
         return result
       }
     },

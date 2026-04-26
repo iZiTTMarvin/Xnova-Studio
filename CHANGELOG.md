@@ -1,4 +1,12 @@
 ## 2026-04-26
+- **Studio Run 后台工具停止与可视化**：修复 Agent 仍在后台调用工具但界面难以判断进展的问题
+  - Stop / app quit / 窗口关闭会中断 active run，`AgentLoop` 收到停止后不再启动后续危险工具
+  - 工具调用改为 read/write/edit/bash/git 摘要展示，默认不展开 `write_file.content` 与大结果
+  - composer 运行中显示当前步骤、Stop、最后进展时间，并补齐工具摘要与关闭清理回归测试
+- **Studio Run 停止与终态兜底**：修复有可见输出但 submit 不返回导致输入区永久锁死的问题
+  - 新增 `runtime.cancel` 契约、`run_cancelled` 事件与 Stop 入口，用户可主动中断当前 Agent run
+  - main 将 `turn_end/session_end` 收敛为 Studio run 终态，并让 cancel/watchdog 主动 abort、释放 active run
+  - 补齐“有输出但 submit 不 resolve”、cancel、低层终态映射与 90 秒无进展提示测试
 - **Studio Agent Run 生命周期收口**：补齐 Electron 编码 Agent 主链路的结构化运行状态
   - 新增 `run_started / run_completed / run_failed` 事件与 renderer `runStatus`，发送门禁从 submit IPC 状态扩展为完整 run 状态
   - submit 成功后延后清理 liveConversation，避免刷新失败导致流式内容丢失；submit 失败不再额外广播重复 `runtime.error`

@@ -20,18 +20,26 @@ class FakeBrowserWindow {
   readonly options: BrowserWindowConstructorOptions
 
   private closedHandler?: () => void
+  private closeHandler?: () => void
 
   constructor(options: BrowserWindowConstructorOptions) {
     this.options = options
     FakeBrowserWindow.instances.push(this)
   }
 
-  on(event: 'closed', handler: () => void): this {
+  on(event: 'closed' | 'close', handler: () => void): this {
     if (event === 'closed') {
       this.closedHandler = handler
     }
+    if (event === 'close') {
+      this.closeHandler = handler
+    }
 
     return this
+  }
+
+  emitClose(): void {
+    this.closeHandler?.()
   }
 
   emitClosed(): void {
@@ -143,5 +151,24 @@ describe('main window manager', () => {
     expect(FakeBrowserWindow.instances).toHaveLength(2)
     expect(secondWindow).not.toBe(firstWindow)
     expect(manager.getMainWindow()).toBe(secondWindow)
+  })
+
+  it('窗口关闭前会触发 active runtime 清理钩子', () => {
+    FakeBrowserWindow.instances = []
+    FakeBrowserWindow.loadUrlPlan = []
+    const logger = createLogger()
+    const onBeforeWindowClose = vi.fn()
+    const manager = createMainWindowManager({
+      BrowserWindow: FakeBrowserWindow,
+      dirname: 'D:/studio/dist/main',
+      env: {},
+      logger,
+      onBeforeWindowClose,
+    })
+
+    const window = manager.showMainWindow() as FakeBrowserWindow
+    window.emitClose()
+
+    expect(onBeforeWindowClose).toHaveBeenCalledTimes(1)
   })
 })

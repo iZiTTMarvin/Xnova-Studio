@@ -6,7 +6,7 @@ import type { MainLogger } from './logger'
 export interface BrowserWindowLike {
   loadURL(url: string): Promise<unknown> | unknown
   loadFile(filePath: string): Promise<unknown> | unknown
-  on(event: 'closed', handler: () => void): this
+  on(event: 'close' | 'closed', handler: () => void): this
   focus?(): void
   webContents?: {
     send(channel: string, payload: unknown): void
@@ -33,6 +33,7 @@ export interface MainWindowManagerOptions {
   }
   logger: Pick<MainLogger, 'info' | 'warn' | 'error'>
   maxUrlLoadAttempts?: number
+  onBeforeWindowClose?: () => void
   pathUtils?: Pick<typeof path, 'join'>
   sleep?: (ms: number) => Promise<void>
   urlRetryDelayMs?: number
@@ -88,6 +89,10 @@ export function createMainWindowManager(options: MainWindowManagerOptions): Main
     const rendererTarget = resolveRendererTarget({
       rendererHtmlPath,
       ...(env.ELECTRON_RENDERER_URL ? { devServerUrl: env.ELECTRON_RENDERER_URL } : {}),
+    })
+
+    windowInstance.on('close', () => {
+      options.onBeforeWindowClose?.()
     })
 
     windowInstance.on('closed', () => {
