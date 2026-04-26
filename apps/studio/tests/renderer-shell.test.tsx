@@ -305,7 +305,9 @@ describe('renderer project-aware shell', () => {
       expect(screen.getByRole('button', { name: '停止当前运行' })).toBeTruthy()
     })
     expect(screen.getByText('当前正在运行')).toBeTruthy()
-    expect(screen.getByText('正在调用模型')).toBeTruthy()
+    // run 进行中：composer 反馈区与 Timeline 思考占位都会展示当前步骤文案，
+    // 用 getAllByText 兼容两处可见 (P1-7 引入)。
+    expect(screen.getAllByText('正在调用模型').length).toBeGreaterThan(0)
     expect(screen.getByText(/^最后进展:/)).toBeTruthy()
     const runningInput = screen.getByRole('textbox', { name: '项目级新对话输入' })
     expect((runningInput as HTMLTextAreaElement).disabled).toBe(true)

@@ -62,8 +62,13 @@ export function ProjectTreePanel(props: ProjectTreePanelProps) {
         <div className="tree-section-title">项目会话</div>
         <div className="tree-list">
           {props.sessions.map((session) => {
-            const toggleId = session.subagents[0]?.agentId ?? session.sessionId
             const isExpanded = expandedSubagents[session.sessionId] === true
+            // a11y 标签使用会话标题（含 fallback），不再误用第 0 个 subagent 的 id：
+            // 多个 subagent 时屏幕阅读器会读出错误的 agent。
+            const subagentToggleLabel =
+              session.subagents.length > 0
+                ? `${isExpanded ? '收起' : '展开'}会话 "${session.title}" 的 ${session.subagents.length} 个子代理`
+                : ''
 
             return (
               <div key={session.sessionId} className="tree-session">
@@ -91,7 +96,8 @@ export function ProjectTreePanel(props: ProjectTreePanelProps) {
                     <button
                       type="button"
                       className="subagent-toggle"
-                      aria-label={`${isExpanded ? '收起' : '展开'}子代理 ${toggleId}`}
+                      aria-label={subagentToggleLabel}
+                      aria-expanded={isExpanded}
                       onClick={() => {
                         setExpandedSubagents((current) => ({
                           ...current,

@@ -205,6 +205,24 @@
   border-color: var(--border-hover);
 }
 
+.conversation-message-thinking {
+  background: color-mix(in srgb, var(--bg-panel-strong) 92%, transparent);
+}
+
+.conversation-thinking-placeholder {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 13px;
+  color: var(--text-secondary);
+  padding: 4px 0;
+}
+
+.conversation-thinking-placeholder-label {
+  font-style: italic;
+  letter-spacing: 0.2px;
+}
+
 .conversation-message-label {
   font-size: 11px;
   letter-spacing: 0.08em;
@@ -883,6 +901,92 @@
 
 .md-line {
   display: inline;
+}
+
+.md-heading {
+  font-weight: 700;
+  letter-spacing: 0.01em;
+  color: var(--text-primary);
+  margin: 12px 0 6px;
+  line-height: 1.35;
+}
+
+.md-heading-1 {
+  font-size: 18px;
+}
+
+.md-heading-2 {
+  font-size: 16px;
+}
+
+.md-heading-3 {
+  font-size: 14px;
+  color: var(--text-secondary);
+}
+
+.md-blockquote {
+  margin: 8px 0;
+  padding: 6px 12px;
+  border-left: 3px solid var(--border-hover);
+  background: color-mix(in srgb, var(--bg-panel-strong) 78%, transparent);
+  color: var(--text-secondary);
+  border-radius: 0 4px 4px 0;
+}
+
+.md-blockquote-line {
+  display: inline;
+}
+
+.md-link {
+  color: var(--primary);
+  text-decoration: underline;
+  word-break: break-all;
+}
+
+.md-link:hover {
+  text-decoration: none;
+}
+
+.md-table {
+  margin: 8px 0;
+  border-collapse: collapse;
+  font-size: 13px;
+}
+
+.md-table th,
+.md-table td {
+  border: 1px solid var(--border-subtle);
+  padding: 6px 10px;
+  text-align: left;
+  color: var(--text-secondary);
+}
+
+.md-table th {
+  background: color-mix(in srgb, var(--bg-panel-strong) 80%, transparent);
+  color: var(--text-primary);
+  font-weight: 600;
+}
+
+.link-button {
+  appearance: none;
+  background: none;
+  border: none;
+  color: var(--primary);
+  cursor: pointer;
+  text-decoration: underline;
+  font: inherit;
+  padding: 0;
+  margin: 0;
+}
+
+.link-button:hover:not(:disabled) {
+  color: var(--primary-strong, var(--primary));
+}
+
+.link-button:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+  text-decoration: none;
 }
 
 /* ========================================

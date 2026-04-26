@@ -590,16 +590,16 @@ function createRuntimeEvent(
   return {
     type: 'runtime.error',
     timestamp: new Date().toISOString(),
-      payload: {
-        refresh: Boolean(request.refresh),
-        status: result.status,
-        message: result.error,
-        workspacePath: result.workspacePath,
-        configWarnings: result.configWarnings,
-        issues: result.issues,
-      },
-    }
+    payload: {
+      refresh: Boolean(request.refresh),
+      status: result.status,
+      message: result.error,
+      workspacePath: result.workspacePath,
+      configWarnings: result.configWarnings,
+      issues: result.issues,
+    },
   }
+}
 
 export interface RegisterStudioMainIpcHandlersOptions {
   ipcMainLike: StudioIpcMainLike

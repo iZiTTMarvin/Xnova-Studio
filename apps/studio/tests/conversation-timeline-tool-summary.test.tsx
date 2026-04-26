@@ -296,4 +296,59 @@ describe('ConversationTimeline blocks-first', () => {
     expect(screen.getByText('思考过程')).toBeTruthy()
     expect(screen.queryByText('思考中…')).toBeNull()
   })
+
+  it('用户已发出消息但 assistant 还没产出 block 时显示思考占位，并使用 currentRunStep 文案', () => {
+    render(
+      <ConversationTimeline
+        session={null}
+        isRunActive={true}
+        currentRunStep="正在加载工作区配置"
+        liveConversation={{
+          pendingUserText: '帮我检查项目结构',
+          blocks: [],
+        }}
+      />,
+    )
+
+    expect(screen.getByTestId('conversation-thinking-placeholder')).toBeTruthy()
+    expect(screen.getByText('正在加载工作区配置')).toBeTruthy()
+  })
+
+  it('liveBlocks 出现首个 text 后，思考占位立即消失', () => {
+    render(
+      <ConversationTimeline
+        session={null}
+        isRunActive={true}
+        currentRunStep="正在调用模型"
+        liveConversation={{
+          pendingUserText: '帮我检查项目结构',
+          blocks: [
+            {
+              id: 'text-1',
+              type: 'text',
+              content: '正在分析…',
+            },
+          ],
+        }}
+      />,
+    )
+
+    expect(screen.queryByTestId('conversation-thinking-placeholder')).toBeNull()
+  })
+
+  it('isRunActive=false 时不显示思考占位（即使 pendingUserText 仍存在）', () => {
+    render(
+      <ConversationTimeline
+        session={null}
+        isRunActive={false}
+        currentRunStep="运行已完成"
+        liveConversation={{
+          pendingUserText: '帮我检查项目结构',
+          blocks: [],
+        }}
+      />,
+    )
+
+    expect(screen.queryByTestId('conversation-thinking-placeholder')).toBeNull()
+  })
 })

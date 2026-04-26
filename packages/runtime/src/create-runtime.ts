@@ -229,8 +229,22 @@ export async function createRuntime(
 
   const instance: RuntimeInstance = {
     async submit(submitInput: RuntimeSubmitInput): Promise<RuntimeTurnResult> {
+      // 复用同一 RuntimeInstance 时禁止并发提交：
+      // 旧实现静默返回 emptyTurnResult 会让上层把"什么都没发生"当成成功，
+      // 既丢事件又导致 UI 看不到任何输出。改为返回带 error 字段的 turn result，
+      // 并补发 error + turn_end 事件，让 host 走"失败"分支。
       if (isRunning) {
-        return emptyTurnResult(lastSessionId)
+        const errorMessage = 'runtime busy: previous submit still running'
+        const result = emptyTurnResult(lastSessionId)
+        result.stopReason = 'rejected'
+        result.error = errorMessage
+        bridge.emit(makeErrorEvent(errorMessage, lastSessionId ?? undefined))
+        bridge.emit(makeEvent('turn_end', {
+          stopReason: 'rejected',
+          aborted: false,
+          error: errorMessage,
+        }, lastSessionId ?? undefined))
+        return result
       }
 
       isRunning = true

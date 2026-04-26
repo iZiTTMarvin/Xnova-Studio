@@ -19,6 +19,12 @@ export interface ConversationTimelineProps {
   session: StudioActiveSessionDetail | null
   liveConversation: LiveConversationState
   isRunActive: boolean
+  /**
+   * 当前运行步骤的中文文案（来自 useStudioBridge.currentRunStep）。
+   * 用于"用户已发出消息但模型还没开始流式输出"的空窗期，
+   * 在 Timeline 末尾展示"Xnova 正在思考 — <步骤>"占位。
+   */
+  currentRunStep?: string | null
 }
 
 function renderConversationRow(
@@ -139,6 +145,14 @@ export function ConversationTimeline(props: ConversationTimelineProps) {
   const hasLiveContent =
     props.liveConversation.pendingUserText !== null ||
     liveBlocks.length > 0
+  // "Xnova 正在思考"占位条件：
+  // 1) Run 仍在活跃中
+  // 2) 用户消息已发出（pendingUserText 存在）但 assistant 还没产出任何 block
+  // 这填补 model_request_started → model_first_chunk 之间的空白。
+  const showThinkingPlaceholder =
+    props.isRunActive &&
+    props.liveConversation.pendingUserText !== null &&
+    liveBlocks.length === 0
 
   useEffect(() => {
     const bottomElement = bottomRef.current
@@ -195,6 +209,26 @@ export function ConversationTimeline(props: ConversationTimelineProps) {
           },
         )
       ) : null}
+
+      {/* "正在思考" 占位：model_request_started → model_first_chunk 之间的空窗期 */}
+      {showThinkingPlaceholder ? (
+        <article
+          className="conversation-message conversation-message-assistant conversation-message-live conversation-message-thinking"
+          aria-label="Xnova 正在思考"
+          data-testid="conversation-thinking-placeholder"
+        >
+          <div className="conversation-message-label">Xnova</div>
+          <div className="conversation-message-body">
+            <div className="conversation-thinking-placeholder">
+              <span className="spinner" aria-hidden />
+              <span className="conversation-thinking-placeholder-label">
+                {props.currentRunStep ?? 'Xnova 正在思考…'}
+              </span>
+            </div>
+          </div>
+        </article>
+      ) : null}
+
       <div ref={bottomRef} />
     </section>
   )

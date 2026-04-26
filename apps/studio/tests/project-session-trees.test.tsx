@@ -81,7 +81,11 @@ describe('project session trees', () => {
 
     expect(screen.queryByText('扫描 renderer 目录')).toBeNull()
 
-    fireEvent.click(screen.getByRole('button', { name: '展开子代理 explorer-1' }))
+    fireEvent.click(
+      screen.getByRole('button', {
+        name: '展开会话 "实现 Phase 5 主壳" 的 1 个子代理',
+      }),
+    )
     expect(screen.getByText('扫描 renderer 目录')).toBeTruthy()
   })
 
@@ -131,7 +135,11 @@ describe('project session trees', () => {
       />,
     )
 
-    fireEvent.click(screen.getByRole('button', { name: '展开子代理 explorer-1' }))
+    fireEvent.click(
+      screen.getByRole('button', {
+        name: '展开会话 "实现 Phase 5 主壳" 的 1 个子代理',
+      }),
+    )
     fireEvent.click(screen.getByRole('button', { name: '子代理 explorer-1 运行中' }))
 
     expect(handleSubagentSelect).toHaveBeenCalledWith('session-1', 'explorer-1')

@@ -34,8 +34,11 @@ export function extractSessionId(filename: string): string {
   return match?.[1] ?? filename.replace('.jsonl', '')
 }
 
-/** 获取当前 git 分支名，失败返回 'unknown' */
-export function getGitBranch(cwd: string): string {
+/**
+ * 实际调用 git 子进程的逻辑（不带缓存），失败返回 'unknown'。
+ * 抽离是为了让缓存版可以在 TTL 过期后重新调用，同时也方便测试 mock。
+ */
+function execGitBranch(cwd: string): string {
   try {
     const result = spawnSync('git', ['rev-parse', '--abbrev-ref', 'HEAD'], {
       cwd,
@@ -50,4 +53,37 @@ export function getGitBranch(cwd: string): string {
   } catch {
     return 'unknown'  // 非 git 仓库或 git 未安装，预期行为
   }
+}
+
+interface GitBranchCacheEntry {
+  branch: string
+  expiresAt: number
+}
+
+/**
+ * Studio shell.getSnapshot 在每次 IPC 都会调一次 getGitBranch，
+ * 频繁起 git 子进程在 Windows 上代价不小。这里缓存 60 秒，
+ * 用户切分支后最多 60 秒看到旧值，是可接受的代价。
+ */
+const GIT_BRANCH_TTL_MS = 60_000
+const gitBranchCache = new Map<string, GitBranchCacheEntry>()
+
+/** 获取当前 git 分支名，带 60s TTL 缓存。失败返回 'unknown'。 */
+export function getGitBranch(cwd: string): string {
+  const now = Date.now()
+  const cached = gitBranchCache.get(cwd)
+  if (cached && cached.expiresAt > now) {
+    return cached.branch
+  }
+  const branch = execGitBranch(cwd)
+  gitBranchCache.set(cwd, {
+    branch,
+    expiresAt: now + GIT_BRANCH_TTL_MS,
+  })
+  return branch
+}
+
+/** 测试 / 工具用：清空 git 分支缓存，强制下次重新调 git。 */
+export function clearGitBranchCache(): void {
+  gitBranchCache.clear()
 }

@@ -71,22 +71,44 @@ function toToolRowModel(
   }
 }
 
-function canGroupExplorationTool(tool: ToolRowModel): boolean {
-  return isExplorationTool(tool.toolName) && !isFailedTool(tool)
+/**
+ * 是否所有工具都属于 exploration 类（read/grep/list/...）。
+ * 用于决定 group title 走 exploration 文案还是通用文案。
+ */
+function isAllExplorationTools(tools: ToolRowModel[]): boolean {
+  return tools.every((tool) => isExplorationTool(tool.toolName))
 }
 
-function createExplorationGroupTitle(tools: ToolRowModel[], running: boolean): string {
+function countRunningTools(tools: ToolRowModel[]): number {
+  return tools.filter((tool) => tool.status === 'running').length
+}
+
+function createGroupTitle(tools: ToolRowModel[], running: boolean): string {
   const normalizedNames = tools.map((tool) => tool.normalizedToolName)
   const allFileReads = normalizedNames.every((name) => FILE_READ_TOOL_NAMES.has(name))
   const hasSearchLikeTool = normalizedNames.some((name) => SEARCH_TOOL_NAMES.has(name))
+  const allExploration = isAllExplorationTools(tools)
+  const runningCount = countRunningTools(tools)
+  const total = tools.length
 
+  // 全部读文件：保持原有"读取 N 个文件"文案
   if (allFileReads) {
-    return `${running ? '正在读取' : '已读取'} ${tools.length} 个文件`
+    return `${running ? '正在读取' : '已读取'} ${total} 个文件`
   }
-  if (hasSearchLikeTool) {
+  // 包含搜索类：保持"搜索代码库"语义
+  if (hasSearchLikeTool && allExploration) {
     return running ? '正在搜索代码库' : '已搜索代码库'
   }
-  return `${running ? '正在处理' : '已处理'} ${tools.length} 个探索操作`
+  // 全 exploration（多种混合）：原有"探索操作"文案
+  if (allExploration) {
+    return `${running ? '正在处理' : '已处理'} ${total} 个探索操作`
+  }
+  // 通用并行批次：明确标出 N/M 进度，让用户一眼看到并行执行的进度
+  if (running && runningCount > 0) {
+    const completed = total - runningCount
+    return `正在并行执行 ${total} 个操作（${completed}/${total} 已完成）`
+  }
+  return `已执行 ${total} 个操作`
 }
 
 function resolveLiveThinkingIndex(
@@ -164,7 +186,9 @@ export function buildConversationRenderRows(
 
       case 'tool': {
         const firstTool = toToolRowModel(block)
-        if (!canGroupExplorationTool(firstTool)) {
+
+        // 失败的工具单独显示（保留 ToolActionRow 的失败摘要）
+        if (isFailedTool(firstTool)) {
           rows.push({
             type: 'tool_action',
             id: `tool:${block.id}`,
@@ -173,6 +197,9 @@ export function buildConversationRenderRows(
           break
         }
 
+        // 收集连续的非失败工具：原本只合并 exploration，
+        // 现在扩展为"任意连续 ≥2 个非失败工具"，让并行 write_file / bash 等
+        // 也能在 UI 上体现批次进度。
         const groupedTools: ToolRowModel[] = [firstTool]
         let nextIndex = index + 1
         while (true) {
@@ -181,13 +208,14 @@ export function buildConversationRenderRows(
             break
           }
           const nextTool = toToolRowModel(nextBlock)
-          if (!canGroupExplorationTool(nextTool)) {
+          if (isFailedTool(nextTool)) {
             break
           }
           groupedTools.push(nextTool)
           nextIndex += 1
         }
 
+        // 单个工具：保持单行显示，避免无谓的"展开"
         if (groupedTools.length === 1) {
           rows.push({
             type: 'tool_action',
@@ -197,11 +225,27 @@ export function buildConversationRenderRows(
           break
         }
 
-        const running = groupedTools.some((tool) => tool.status === 'running')
+        // 仅当全部 exploration 时按 exploration 语义合并；
+        // 其他情况只在"有 ≥2 个 running"时合并为通用并行批次，
+        // 让历史完成的混合工具仍按单行展示，避免视觉过度合并。
+        const allExploration = isAllExplorationTools(groupedTools)
+        const runningCount = countRunningTools(groupedTools)
+        const shouldGroup = allExploration || runningCount >= 2
+
+        if (!shouldGroup) {
+          rows.push({
+            type: 'tool_action',
+            id: `tool:${block.id}`,
+            tool: firstTool,
+          })
+          break
+        }
+
+        const running = runningCount > 0
         rows.push({
           type: 'tool_activity_group',
           id: `tool-activity:${block.id}`,
-          title: createExplorationGroupTitle(groupedTools, running),
+          title: createGroupTitle(groupedTools, running),
           running,
           tools: groupedTools,
         })

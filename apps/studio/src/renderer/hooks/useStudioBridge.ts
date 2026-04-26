@@ -61,6 +61,64 @@ export interface LiveConversationState {
 const RUN_IDLE_WARNING_MS = 90_000
 const RUN_IDLE_WARNING_MESSAGE = '运行长时间没有新进展，可以停止后重试'
 const RUN_STEP_CALLING_MODEL = '正在调用模型'
+const RUN_STEP_STOPPING = '正在停止当前运行'
+
+/**
+ * finalizedRunIdsRef 的 LRU 上限 — 防止长会话累积万级 runId 占用 renderer 内存。
+ * 64 已经覆盖"用户翻历史时上下来回切几个 run"的场景，超出即作废最老的。
+ */
+export const FINALIZED_RUN_IDS_LIMIT = 64
+
+/**
+ * Bootstrap / 上下文准备阶段的 timing_mark stage → 中文步骤文案。
+ * 这些事件在 model_request_started 之前，弥补"正在启动运行"到"正在请求模型"
+ * 之间长达数秒甚至数十秒的 UI 反馈空白。
+ *
+ * 不在表中的 stage（例如 `*_done`, `createRuntime.submit_start`）不更新文案，
+ * 避免高频闪烁；最后由 `model_request_started` 接管。
+ */
+const BOOTSTRAP_STAGE_TO_RUN_STEP: Record<string, string> = {
+  runtime_bootstrap_start: '正在加载工作区配置',
+  tool_registry_ready: '工具与插件已就绪',
+  history_hydration_start: '正在恢复对话上下文',
+  context_build_start: '正在构建模型上下文',
+}
+
+export function resolveBootstrapStepFromTimingStage(
+  stage: string | undefined,
+): string | null {
+  if (!stage) {
+    return null
+  }
+  return BOOTSTRAP_STAGE_TO_RUN_STEP[stage] ?? null
+}
+
+/**
+ * 把一个 finalized runId 写入 Set，并按"最近插入"语义维护 LRU 上限。
+ * Set 在 JS 中按插入顺序迭代，因此 `set.values().next().value` 即最老元素。
+ *
+ * 抽离为模块级函数是为了：
+ * 1) 让单测能直接断言 LRU 边界，不需要构造完整的 useStudioBridge 场景；
+ * 2) 让 hook 内的 closure 保持纯粹，避免把限额魔法常数散落进 hook body。
+ */
+export function addFinalizedRunIdToLruSet(
+  set: Set<string>,
+  runId: string,
+  limit: number,
+): void {
+  // 已存在：先删后加，把它移到 LRU 尾部
+  if (set.has(runId)) {
+    set.delete(runId)
+  }
+  set.add(runId)
+  while (set.size > limit) {
+    const oldest = set.values().next().value
+    if (oldest === undefined) {
+      break
+    }
+    set.delete(oldest)
+  }
+}
 
 type RendererSubmitTimingStatus = 'completed' | 'failed' | 'cancelled'
 
@@ -314,6 +372,22 @@ function isActiveRunStatus(status: StudioRunStatus): boolean {
   )
 }
 
+/**
+ * 用户点击 Stop 后 runStatus = 'cancelling'，但 abort 信号传到 runtime 之前
+ * 仍可能有 text_delta / model_first_chunk / context_update 等事件到达。
+ * 这个判断把 cancelling 排除在"可被翻回 running"的活跃状态之外，
+ * 避免 Stop 反馈被晚到的活跃事件冲刷。
+ */
+function isActiveButNotCancelling(status: StudioRunStatus): boolean {
+  return (
+    status === 'starting' ||
+    status === 'running' ||
+    status === 'waiting_permission' ||
+    status === 'waiting_user_input' ||
+    status === 'tool_calling'
+  )
+}
+
 function createRunningStepFromRuntimeEvent(event: StudioRuntimeEvent): string | null {
   const toolName =
     typeof event.payload?.toolName === 'string' ? event.payload.toolName : null
@@ -447,7 +521,18 @@ export function useStudioBridge() {
   })
   const activeRunIdRef = useRef<string | null>(null)
   const finalizedRunIdsRef = useRef<Set<string>>(new Set())
+  const recordFinalizedRunId = (runId: string): void => {
+    addFinalizedRunIdToLruSet(finalizedRunIdsRef.current, runId, FINALIZED_RUN_IDS_LIMIT)
+  }
   const finalizedTerminalStatusRef = useRef<StudioRunStatus | null>(null)
+  /**
+   * submit / 会话切换 / 项目切换的 epoch。
+   * submit 成功后的 refreshStateAsync 是 fire-and-forget 异步，
+   * 在 await 中间用户可能已经发起了下一次 submit 或切换会话/项目。
+   * 这里递增 epoch，refresh 闭包捕获自己启动时的 epoch，
+   * await 完成后如果 epoch 已变就直接放弃 setState，避免 stale 写入。
+   */
+  const submitEpochRef = useRef(0)
 
   const createLiveBlockId = (kind: LiveConversationBlock['type']): string => {
     liveBlockSequenceRef.current += 1
@@ -867,25 +952,44 @@ export function useStudioBridge() {
           setRunStatus('running')
           setCurrentRunStep(RUN_STEP_CALLING_MODEL)
           break
+        case 'timing_mark': {
+          // bootstrap / 上下文准备阶段，用 stage 翻译为中文步骤
+          // 给用户在"正在启动运行"和"正在请求模型"之间的空窗补反馈。
+          const stage =
+            typeof event.payload?.stage === 'string'
+              ? event.payload.stage
+              : undefined
+          const bootstrapStep = resolveBootstrapStepFromTimingStage(stage)
+          if (bootstrapStep) {
+            setCurrentRunStep((current) =>
+              current === RUN_STEP_STOPPING ? current : bootstrapStep,
+            )
+          }
+          break
+        }
         case 'model_request_started':
           setRunStatus((current) =>
-            isActiveRunStatus(current) || current === 'idle'
+            isActiveButNotCancelling(current) || current === 'idle'
               ? 'running'
               : current,
           )
-          setCurrentRunStep('正在请求模型')
+          setCurrentRunStep((current) =>
+            current === RUN_STEP_STOPPING ? current : '正在请求模型',
+          )
           break
         case 'model_first_chunk':
           setRunStatus((current) =>
-            isActiveRunStatus(current) || current === 'idle'
+            isActiveButNotCancelling(current) || current === 'idle'
               ? 'running'
               : current,
           )
-          setCurrentRunStep('模型已开始响应')
+          setCurrentRunStep((current) =>
+            current === RUN_STEP_STOPPING ? current : '模型已开始响应',
+          )
           break
         case 'model_request_finished':
           setRunStatus((current) =>
-            isActiveRunStatus(current) || current === 'idle'
+            isActiveButNotCancelling(current) || current === 'idle'
               ? 'running'
               : current,
           )
@@ -893,7 +997,7 @@ export function useStudioBridge() {
         case 'model_request_failed':
           finishRendererSubmitTiming('failed')
           if (event.runId) {
-            finalizedRunIdsRef.current.add(event.runId)
+            recordFinalizedRunId(event.runId)
           }
           finalizedTerminalStatusRef.current = 'failed'
           activeRunIdRef.current = null
@@ -905,45 +1009,63 @@ export function useStudioBridge() {
         case 'text_delta':
         case 'thinking':
         case 'context_update':
-          setCurrentRunStep(RUN_STEP_CALLING_MODEL)
+          setCurrentRunStep((current) =>
+            current === RUN_STEP_STOPPING ? current : RUN_STEP_CALLING_MODEL,
+          )
           setRunStatus((current) =>
-            isActiveRunStatus(current) || current === 'idle'
+            isActiveButNotCancelling(current) || current === 'idle'
               ? 'running'
               : current,
           )
           break
         case 'warning':
           setRunStatus((current) =>
-            isActiveRunStatus(current) || current === 'idle'
+            isActiveButNotCancelling(current) || current === 'idle'
               ? 'running'
               : current,
           )
           break
         case 'tool_start':
-          setRunStatus('tool_calling')
-          setCurrentRunStep(createRunningStepFromRuntimeEvent(event) ?? '正在执行工具')
+          // cancelling 期间不再切到 tool_calling，避免 Stop 反馈被冲刷
+          setRunStatus((current) =>
+            current === 'cancelling' ? current : 'tool_calling',
+          )
+          setCurrentRunStep((current) =>
+            current === RUN_STEP_STOPPING
+              ? current
+              : (createRunningStepFromRuntimeEvent(event) ?? '正在执行工具'),
+          )
           break
         case 'tool_end':
           setRunStatus((current) =>
             current === 'tool_calling' ? 'running' : current,
           )
-          setCurrentRunStep(RUN_STEP_CALLING_MODEL)
+          setCurrentRunStep((current) =>
+            current === RUN_STEP_STOPPING ? current : RUN_STEP_CALLING_MODEL,
+          )
           break
         case 'permission.request':
-          setRunStatus('waiting_permission')
-          setCurrentRunStep('等待用户确认')
+          // cancelling 期间不再切到 waiting_permission
+          setRunStatus((current) =>
+            current === 'cancelling' ? current : 'waiting_permission',
+          )
+          setCurrentRunStep((current) =>
+            current === RUN_STEP_STOPPING ? current : '等待用户确认',
+          )
           break
         case 'permission.decision':
           setRunStatus((current) =>
             current === 'waiting_permission' ? 'running' : current,
           )
-          setCurrentRunStep(RUN_STEP_CALLING_MODEL)
+          setCurrentRunStep((current) =>
+            current === RUN_STEP_STOPPING ? current : RUN_STEP_CALLING_MODEL,
+          )
           break
         case 'run_completed':
         case 'session_end':
           finishRendererSubmitTiming('completed')
           if (event.runId) {
-            finalizedRunIdsRef.current.add(event.runId)
+            recordFinalizedRunId(event.runId)
           }
           finalizedTerminalStatusRef.current = 'completed'
           activeRunIdRef.current = null
@@ -959,7 +1081,7 @@ export function useStudioBridge() {
               : 'completed',
           )
           if (event.runId) {
-            finalizedRunIdsRef.current.add(event.runId)
+            recordFinalizedRunId(event.runId)
           }
           finalizedTerminalStatusRef.current =
             event.payload?.error || event.payload?.aborted === true
@@ -982,7 +1104,7 @@ export function useStudioBridge() {
         case 'run_failed':
           finishRendererSubmitTiming('failed')
           if (event.runId) {
-            finalizedRunIdsRef.current.add(event.runId)
+            recordFinalizedRunId(event.runId)
           }
           finalizedTerminalStatusRef.current = 'failed'
           activeRunIdRef.current = null
@@ -994,7 +1116,7 @@ export function useStudioBridge() {
         case 'run_cancelled':
           finishRendererSubmitTiming('cancelled')
           if (event.runId) {
-            finalizedRunIdsRef.current.add(event.runId)
+            recordFinalizedRunId(event.runId)
           }
           finalizedTerminalStatusRef.current = 'cancelled'
           activeRunIdRef.current = null
@@ -1311,6 +1433,9 @@ export function useStudioBridge() {
   }
 
   const selectSession = async (sessionId: string): Promise<void> => {
+    // 切会话也递增 epoch：作废上一轮 submit 仍在 await 的 refreshStateAsync，
+    // 避免它把旧 submit 的 sessionId 写回，覆盖用户刚切到的新会话。
+    submitEpochRef.current += 1
     if (!selectedProjectPath || !bridge) {
       setSelectedSessionId(sessionId)
       return
@@ -1473,6 +1598,9 @@ export function useStudioBridge() {
     setRuntimeError(null)
     setShellError(null)
     setLiveConversation(createEmptyLiveConversation(prompt))
+    // 递增 submit epoch：作废所有还在 await 的旧 refreshStateAsync 写入
+    submitEpochRef.current += 1
+    const submitEpoch = submitEpochRef.current
     const projectPath = selectedProjectPath ?? hostState.workspacePath ?? null
 
     try {
@@ -1541,6 +1669,11 @@ export function useStudioBridge() {
               submitResult.sessionId === null ? undefined : submitResult.sessionId,
             ),
           )
+          // epoch 守卫：getSnapshot 等待期间用户可能发起了下一次 submit
+          // 或切换了会话/项目，此时本次 refresh 的所有写入都已过期，直接放弃
+          if (submitEpochRef.current !== submitEpoch) {
+            return
+          }
           const selection = {
             ...(projectPath === undefined ? {} : { projectPath }),
             ...(submitResult.sessionId === null
@@ -1582,6 +1715,10 @@ export function useStudioBridge() {
             projectDefaults: restored.projectDefaults,
           })
           const inspectResult = await inspectRuntime(bridge, true)
+          // 第二次 epoch 守卫：inspectRuntime 期间又可能发起新 submit
+          if (submitEpochRef.current !== submitEpoch) {
+            return
+          }
           const hasPersistedSubmittedSession =
             submitResult.sessionId === null
               ? Boolean(snapshot.activeSession?.messages.length)
@@ -1596,6 +1733,9 @@ export function useStudioBridge() {
           }
         } catch (error) {
           console.error('submitPrompt 后台状态刷新失败', error)
+          if (submitEpochRef.current !== submitEpoch) {
+            return
+          }
           setShellStatus('error')
           setShellError(getErrorMessage(error))
         }
@@ -1650,7 +1790,7 @@ export function useStudioBridge() {
     setRunStatus('cancelling')
     setIsSubmitting(false)
     setRunIdleWarning(null)
-    setCurrentRunStep('正在停止当前运行')
+    setCurrentRunStep(RUN_STEP_STOPPING)
     setLiveConversation((current) => finalizeOpenThinkingBlocks(current))
 
     try {

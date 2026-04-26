@@ -739,6 +739,7 @@ export function StudioHomePage() {
           session={activeSessionDetail}
           liveConversation={liveConversation}
           isRunActive={isRunActive && runStatus !== 'cancelling'}
+          currentRunStep={currentRunStep}
         />
       </section>
 
@@ -885,6 +886,27 @@ export function StudioHomePage() {
             <strong>状态问题:</strong>
             {' '}
             {statusIssues.map((issue) => issue.message).join(' · ')}
+            {/*
+             * 关键体验修复：当 issues 含 workspace-missing（路径已失效）时，
+             * 给一个可点击的"重新选择 Workspace"快速恢复入口，
+             * 避免用户必须手动到顶部去找入口。
+             */}
+            {statusIssues.some((issue) => issue.code === 'workspace-missing') ? (
+              <>
+                {' '}
+                <button
+                  type="button"
+                  className="link-button"
+                  onClick={() => {
+                    void openWorkspace()
+                  }}
+                  disabled={isOpeningWorkspace}
+                  data-testid="status-issue-reopen-workspace"
+                >
+                  {isOpeningWorkspace ? '打开中…' : '重新选择 Workspace'}
+                </button>
+              </>
+            ) : null}
           </div>
         ) : null}
 

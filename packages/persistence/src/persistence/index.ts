@@ -23,6 +23,7 @@ export {
   formatSessionFilename,
   extractSessionId,
   getGitBranch,
+  clearGitBranchCache,
 } from './session-utils.js'
 
 /** 全局单例，存储路径 ~/.xnovacode/sessions/ */

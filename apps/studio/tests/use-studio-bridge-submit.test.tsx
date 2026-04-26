@@ -84,6 +84,7 @@ function createShellSnapshot(sessionId: string | null) {
 function HookHarness() {
   const bridgeState = useStudioBridge()
   const [submitResult, setSubmitResult] = useState('')
+  const [selectSessionTarget, setSelectSessionTarget] = useState<string>('session-other')
   const assistantText = bridgeState.liveConversation.blocks
     .filter((block): block is Extract<(typeof bridgeState.liveConversation.blocks)[number], { type: 'text' }> =>
       block.type === 'text')
@@ -137,6 +138,18 @@ function HookHarness() {
       >
         停止
       </button>
+      <button
+        onClick={() => {
+          void bridgeState.selectSession(selectSessionTarget)
+        }}
+      >
+        切换会话
+      </button>
+      <input
+        data-testid="select-session-target"
+        value={selectSessionTarget}
+        onChange={(event) => setSelectSessionTarget(event.target.value)}
+      />
       <div data-testid="shell-status">{bridgeState.shellStatus}</div>
       <div data-testid="run-status">{bridgeState.runStatus}</div>
       <div data-testid="run-active">{bridgeState.isRunActive ? 'yes' : 'no'}</div>
@@ -157,6 +170,9 @@ function HookHarness() {
       </div>
       <div data-testid="run-idle-warning">{bridgeState.runIdleWarning ?? ''}</div>
       <div data-testid="current-run-step">{bridgeState.currentRunStep ?? ''}</div>
+      <div data-testid="selected-session-id">
+        {bridgeState.selectedSessionId ?? ''}
+      </div>
     </div>
   )
 }
@@ -1733,5 +1749,356 @@ describe('useStudioBridge runtime submit', () => {
     } finally {
       vi.useRealTimers()
     }
+  })
+
+  it('Bootstrap 阶段的 timing_mark 会驱动 currentRunStep 显示中文步骤', async () => {
+    let runtimeEventHandler: ((event: {
+      type: string
+      timestamp: string
+      runId?: string
+      payload?: Record<string, unknown>
+    }) => void) | null = null
+    const submit = vi.fn(() => {
+      runtimeEventHandler?.({
+        type: 'run_started',
+        timestamp: '2026-04-26T00:00:00.000Z',
+        runId: 'run-bootstrap',
+      })
+      runtimeEventHandler?.({
+        type: 'timing_mark',
+        timestamp: '2026-04-26T00:00:01.000Z',
+        runId: 'run-bootstrap',
+        payload: { stage: 'runtime_bootstrap_start' },
+      })
+      // 阻塞 submit，让我们在 model_request_started 之前断言
+      return new Promise(() => undefined)
+    })
+
+    ;(window as Window & { xnovaStudio?: unknown }).xnovaStudio = {
+      host: {
+        getState: vi.fn(async () => ({
+          workspacePath: 'D:/workspace/demo',
+          lastSelection: null,
+        })),
+        openWorkspace: vi.fn(),
+        onStateChanged: () => () => {},
+      },
+      runtime: {
+        inspect: vi.fn(async () => createRuntimeInspectResult()),
+        submit,
+        onEvent: (listener: (event: {
+          type: string
+          timestamp: string
+          runId?: string
+          payload?: Record<string, unknown>
+        }) => void) => {
+          runtimeEventHandler = listener
+          return () => {
+            runtimeEventHandler = null
+          }
+        },
+      },
+      shell: {
+        getSnapshot: vi.fn(async () => createShellSnapshot(null)),
+      },
+      settings: {
+        getProviderSettings: vi.fn(),
+        saveProviderSettings: vi.fn(),
+        testProviderConnection: vi.fn(),
+      },
+      memory: {
+        getOverview: vi.fn(),
+        rebuild: vi.fn(),
+      },
+      mcp: {
+        getOverview: vi.fn(),
+        addServer: vi.fn(),
+        deleteServer: vi.fn(),
+      },
+      skillsPlugins: {
+        getOverview: vi.fn(),
+      },
+    }
+
+    render(<HookHarness />)
+
+    await waitFor(() => {
+      expect(screen.getByTestId('shell-status').textContent).toBe('ready')
+    })
+
+    fireEvent.click(screen.getByRole('button', { name: '提交' }))
+
+    // bootstrap 阶段应该看到中文步骤文案
+    await waitFor(() => {
+      expect(screen.getByTestId('current-run-step').textContent).toBe(
+        '正在加载工作区配置',
+      )
+    })
+
+    // 后续阶段：tool_registry_ready → 工具与插件已就绪
+    await act(async () => {
+      runtimeEventHandler?.({
+        type: 'timing_mark',
+        timestamp: '2026-04-26T00:00:02.000Z',
+        runId: 'run-bootstrap',
+        payload: { stage: 'tool_registry_ready' },
+      })
+    })
+    expect(screen.getByTestId('current-run-step').textContent).toBe(
+      '工具与插件已就绪',
+    )
+
+    // model_request_started 接管：步骤切到"正在请求模型"
+    await act(async () => {
+      runtimeEventHandler?.({
+        type: 'model_request_started',
+        timestamp: '2026-04-26T00:00:03.000Z',
+        runId: 'run-bootstrap',
+        payload: {},
+      })
+    })
+    expect(screen.getByTestId('current-run-step').textContent).toBe(
+      '正在请求模型',
+    )
+  })
+
+  it('submit 完成后 refreshStateAsync 仍在 await 时切换会话，后到的 setSelectedSessionId 不会冲掉用户的新选择', async () => {
+    let runtimeEventHandler: ((event: {
+      type: string
+      timestamp: string
+      runId?: string
+      payload?: Record<string, unknown>
+    }) => void) | null = null
+
+    // 第一次 getSnapshot（hook 初始化）：立刻返回。
+    // 第二次 getSnapshot（refreshStateAsync 内）：手动控制何时 resolve，模拟"在 await 中间"窗口。
+    let releaseRefreshSnapshot: ((snapshot: ReturnType<typeof createShellSnapshot>) => void) = () => {}
+    const refreshSnapshotPromise = new Promise<ReturnType<typeof createShellSnapshot>>((resolve) => {
+      releaseRefreshSnapshot = resolve
+    })
+    // 第三次 getSnapshot（selectSession 内）：立刻返回切到目标会话的快照
+    const selectSessionSnapshot = createShellSnapshot('session-other')
+
+    const getSnapshot = vi.fn<
+      (request?: unknown) => Promise<ReturnType<typeof createShellSnapshot>>
+    >()
+    getSnapshot.mockResolvedValueOnce(createShellSnapshot(null))
+    getSnapshot.mockReturnValueOnce(refreshSnapshotPromise)
+    getSnapshot.mockResolvedValue(selectSessionSnapshot)
+
+    const inspect = vi.fn(async () => createRuntimeInspectResult())
+    const submit = vi.fn(async () => {
+      runtimeEventHandler?.({
+        type: 'run_completed',
+        timestamp: '2026-04-26T00:00:01.000Z',
+        runId: 'run-refresh-race',
+        payload: { sessionId: 'session-original' },
+      })
+      return {
+        ok: true as const,
+        sessionId: 'session-original',
+      }
+    })
+
+    ;(window as Window & { xnovaStudio?: unknown }).xnovaStudio = {
+      host: {
+        getState: vi.fn(async () => ({
+          workspacePath: 'D:/workspace/demo',
+          lastSelection: null,
+        })),
+        openWorkspace: vi.fn(),
+        onStateChanged: () => () => {},
+      },
+      runtime: {
+        inspect,
+        submit,
+        onEvent: (listener: (event: {
+          type: string
+          timestamp: string
+          runId?: string
+          payload?: Record<string, unknown>
+        }) => void) => {
+          runtimeEventHandler = listener
+          return () => {
+            runtimeEventHandler = null
+          }
+        },
+      },
+      shell: { getSnapshot },
+      settings: {
+        getProviderSettings: vi.fn(),
+        saveProviderSettings: vi.fn(),
+        testProviderConnection: vi.fn(),
+      },
+      memory: {
+        getOverview: vi.fn(),
+        rebuild: vi.fn(),
+      },
+      mcp: {
+        getOverview: vi.fn(),
+        addServer: vi.fn(),
+        deleteServer: vi.fn(),
+      },
+      skillsPlugins: {
+        getOverview: vi.fn(),
+      },
+    }
+
+    render(<HookHarness />)
+
+    await waitFor(() => {
+      expect(screen.getByTestId('shell-status').textContent).toBe('ready')
+    })
+
+    fireEvent.click(screen.getByRole('button', { name: '提交' }))
+
+    // submit 已成功 resolve，refreshStateAsync 已经发起 getSnapshot 但仍在 pending
+    await waitFor(() => {
+      expect(submit).toHaveBeenCalledTimes(1)
+    })
+    await waitFor(() => {
+      expect(getSnapshot).toHaveBeenCalledTimes(2) // 初始化 + refresh
+    })
+
+    // 用户在 refresh 还没回来时切换到另一个会话
+    fireEvent.click(screen.getByRole('button', { name: '切换会话' }))
+    await waitFor(() => {
+      expect(screen.getByTestId('selected-session-id').textContent).toBe(
+        'session-other',
+      )
+    })
+
+    // 现在 refresh 终于 resolve，企图把 selectedSessionId 写回 'session-original'
+    await act(async () => {
+      releaseRefreshSnapshot(createShellSnapshot('session-original'))
+      await new Promise((resolve) => setTimeout(resolve, 0))
+    })
+
+    // epoch 守卫应该挡住 stale 写入：用户的 'session-other' 选择仍然生效
+    expect(screen.getByTestId('selected-session-id').textContent).toBe(
+      'session-other',
+    )
+  })
+
+  it('Stop 触发 cancelling 后，晚到的 text_delta / tool_start / permission.request 都不会把 runStatus 翻回活跃态', async () => {
+    let runtimeEventHandler: ((event: {
+      type: string
+      timestamp: string
+      runId?: string
+      payload?: Record<string, unknown>
+    }) => void) | null = null
+
+    ;(window as Window & { xnovaStudio?: unknown }).xnovaStudio = {
+      host: {
+        getState: vi.fn(async () => ({
+          workspacePath: 'D:/workspace/demo',
+          lastSelection: null,
+        })),
+        openWorkspace: vi.fn(),
+        onStateChanged: () => () => {},
+      },
+      runtime: {
+        inspect: vi.fn(async () => createRuntimeInspectResult()),
+        submit: vi.fn(() => {
+          runtimeEventHandler?.({
+            type: 'run_started',
+            timestamp: '2026-04-26T00:00:00.000Z',
+            runId: 'run-cancel-flicker',
+          })
+          return new Promise(() => undefined)
+        }),
+        // cancel 故意不 resolve：模拟"abort 信号还在传播"的窗口，
+        // 这是 cancelling 状态最容易被晚到事件冲刷的时间段。
+        cancel: vi.fn(() => new Promise(() => undefined)),
+        onEvent: (listener: (event: {
+          type: string
+          timestamp: string
+          runId?: string
+          payload?: Record<string, unknown>
+        }) => void) => {
+          runtimeEventHandler = listener
+          return () => {
+            runtimeEventHandler = null
+          }
+        },
+      },
+      shell: {
+        getSnapshot: vi.fn(async () => createShellSnapshot(null)),
+      },
+      settings: {
+        getProviderSettings: vi.fn(),
+        saveProviderSettings: vi.fn(),
+        testProviderConnection: vi.fn(),
+      },
+      memory: {
+        getOverview: vi.fn(),
+        rebuild: vi.fn(),
+      },
+      mcp: {
+        getOverview: vi.fn(),
+        addServer: vi.fn(),
+        deleteServer: vi.fn(),
+      },
+      skillsPlugins: {
+        getOverview: vi.fn(),
+      },
+    }
+
+    render(<HookHarness />)
+
+    await waitFor(() => {
+      expect(screen.getByTestId('shell-status').textContent).toBe('ready')
+    })
+
+    fireEvent.click(screen.getByRole('button', { name: '提交' }))
+    await waitFor(() => {
+      expect(screen.getByTestId('run-status').textContent).toBe('running')
+    })
+
+    fireEvent.click(screen.getByRole('button', { name: '停止' }))
+    await waitFor(() => {
+      expect(screen.getByTestId('run-status').textContent).toBe('cancelling')
+    })
+    expect(screen.getByTestId('current-run-step').textContent).toBe(
+      '正在停止当前运行',
+    )
+
+    // 模拟 abort 还在传播时，runtime 端继续 emit 各种活跃事件
+    await act(async () => {
+      runtimeEventHandler?.({
+        type: 'text_delta',
+        timestamp: '2026-04-26T00:00:01.000Z',
+        runId: 'run-cancel-flicker',
+        payload: { text: '晚到的文本片段' },
+      })
+      runtimeEventHandler?.({
+        type: 'model_first_chunk',
+        timestamp: '2026-04-26T00:00:02.000Z',
+        runId: 'run-cancel-flicker',
+        payload: {},
+      })
+      runtimeEventHandler?.({
+        type: 'tool_start',
+        timestamp: '2026-04-26T00:00:03.000Z',
+        runId: 'run-cancel-flicker',
+        payload: {
+          toolCallId: 'tool-late',
+          toolName: 'read_file',
+          args: { path: 'src/late.ts' },
+        },
+      })
+      runtimeEventHandler?.({
+        type: 'permission.request',
+        timestamp: '2026-04-26T00:00:04.000Z',
+        runId: 'run-cancel-flicker',
+        payload: {},
+      })
+    })
+
+    // 关键断言：runStatus 不能被翻回任何活跃态
+    expect(screen.getByTestId('run-status').textContent).toBe('cancelling')
+    expect(screen.getByTestId('current-run-step').textContent).toBe(
+      '正在停止当前运行',
+    )
   })
 })

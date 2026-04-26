@@ -181,6 +181,7 @@ export type StudioRuntimeEventType =
   | 'subagent_spawn'
   | 'subagent_progress'
   | 'subagent_done'
+  | 'timing_mark'
   | 'turn_end'
   | 'session_end'
   | 'error'

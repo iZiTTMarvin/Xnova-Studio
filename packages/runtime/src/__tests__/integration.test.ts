@@ -280,7 +280,9 @@ describe('createRuntime() — 集成门面', () => {
       aborted: false,
       sessionId: 'session-1',
     }))
-    expect(emitted.map(event => event.type)).toEqual([
+    // timing_mark 属于非敏感性能阶段打点（dev/PERF 链路用），
+    // 数量受 bootstrap 内部阶段数影响，断言时过滤掉以专注业务事件序列。
+    expect(emitted.map(event => event.type).filter((type) => type !== 'timing_mark')).toEqual([
       'model_request_started',
       'model_first_chunk',
       'text_delta',
@@ -312,6 +314,65 @@ describe('createRuntime() — 集成门面', () => {
     })
 
     expect(mocks.ensureMcpInitialized).toHaveBeenCalledTimes(1)
+  })
+
+  it('runtime 仍在运行时再次 submit 会返回 error turn result 并补发 error + turn_end 事件', async () => {
+    // 用 ref 数组而非 let，避免 TS 把闭包内赋值的变量错误窄化为 never
+    const releaseFirstRef: { current: (() => void) | null } = { current: null }
+    const firstStarted = new Promise<void>((resolve) => {
+      mocks.agentLoopRun.mockImplementationOnce(async function* () {
+        resolve()
+        await new Promise<void>((settle) => {
+          releaseFirstRef.current = settle
+        })
+        yield {
+          type: 'llm_done',
+          inputTokens: 0,
+          outputTokens: 0,
+          cacheReadTokens: 0,
+          cacheWriteTokens: 0,
+          stopReason: 'end_turn',
+          ttftMs: 1,
+          e2eMs: 1,
+          tps: 0,
+        }
+        yield { type: 'done', reason: 'complete' }
+      })
+    })
+
+    const emitted: RuntimeEvent[] = []
+    const bridge: RuntimeHostBridge = {
+      emit: (event) => emitted.push(event),
+      requestPermission: async () => ({ allow: true }),
+    }
+
+    const runtime = await createRuntime({
+      cwd: 'D:/workspace',
+      config: makeConfig(),
+      mode: 'standard',
+    }, bridge)
+
+    const firstPromise = runtime.submit({
+      text: '第一问',
+      history: [{ role: 'user', content: '第一问' }],
+      loggedUserContent: '第一问',
+    })
+
+    await firstStarted
+
+    const concurrentResult = await runtime.submit({
+      text: '第二问',
+      loggedUserContent: '第二问',
+    })
+
+    expect(concurrentResult.error).toMatch(/runtime busy/i)
+    expect(concurrentResult.stopReason).toBe('rejected')
+    expect(concurrentResult.aborted).toBe(false)
+    expect(emitted.some((event) => event.type === 'error')).toBe(true)
+    expect(emitted.some((event) => event.type === 'turn_end' && event.payload?.['stopReason'] === 'rejected')).toBe(true)
+
+    releaseFirstRef.current?.()
+    await firstPromise
   })
 
   it('首轮显式 history 提交后，后续 submit 会把当前用户消息追加到同步后的上下文', async () => {

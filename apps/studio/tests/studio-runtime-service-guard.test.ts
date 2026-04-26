@@ -394,4 +394,88 @@ describe('studio runtime service guards', () => {
       vi.useRealTimers()
     }
   })
+
+  it('已有 run 在执行时再次 submit 直接被主进程拒绝，不会调用 createRuntimeFn', async () => {
+    let firstSubmitStarted: (() => void) = () => {}
+    let releaseFirstSubmit: (() => void) = () => {}
+    const firstStartedPromise = new Promise<void>((resolve) => {
+      firstSubmitStarted = resolve
+    })
+
+    const runtimeInstance: RuntimeInstance = {
+      submit: vi.fn(
+        () =>
+          new Promise<RuntimeTurnResult>((resolveTurn) => {
+            firstSubmitStarted()
+            releaseFirstSubmit = () =>
+              resolveTurn({
+                text: 'done',
+                thinking: '',
+                stopReason: 'end_turn',
+                llmCallCount: 1,
+                toolCallCount: 0,
+                usage: {
+                  inputTokens: 10,
+                  outputTokens: 5,
+                  cacheReadTokens: 0,
+                  cacheWriteTokens: 0,
+                },
+                aborted: false,
+                historyCompacted: false,
+                sessionId: 'session-busy',
+              })
+          }),
+      ),
+      abort: vi.fn(),
+      dispose: vi.fn(async () => undefined),
+      getSnapshot: vi.fn(() => ({
+        sessionId: 'session-busy',
+        isRunning: true,
+        provider: 'openai',
+        model: 'gpt-4.1-mini',
+        warnings: [],
+      })),
+    }
+
+    const createRuntimeFn = vi.fn(async () => runtimeInstance)
+    const loadResolvedConfigFn = vi.fn(() => ({
+      effective: {
+        defaultProvider: 'openai',
+        defaultModel: 'gpt-4.1-mini',
+        providers: {},
+      },
+      source: {},
+      warnings: [],
+    }))
+
+    const service = createStudioRuntimeService({
+      createRuntimeFn,
+      loadResolvedConfigFn,
+    })
+
+    const firstPromise = service.submit(
+      { text: '第一问', projectPath: 'D:/workspace/demo' },
+      { workspacePath: 'D:/workspace/demo', lastSelection: null },
+      vi.fn(),
+    )
+
+    await firstStartedPromise
+
+    const secondResult = await service.submit(
+      { text: '第二问', projectPath: 'D:/workspace/demo' },
+      { workspacePath: 'D:/workspace/demo', lastSelection: null },
+      vi.fn(),
+    )
+
+    expect(secondResult).toEqual({
+      ok: false,
+      error: expect.stringContaining('当前已有 Agent run 正在执行'),
+    })
+    // 主进程门禁：第二次提交不应触发 createRuntime / runtimeInstance.submit
+    expect(createRuntimeFn).toHaveBeenCalledTimes(1)
+    expect(runtimeInstance.submit).toHaveBeenCalledTimes(1)
+
+    releaseFirstSubmit()
+    await firstPromise
+  })
 })

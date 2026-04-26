@@ -1,3 +1,20 @@
+## 2026-04-27
+- **Studio 稳定性批量修复**：覆盖 P0 真死锁 / 真泄漏与 P1-P3 多项 UX、性能、可访问性问题
+  - **P0 修复**：`createRuntime.submit` 复用时不再静默吞咽并发 submit，返回 `error` + 补发 `error`/`turn_end` 事件；`studio-runtime-service.submit` 新增主进程串行化门禁拒绝并发提交
+  - **P0 修复**：`StudioRuntimeManager` 实施 LRU 淘汰（默认保留 3 个 idle 实例），切换 `(workspace, agent, sessionId)` 时旧实例被真正 `dispose()`，不再永久驻留
+  - **P1 修复**：renderer 引入 `isActiveButNotCancelling`，`cancelling` 状态不再被晚到的 text/tool/permission 事件翻回 running，Stop 反馈不再闪烁
+  - **P1 修复**：`submitPrompt` 引入 epoch 守卫，`refreshStateAsync` 在 await 中 epoch 变化时直接放弃 setState，避免覆盖新会话选择
+  - **P1 修复**：`finalizedRunIdsRef` 实施 LRU 上限（默认 64），`addFinalizedRunIdToLruSet` 抽离为可单测的纯函数
+  - **P1 改进**：`timing_mark` 事件透传到 renderer，按 `runtime_bootstrap_start / tool_registry_ready / history_hydration_start / context_build_start` 翻译为中文步骤文案，弥补 bootstrap 阶段 UI 反馈空白
+  - **P1 改进**：`ConversationTimeline` 新增"Xnova 正在思考"占位（`model_request_started` → `model_first_chunk` 之间），结合 `currentRunStep` 显示当前阶段
+  - **P2 改进**：`getGitBranch` 加 60s TTL 缓存，避免 shell.getSnapshot 每次起 git 子进程；新增 `clearGitBranchCache` 测试钩子
+  - **P2 改进**：Markdown 渲染补齐 `# heading` / `[text](url)` / `> blockquote` / `~~strike~~` / `| table |`，链接仅允许 http(s) 白名单，零依赖、零 XSS
+  - **P2 改进**：工具并行执行 ≥2 个 running 时合并为批次组，title 显示"正在并行执行 N 个操作（M/N 已完成）"
+  - **P2 改进**：Workspace 失效 banner 加"重新选择 Workspace"快速恢复按钮，避免用户必须找顶部入口
+  - **P3 修复**：`studio-ipc.ts` runtime.error 分支缩进破损修正；`ProjectTreePanel` 子代理 toggle 的 aria-label 不再误用第 0 个 subagent id，改为基于会话标题
+  - 验证：`pnpm typecheck` 全包通过；`pnpm --filter @xnova/runtime test`（29 测试）、`pnpm --filter @xnova/persistence test`（14 测试）、`pnpm --filter xnova-studio test`（236 测试）全部通过；`pnpm --filter xnova-studio build` 通过
+  - 任务详情已归档至 `.trellis/tasks/04-27-studio-stability-batch-fixes/`
+
 ## 2026-04-26
 - **Studio Submit 非敏感性能打点**：新增 submit 全链路耗时诊断
   - Renderer / IPC / main runtime / shared runtime / provider stream 记录非敏感阶段时间，dev 或 `XNOVA_TIMING_DEBUG=1` 时输出 summary

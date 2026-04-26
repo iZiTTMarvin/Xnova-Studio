@@ -911,6 +911,15 @@ export function createStudioRuntimeService(
           ...toStudioRuntimeEvent(event),
           runId: activeRun.runId,
         })
+        // 同时透传给 renderer：让 UI 能根据 stage 翻译为"加载配置 / 索引文件 / 初始化插件"
+        // 等中文步骤文案，弥补 bootstrap 阶段的 UI 反馈空白。
+        // 不影响 submitActivity 续期（bootstrap 阶段不应被无进展 watchdog 误杀）。
+        bridgeState.submitActivity?.touch()
+        const studioTimingEvent: StudioRuntimeEvent = {
+          ...toStudioRuntimeEvent(event),
+          runId: activeRun.runId,
+        }
+        activeRun.emitRuntimeEvent(studioTimingEvent)
         return
       }
 
@@ -1090,6 +1099,16 @@ export function createStudioRuntimeService(
         return {
           ok: false,
           error: '当前尚未绑定 Workspace，无法开始项目会话。',
+        }
+      }
+
+      // 主进程串行化兜底：renderer 已经有 isActiveRunStatus 门禁，
+      // 但 IPC 重发 / 多窗口共享 runtime / 双提交竞争都可能让第二个 submit 进来。
+      // 这里直接拒绝并给出明确错误，让 UI 不会出现"两次 run_started 但只有一次响应"。
+      if (currentRun !== null) {
+        return {
+          ok: false,
+          error: '当前已有 Agent run 正在执行，请等待结束后再发送下一条。',
         }
       }
 

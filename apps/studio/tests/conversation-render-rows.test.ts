@@ -66,7 +66,7 @@ describe('buildConversationRenderRows', () => {
     ])
   })
 
-  it('write_file / edit_file / bash 不合并，保持为独立 tool_action', () => {
+  it('write_file / edit_file / bash 已完成时不合并，保持为独立 tool_action', () => {
     const rows = buildConversationRenderRows(
       [
         createToolBlock('tool-1', 'write_file'),
@@ -78,6 +78,37 @@ describe('buildConversationRenderRows', () => {
 
     expect(rows).toHaveLength(3)
     rows.forEach((row) => expectToolActionRow(row))
+  })
+
+  it('多个 write_file 同时 running 时合并为并行批次组，title 显示 N/M 进度', () => {
+    const rows = buildConversationRenderRows(
+      [
+        createToolBlock('tool-1', 'write_file', { status: 'running' }),
+        createToolBlock('tool-2', 'write_file', { status: 'running' }),
+        createToolBlock('tool-3', 'write_file', { status: 'done', success: true }),
+      ],
+      { isRunActive: true },
+    )
+
+    expect(rows).toHaveLength(1)
+    expectToolActivityRow(rows[0])
+    const groupRow = rows[0] as Extract<typeof rows[number], { type: 'tool_activity_group' }>
+    expect(groupRow.running).toBe(true)
+    expect(groupRow.tools).toHaveLength(3)
+    expect(groupRow.title).toContain('3 个操作')
+    expect(groupRow.title).toContain('1/3')
+  })
+
+  it('单个 running write_file 不会被错误合并（避免无意义的"展开"）', () => {
+    const rows = buildConversationRenderRows(
+      [
+        createToolBlock('tool-1', 'write_file', { status: 'running' }),
+      ],
+      { isRunActive: true },
+    )
+
+    expect(rows).toHaveLength(1)
+    expectToolActionRow(rows[0])
   })
 
   it('failed exploration tool 不进入 activity group，而是单独显示为失败 action', () => {
