@@ -378,7 +378,9 @@ export function StudioHomePage() {
   }, [selectedSubagent, shellSnapshot])
 
   const projectBlockStatus: SidebarBlockStatus = useMemo(() => {
-    if (shellStatus === 'loading') {
+    // 会话切换会短暂刷新 shellSnapshot；已有快照时保留侧边栏内容，
+    // 避免项目抽屉闪成整块 loading 文案。
+    if (shellStatus === 'loading' && shellSnapshot === null) {
       return 'loading'
     }
     if (startupNotice === '宿主桥接不可用') {
@@ -391,7 +393,8 @@ export function StudioHomePage() {
   }, [shellSnapshot, shellStatus, startupNotice])
 
   const chatBlockStatus: SidebarBlockStatus = useMemo(() => {
-    if (shellStatus === 'loading') {
+    // 同上：只有首次冷启动没有任何快照时，聊天块才显示 loading。
+    if (shellStatus === 'loading' && shellSnapshot === null) {
       return 'loading'
     }
     if (startupNotice === '宿主桥接不可用') {

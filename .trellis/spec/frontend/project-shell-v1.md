@@ -94,6 +94,7 @@ interface StudioHostApi {
   5. 工具
 - 设置作为底部 utility 入口，不与顶部模式切换竞争主叙事。
 - 项目块与聊天块必须独立折叠 / 展开，并各自维护 loading / empty / disabled / ready 状态。
+- 已经存在 `shellSnapshot` 时，项目块和聊天块在会话切换、项目刷新等后台加载过程中必须保留已有内容；不要把侧边栏抽屉整块替换成 loading 文案造成闪烁。
 
 #### 上下文条
 

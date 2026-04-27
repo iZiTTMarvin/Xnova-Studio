@@ -16,7 +16,7 @@ function createBridge(options?: {
   runtimeInspectResult?: unknown
   runtimeEvent?: unknown
   memoryOverview?: unknown
-  shellSnapshot?: unknown
+  shellSnapshot?: unknown | ((input: unknown) => unknown | Promise<unknown>)
   runtimeSubmit?: (
     input: unknown,
     emitRuntimeEvent: (event: unknown) => void,
@@ -77,8 +77,12 @@ function createBridge(options?: {
           }),
   }
 
-  const shellApi = {
-    getSnapshot: vi.fn(async () => options?.shellSnapshot ?? {
+  const readShellSnapshot = async (input: unknown) => {
+    if (typeof options?.shellSnapshot === 'function') {
+      return options.shellSnapshot(input)
+    }
+
+    return options?.shellSnapshot ?? {
       startup: {
         recentProject: null,
         recentSession: null,
@@ -98,7 +102,11 @@ function createBridge(options?: {
       },
       issues: [],
       warnings: [],
-    }),
+    }
+  }
+
+  const shellApi = {
+    getSnapshot: vi.fn(readShellSnapshot),
   }
 
   return {
@@ -640,6 +648,102 @@ describe('renderer project-aware shell', () => {
     expect(screen.getByText('已恢复最近工作状态。')).toBeTruthy()
     expect(screen.getByRole('heading', { name: '继续实现 project-aware shell' })).toBeTruthy()
     expect(screen.queryByText('从空白聊天开始')).toBeNull()
+  })
+
+  it('点击会话刷新快照时，侧边栏保留已有项目抽屉而不是闪成 loading 文案', async () => {
+    const sessionSnapshot = {
+      startup: {
+        recentProject: {
+          path: 'D:/workspace/demo',
+          lastActiveAt: 10,
+          exists: true,
+        },
+        recentSession: {
+          projectPath: 'D:/workspace/demo',
+          sessionId: 'session-1',
+          valid: true,
+        },
+      },
+      recentProjects: [
+        {
+          path: 'D:/workspace/demo',
+          name: 'demo',
+          lastActiveAt: 10,
+          exists: true,
+          gitBranch: 'main',
+        },
+      ],
+      projectSessions: [
+        {
+          sessionId: 'session-1',
+          projectPath: 'D:/workspace/demo',
+          title: '继续实现 project-aware shell',
+          updatedAt: '2026-04-22T10:00:00.000Z',
+          gitBranch: 'main',
+          messageCount: 12,
+          providerId: 'anthropic',
+          modelId: 'claude-sonnet-4-6',
+          subagents: [],
+        },
+      ],
+      scratchpadEntries: [],
+      defaults: {
+        projectPath: 'D:/workspace/demo',
+        branch: 'main',
+        agentId: 'general',
+        modelId: 'claude-sonnet-4-6',
+        providerId: 'anthropic',
+        recommendedMode: null,
+        allowedModes: ['standard', 'xforge'],
+      },
+      warnings: [],
+      issues: [],
+    }
+    const sessionRefreshStarted = vi.fn()
+    let snapshotCallCount = 0
+    let resolveSessionRefresh: (() => void) | null = null
+
+    ;(window as Window & { xnovaStudio?: unknown }).xnovaStudio = createBridge({
+      hostState: {
+        workspacePath: 'D:/workspace/demo',
+        lastSelection: null,
+      },
+      shellSnapshot: () => {
+        snapshotCallCount += 1
+        if (snapshotCallCount === 1) {
+          return sessionSnapshot
+        }
+
+        sessionRefreshStarted()
+        return new Promise((resolve) => {
+          resolveSessionRefresh = () => {
+            resolve(sessionSnapshot)
+          }
+        })
+      },
+    })
+
+    render(<App />)
+
+    await waitFor(() => {
+      expect(screen.getByLabelText('项目树')).toBeTruthy()
+    })
+
+    const projectTree = screen.getByLabelText('项目树')
+    fireEvent.click(within(projectTree).getByText('继续实现 project-aware shell'))
+
+    await waitFor(() => {
+      expect(sessionRefreshStarted).toHaveBeenCalledTimes(1)
+    })
+
+    expect(within(projectTree).getByText('demo')).toBeTruthy()
+    expect(within(projectTree).getByText('继续实现 project-aware shell')).toBeTruthy()
+    expect(screen.queryByText('正在加载项目结构…')).toBeNull()
+    expect(screen.queryByText('正在准备 scratchpad…')).toBeNull()
+
+    act(() => {
+      resolveSessionRefresh?.()
+    })
   })
 
   it('最近项目路径失效时降级到空白聊天页并给出可见反馈', async () => {
