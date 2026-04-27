@@ -12,6 +12,7 @@ import {
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { ConversationTimeline } from '../src/renderer/components/ConversationTimeline'
 import { useStudioBridge } from '../src/renderer/hooks/useStudioBridge'
+import { useStudioBridgeState } from '../src/renderer/hooks/useStudioBridgeState'
 
 function createRuntimeInspectResult() {
   return {
@@ -68,7 +69,8 @@ function createShellSnapshot() {
 }
 
 function TimelineHarness() {
-  const bridgeState = useStudioBridge()
+  const bridgeController = useStudioBridge()
+  const bridgeState = useStudioBridgeState()
   const [submitResult, setSubmitResult] = useState('')
   const liveBlockSummary = bridgeState.liveConversation.blocks
     .map((block) => {
@@ -91,7 +93,7 @@ function TimelineHarness() {
     <div>
       <button
         onClick={() => {
-          void bridgeState.submitPrompt('生成一个个人博客').then((result) => {
+          void bridgeController.submitPrompt('生成一个个人博客').then((result) => {
             setSubmitResult(result.ok ? 'ok' : (result.error ?? 'error'))
           })
         }}

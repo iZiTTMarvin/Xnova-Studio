@@ -1,4 +1,5 @@
 import { Fragment, useEffect, useMemo, useState } from 'react'
+import { useShallow } from 'zustand/react/shallow'
 import {
   ProjectShellSidebar,
   type PrimaryNavId,
@@ -15,9 +16,14 @@ import { PermissionDialog } from '../components/PermissionDialog'
 import { UserQuestionDialog } from '../components/UserQuestionDialog'
 import { IconSend, IconFolder, IconSuggestionExplore, IconCross } from '../components/Icons'
 import { useStudioBridge } from '../hooks/useStudioBridge'
+import { useSessionStore } from '../stores/session-store'
+import { useRuntimeStore } from '../stores/runtime-store'
+import { useSettingsStore } from '../stores/settings-store'
 import { useMemoryOverview } from '../hooks/useMemoryOverview'
 import { useSettingsToolsPageModel } from '../hooks/useSettingsToolsPageModel'
 import { resolveMemoryFeedbackPresentation } from '../utils/memory-feedback'
+import { resolveStartupRoute } from '../utils/startup-route'
+import { resolveWorkContext } from '../utils/work-context'
 import { StudioToolsPage } from './ToolsPage'
 import './StudioHomePage.css'
 
@@ -79,61 +85,105 @@ function formatLastProgressTime(timestamp: number | null): string {
   return `最后进展: ${Math.floor(elapsedSeconds / 60)} 分钟前`
 }
 
+function isActiveRunStatus(status: ReturnType<typeof useRuntimeStore.getState>['runStatus']): boolean {
+  return (
+    status === 'starting' ||
+    status === 'running' ||
+    status === 'waiting_permission' ||
+    status === 'waiting_user_input' ||
+    status === 'tool_calling' ||
+    status === 'cancelling'
+  )
+}
+
 export function StudioHomePage() {
   const {
-    hostStatus,
-    hostState,
-    hostError,
-    isOpeningWorkspace,
     openWorkspace,
-    shellStatus,
-    shellSnapshot,
-    shellError,
-    runtimeStatus,
-    runtimeInspectResult,
-    runtimeError,
     settingsApi,
     memoryApi,
     mcpApi,
     skillsPluginsApi,
-    startupRoute,
-    startupNotice,
-    activeSession,
-    selectedProjectPath,
-    selectedSessionId,
     selectProject,
     selectSession,
-    scratchpadEntries,
-    workContext,
-    currentMode,
-    currentAgentId,
-    currentProviderId,
-    currentModelId,
     setCurrentProviderModel,
-    availablePrimaryAgentIds,
-    recoveryStatus,
-    recoverySources,
-    statusIssues,
-    canRestoreProjectDefaults,
     restoreProjectDefaults,
     switchMode,
     switchPrimaryAgent,
     submitPrompt,
     cancelCurrentRun,
+    runtimeSubmitAvailable,
+    respondPermissionRequest,
+    respondUserInputRequest,
+  } = useStudioBridge()
+  const {
+    hostStatus,
+    hostState,
+    hostError,
+    isOpeningWorkspace,
+    shellStatus,
+    shellSnapshot,
+    shellError,
+    selectedProjectPath,
+    selectedSessionId,
+    recoveryState,
+  } = useSessionStore(
+    useShallow((state) => ({
+      hostStatus: state.hostStatus,
+      hostState: state.hostState,
+      hostError: state.hostError,
+      isOpeningWorkspace: state.isOpeningWorkspace,
+      shellStatus: state.shellStatus,
+      shellSnapshot: state.shellSnapshot,
+      shellError: state.shellError,
+      selectedProjectPath: state.selectedProjectPath,
+      selectedSessionId: state.selectedSessionId,
+      recoveryState: state.recoveryState,
+    })),
+  )
+  const {
+    currentMode,
+    currentAgentId,
+    currentProviderId,
+    currentModelId,
+  } = useSettingsStore(
+    useShallow((state) => ({
+      currentMode: state.currentMode,
+      currentAgentId: state.currentAgentId,
+      currentProviderId: state.currentProviderId,
+      currentModelId: state.currentModelId,
+    })),
+  )
+  const {
+    runtimeStatus,
+    runtimeInspectResult,
+    runtimeError,
+    lastRuntimeEvent,
+    pendingPermissionRequest,
+    pendingUserInputRequest,
     isSubmitting,
     runStatus,
-    isRunActive,
-    runtimeSubmitAvailable,
     runIdleWarning,
     currentRunStep,
     lastRuntimeEventAt,
     liveConversation,
-    lastRuntimeEvent,
-    pendingPermissionRequest,
-    pendingUserInputRequest,
-    respondPermissionRequest,
-    respondUserInputRequest,
-  } = useStudioBridge()
+    contextState,
+  } = useRuntimeStore(
+    useShallow((state) => ({
+      runtimeStatus: state.runtimeStatus,
+      runtimeInspectResult: state.runtimeInspectResult,
+      runtimeError: state.runtimeError,
+      lastRuntimeEvent: state.lastRuntimeEvent,
+      pendingPermissionRequest: state.pendingPermissionRequest,
+      pendingUserInputRequest: state.pendingUserInputRequest,
+      isSubmitting: state.isSubmitting,
+      runStatus: state.runStatus,
+      runIdleWarning: state.runIdleWarning,
+      currentRunStep: state.currentRunStep,
+      lastRuntimeEventAt: state.lastRuntimeEventAt,
+      liveConversation: state.liveConversation,
+      contextState: state.contextState,
+    })),
+  )
   const [activeNavId, setActiveNavId] = useState<PrimaryNavId>('quick-chat')
   const [selectedSubagent, setSelectedSubagent] = useState<SelectedSubagentState | null>(null)
   const [searchKeyword, setSearchKeyword] = useState('')
@@ -141,6 +191,123 @@ export function StudioHomePage() {
   const [composerFeedback, setComposerFeedback] = useState<string | null>(null)
   const [modeNotice, setModeNotice] = useState<{ title: string; message: string } | null>(null)
   const [settingsDialogOpen, setSettingsDialogOpen] = useState(false)
+  const startupRoute = useMemo(
+    () =>
+      resolveStartupRoute({
+        recentProject: shellSnapshot?.startup.recentProject ?? null,
+        recentSession: shellSnapshot?.startup.recentSession ?? null,
+      }),
+    [shellSnapshot],
+  )
+  const activeSession = useMemo(() => {
+    if (!selectedSessionId) {
+      return null
+    }
+
+    if (shellSnapshot?.activeSession?.sessionId === selectedSessionId) {
+      return shellSnapshot.activeSession
+    }
+
+    return (
+      shellSnapshot?.projectSessions.find(
+        (session) => session.sessionId === selectedSessionId,
+      ) ?? null
+    )
+  }, [selectedSessionId, shellSnapshot])
+  const scratchpadEntries = useMemo(() => {
+    if (!shellSnapshot) {
+      return []
+    }
+
+    if (shellSnapshot.scratchpadEntries.length > 0) {
+      return shellSnapshot.scratchpadEntries
+    }
+
+    return [
+      {
+        id: 'global-scratchpad',
+        title: '全局 Scratchpad',
+        updatedAt: null,
+      },
+    ]
+  }, [shellSnapshot])
+  const workContext = useMemo(
+    () =>
+      resolveWorkContext({
+        selectedProjectPath,
+        activeSession,
+        defaults: shellSnapshot?.defaults ?? null,
+        agentId: currentAgentId,
+        modelId: currentModelId,
+        mode: currentMode,
+        contextUsageLabel:
+          contextState.effectiveWindow > 0
+            ? `${Math.round(contextState.usedPercentage * 100)}%`
+            : null,
+        contextState,
+      }),
+    [
+      activeSession,
+      contextState,
+      currentAgentId,
+      currentMode,
+      currentModelId,
+      selectedProjectPath,
+      shellSnapshot,
+    ],
+  )
+  const canRestoreProjectDefaults =
+    selectedProjectPath !== null &&
+    (currentMode !== recoveryState.projectDefaults.mode ||
+      currentAgentId !== recoveryState.projectDefaults.agentId ||
+      currentModelId !== recoveryState.projectDefaults.modelId)
+  const availablePrimaryAgentIds = useMemo(() => {
+    const ids = shellSnapshot?.defaults.availablePrimaryAgentIds ?? []
+    const next = [...ids]
+    if (currentAgentId && !next.includes(currentAgentId)) {
+      next.unshift(currentAgentId)
+    }
+    if (next.length === 0) {
+      next.push('general')
+    }
+    return next
+  }, [currentAgentId, shellSnapshot?.defaults.availablePrimaryAgentIds])
+  const statusIssues = useMemo(() => {
+    const issues = [
+      ...(shellSnapshot?.issues ?? []),
+      ...(runtimeInspectResult?.issues ?? []),
+    ]
+
+    return issues.filter((issue, index) => {
+      const key = `${issue.code}:${issue.message}`
+      return (
+        issues.findIndex(
+          (candidate) => `${candidate.code}:${candidate.message}` === key,
+        ) === index
+      )
+    })
+  }, [runtimeInspectResult, shellSnapshot])
+  const startupNotice = useMemo(() => {
+    if (!window.xnovaStudio) {
+      return '宿主桥接不可用'
+    }
+
+    if (startupRoute.kind === 'restore-session') {
+      return shellError
+    }
+
+    switch (startupRoute.reason) {
+      case 'project-missing':
+        return '最近项目路径已失效，已回退到空白聊天页。'
+      case 'session-invalid':
+        return '最近会话数据损坏，已回退到空白聊天页。'
+      default:
+        return shellError
+    }
+  }, [shellError, startupRoute])
+  const recoveryStatus = recoveryState.status
+  const recoverySources = recoveryState.sources
+  const isRunActive = isActiveRunStatus(runStatus)
   const memoryOverview = useMemoryOverview(memoryApi, {
     enabled: shellStatus === 'ready' && activeNavId !== 'tools',
     deferMs: 150,

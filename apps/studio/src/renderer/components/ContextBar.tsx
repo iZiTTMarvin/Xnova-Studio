@@ -1,6 +1,6 @@
 import { useState } from 'react'
 import type { WorkContext } from '../utils/work-context'
-import type { ContextState } from '../hooks/useStudioBridge'
+import type { ContextState } from '../stores/runtime-store'
 
 export interface ContextBarFieldSpec {
   key:
@@ -257,4 +257,3 @@ export function ContextBar(props: ContextBarProps) {
     </section>
   )
 }
-

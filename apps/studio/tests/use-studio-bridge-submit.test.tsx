@@ -4,6 +4,7 @@ import { useState } from 'react'
 import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { useStudioBridge } from '../src/renderer/hooks/useStudioBridge'
+import { useStudioBridgeState } from '../src/renderer/hooks/useStudioBridgeState'
 
 function createRuntimeInspectResult() {
   return {
@@ -105,7 +106,8 @@ function installManualRaf() {
 }
 
 function HookHarness() {
-  const bridgeState = useStudioBridge()
+  const bridgeController = useStudioBridge()
+  const bridgeState = useStudioBridgeState()
   const [submitResult, setSubmitResult] = useState('')
   const [selectSessionTarget, setSelectSessionTarget] = useState<string>('session-other')
   const assistantText = bridgeState.liveConversation.blocks
@@ -141,7 +143,7 @@ function HookHarness() {
     <div>
       <button
         onClick={() => {
-          void bridgeState
+          void bridgeController
             .submitPrompt('  分析当前项目结构  ')
             .then((result) => {
               setSubmitResult(result.ok ? 'ok' : (result.error ?? 'error'))
@@ -152,7 +154,7 @@ function HookHarness() {
       </button>
       <button
         onClick={() => {
-          void bridgeState
+          void bridgeController
             .cancelCurrentRun()
             .then((result) => {
               setSubmitResult(result.ok ? 'cancel-ok' : result.error)
@@ -163,14 +165,14 @@ function HookHarness() {
       </button>
       <button
         onClick={() => {
-          void bridgeState.selectSession(selectSessionTarget)
+          void bridgeController.selectSession(selectSessionTarget)
         }}
       >
         切换会话
       </button>
       <button
         onClick={() => {
-          void bridgeState.selectProject('D:/workspace/project-b')
+          void bridgeController.selectProject('D:/workspace/project-b')
         }}
       >
         切换项目

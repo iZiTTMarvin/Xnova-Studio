@@ -1,4 +1,10 @@
 ## 2026-04-27
+- **Studio 交互现代化 Phase 2**：引入 renderer store 分层，收口 `useStudioBridge` 的状态事实源
+  - `apps/studio` 新增 `runtime-store / session-store / settings-store`，用 `zustand + immer` 承接运行态、项目/会话态与工作偏好态
+  - `useStudioBridge` 不再通过本地 `useState` 持有主状态，改为作为 bridge 层读写 store，并保留原有 hook 对外 contract 以兼容页面与测试
+  - 补上 store 单例在重新挂载/测试切换时的重置逻辑，避免旧 runStatus、旧 project/session 选择污染新会话
+  - 验证：`pnpm --filter xnova-studio typecheck`、`pnpm --filter xnova-studio test`、`pnpm --filter xnova-studio build` 全部通过
+  - 任务详情见 `.trellis/tasks/04-27-studio-interaction-phase2-state-store/`
 - **Studio 交互现代化 Phase 1**：在 main 侧引入 runtime event 批量缓冲
   - 新增 `apps/studio/src/main/adaptive-event-batcher.ts`，按 `runId` 聚合 `text_delta / thinking`，前台 33ms、后台 150ms flush，并在控制/终端事件到来前先刷出已缓冲文本
   - `studio-runtime-service` 的 runtime 事件出口接入 batcher，`run_started / tool_start / tool_end / permission.* / model_request_* / terminal` 继续立即透传，只把高频文本类事件限流到 renderer

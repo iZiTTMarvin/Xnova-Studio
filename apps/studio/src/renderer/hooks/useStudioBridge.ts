@@ -1,42 +1,39 @@
-import { useEffect, useMemo, useRef, useState } from 'react'
+import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
+import { useShallow } from 'zustand/react/shallow'
 import type {
   PermissionDialogRequest,
   PermissionDialogResponse,
   RuntimeCancelResult,
   RuntimeInspectResult,
   StudioBridgeApi,
-  StudioConversationBlock,
   StudioHostState,
-  StudioProjectSessionSummary,
-  StudioRunStatus,
-  StudioScratchpadEntry,
-  StudioSettingsApi,
   StudioShellSnapshot,
+  StudioRunStatus,
+  StudioSettingsApi,
   StudioRuntimeEvent,
   UserQuestionDialogRequest,
   UserQuestionDialogResponse,
 } from '../../shared/studio-bridge-contract'
 import {
-  resolveStartupRoute,
-  type StartupRouteResult,
-} from '../utils/startup-route'
-import { resolveWorkContext } from '../utils/work-context'
-import {
   clearProjectWorkPreference,
   readProjectWorkPreference,
-  resolveWorkPreferenceRestore,
   writeProjectWorkPreference,
-  type ResolvedWorkPreference,
-  type WorkPreferenceRestoreStatus,
-  type WorkPreferenceRestoreSources,
 } from '../utils/work-preferences'
 import { createToolRunningStep } from '../utils/tool-event-summary'
-
-interface RecoveryState {
-  status: WorkPreferenceRestoreStatus
-  sources: WorkPreferenceRestoreSources
-  projectDefaults: ResolvedWorkPreference['projectDefaults']
-}
+import { hydrateStudioBridgeSnapshot } from '../utils/studio-bridge-hydration'
+import {
+  appendLiveSystemBlock,
+  applyBufferedLiveDeltaChunks,
+  createEmptyLiveConversation,
+  finalizeOpenThinkingBlocks,
+  RUN_STEP_CALLING_MODEL,
+  RUN_STEP_STOPPING,
+  useRuntimeStore,
+  type LiveConversationBlock,
+  type LiveConversationState,
+} from '../stores/runtime-store'
+import { useSessionStore } from '../stores/session-store'
+import { useSettingsStore } from '../stores/settings-store'
 
 interface SubmitPromptResult {
   ok: boolean
@@ -44,19 +41,8 @@ interface SubmitPromptResult {
   reportedToTimeline?: boolean
 }
 
-export interface ContextState {
-  usedPercentage: number
-  lastInputTokens: number
-  effectiveWindow: number
-  level: 'normal' | 'warning' | 'critical' | 'overflow'
-}
-
-export type LiveConversationBlock = StudioConversationBlock
-
-export interface LiveConversationState {
-  pendingUserText: string | null
-  blocks: LiveConversationBlock[]
-}
+export type { ContextState, LiveConversationBlock, LiveConversationState }
+  from '../stores/runtime-store'
 
 interface PendingLiveDeltaChunk {
   kind: 'text' | 'thinking'
@@ -65,38 +51,12 @@ interface PendingLiveDeltaChunk {
 
 const RUN_IDLE_WARNING_MS = 90_000
 const RUN_IDLE_WARNING_MESSAGE = '运行长时间没有新进展，可以停止后重试'
-const RUN_STEP_CALLING_MODEL = '正在调用模型'
-const RUN_STEP_STOPPING = '正在停止当前运行'
 
 /**
  * finalizedRunIdsRef 的 LRU 上限 — 防止长会话累积万级 runId 占用 renderer 内存。
  * 64 已经覆盖"用户翻历史时上下来回切几个 run"的场景，超出即作废最老的。
  */
 export const FINALIZED_RUN_IDS_LIMIT = 64
-
-/**
- * Bootstrap / 上下文准备阶段的 timing_mark stage → 中文步骤文案。
- * 这些事件在 model_request_started 之前，弥补"正在启动运行"到"正在请求模型"
- * 之间长达数秒甚至数十秒的 UI 反馈空白。
- *
- * 不在表中的 stage（例如 `*_done`, `createRuntime.submit_start`）不更新文案，
- * 避免高频闪烁；最后由 `model_request_started` 接管。
- */
-const BOOTSTRAP_STAGE_TO_RUN_STEP: Record<string, string> = {
-  runtime_bootstrap_start: '正在加载工作区配置',
-  tool_registry_ready: '工具与插件已就绪',
-  history_hydration_start: '正在恢复对话上下文',
-  context_build_start: '正在构建模型上下文',
-}
-
-export function resolveBootstrapStepFromTimingStage(
-  stage: string | undefined,
-): string | null {
-  if (!stage) {
-    return null
-  }
-  return BOOTSTRAP_STAGE_TO_RUN_STEP[stage] ?? null
-}
 
 /**
  * 把一个 finalized runId 写入 Set，并按"最近插入"语义维护 LRU 上限。
@@ -194,211 +154,6 @@ function buildRendererTimingSummary(
   })
 }
 
-function createEmptyLiveConversation(
-  pendingUserText: string | null = null,
-): LiveConversationState {
-  return {
-    pendingUserText,
-    blocks: [],
-  }
-}
-
-function deriveLiveConversation(
-  pendingUserText: string | null,
-  blocks: LiveConversationBlock[],
-): LiveConversationState {
-  return {
-    pendingUserText,
-    blocks,
-  }
-}
-
-function replaceLiveBlocks(
-  current: LiveConversationState,
-  blocks: LiveConversationBlock[],
-): LiveConversationState {
-  return deriveLiveConversation(current.pendingUserText, blocks)
-}
-
-function appendLiveTextBlock(
-  current: LiveConversationState,
-  id: string,
-  content: string,
-): LiveConversationState {
-  if (!content) {
-    return current
-  }
-
-  const lastBlock = current.blocks.at(-1)
-  if (lastBlock?.type === 'text') {
-    return replaceLiveBlocks(current, [
-      ...current.blocks.slice(0, -1),
-      {
-        ...lastBlock,
-        content: lastBlock.content + content,
-      },
-    ])
-  }
-
-  return replaceLiveBlocks(current, [
-    ...current.blocks,
-    {
-      id,
-      type: 'text',
-      content,
-    },
-  ])
-}
-
-function appendLiveThinkingBlock(
-  current: LiveConversationState,
-  id: string,
-  content: string,
-): LiveConversationState {
-  if (!content) {
-    return current
-  }
-
-  const lastBlock = current.blocks.at(-1)
-  if (
-    lastBlock?.type === 'thinking' &&
-    lastBlock.endedAt === undefined &&
-    lastBlock.durationMs === undefined
-  ) {
-    return replaceLiveBlocks(current, [
-      ...current.blocks.slice(0, -1),
-      {
-        ...lastBlock,
-        content: lastBlock.content + content,
-      },
-    ])
-  }
-
-  return replaceLiveBlocks(current, [
-    ...current.blocks,
-    {
-      id,
-      type: 'thinking',
-      content,
-      startedAt: Date.now(),
-    },
-  ])
-}
-
-function finalizeOpenThinkingBlocks(
-  current: LiveConversationState,
-): LiveConversationState {
-  const endedAt = Date.now()
-  let changed = false
-  const nextBlocks = current.blocks.map((block) => {
-    if (block.type !== 'thinking') {
-      return block
-    }
-    if (block.endedAt !== undefined || block.durationMs !== undefined) {
-      return block
-    }
-    changed = true
-    if (block.startedAt !== undefined) {
-      return {
-        ...block,
-        endedAt,
-        durationMs: Math.max(0, endedAt - block.startedAt),
-      }
-    }
-    return {
-      ...block,
-      endedAt,
-    }
-  })
-
-  return changed ? replaceLiveBlocks(current, nextBlocks) : current
-}
-
-/**
- * renderer 侧的最小止血缓冲：
- * 1. 保留 text / thinking 的原始到达顺序；
- * 2. 同类相邻 chunk 在同一帧内合并，减少 setState 频率；
- * 3. flush 时仍复用现有 append/finalize 规则，不改 block 语义。
- */
-function applyBufferedLiveDeltaChunks(
-  current: LiveConversationState,
-  chunks: PendingLiveDeltaChunk[],
-  createLiveBlockId: (kind: LiveConversationBlock['type']) => string,
-): LiveConversationState {
-  let next = current
-  for (const chunk of chunks) {
-    if (!chunk.content) {
-      continue
-    }
-    if (chunk.kind === 'text') {
-      next = appendLiveTextBlock(
-        finalizeOpenThinkingBlocks(next),
-        createLiveBlockId('text'),
-        chunk.content,
-      )
-      continue
-    }
-    next = appendLiveThinkingBlock(
-      next,
-      createLiveBlockId('thinking'),
-      chunk.content,
-    )
-  }
-  return next
-}
-
-function appendLiveStatusBlock(
-  current: LiveConversationState,
-  id: string,
-  content: string,
-): LiveConversationState {
-  if (!content) {
-    return current
-  }
-
-  const lastBlock = current.blocks.at(-1)
-  if (lastBlock?.type === 'status' && lastBlock.content === content) {
-    return current
-  }
-
-  return replaceLiveBlocks(current, [
-    ...current.blocks,
-    {
-      id,
-      type: 'status',
-      content,
-    },
-  ])
-}
-
-function appendLiveSystemBlock(
-  current: LiveConversationState,
-  id: string,
-  content: string,
-  level: 'info' | 'warning' | 'error',
-): LiveConversationState {
-  if (!content) {
-    return current
-  }
-
-  const hasSameMessage = current.blocks.some(
-    (block) => block.type === 'system' && block.content === content,
-  )
-  if (hasSameMessage) {
-    return current
-  }
-
-  return replaceLiveBlocks(current, [
-    ...current.blocks,
-    {
-      id,
-      type: 'system',
-      content,
-      level,
-    },
-  ])
-}
-
 function isActiveRunStatus(status: StudioRunStatus): boolean {
   return (
     status === 'starting' ||
@@ -408,33 +163,6 @@ function isActiveRunStatus(status: StudioRunStatus): boolean {
     status === 'tool_calling' ||
     status === 'cancelling'
   )
-}
-
-/**
- * 用户点击 Stop 后 runStatus = 'cancelling'，但 abort 信号传到 runtime 之前
- * 仍可能有 text_delta / model_first_chunk / context_update 等事件到达。
- * 这个判断把 cancelling 排除在"可被翻回 running"的活跃状态之外，
- * 避免 Stop 反馈被晚到的活跃事件冲刷。
- */
-function isActiveButNotCancelling(status: StudioRunStatus): boolean {
-  return (
-    status === 'starting' ||
-    status === 'running' ||
-    status === 'waiting_permission' ||
-    status === 'waiting_user_input' ||
-    status === 'tool_calling'
-  )
-}
-
-function createRunningStepFromRuntimeEvent(event: StudioRuntimeEvent): string | null {
-  const toolName =
-    typeof event.payload?.toolName === 'string' ? event.payload.toolName : null
-  const args =
-    event.payload?.args && typeof event.payload.args === 'object'
-      ? (event.payload.args as Record<string, unknown>)
-      : {}
-
-  return toolName ? createToolRunningStep(toolName, args) : null
 }
 
 function buildShellRequest(
@@ -447,83 +175,118 @@ function buildShellRequest(
   }
 }
 
-function resolveProjectPathFromSnapshot(
-  snapshot: StudioShellSnapshot,
-  selection?: {
-    projectPath?: string | null
-  },
-): string | null {
-  const route = resolveStartupRoute({
-    recentProject: snapshot.startup.recentProject,
-    recentSession: snapshot.startup.recentSession,
-  })
-
-  return (
-    selection?.projectPath ??
-    (route.kind === 'restore-session'
-      ? route.projectPath
-      : snapshot.defaults.projectPath ??
-        snapshot.recentProjects[0]?.path ??
-        null)
-  )
-}
-
-function resolveDisplayRecoveryStatus(
-  startupRoute: StartupRouteResult,
-  baseStatus: WorkPreferenceRestoreStatus,
-): WorkPreferenceRestoreStatus {
-  if (
-    startupRoute.kind === 'blank-chat' &&
-    (startupRoute.reason === 'project-missing' ||
-      startupRoute.reason === 'session-invalid')
-  ) {
-    return {
-      kind: 'fallback',
-      message: '最近工作偏好存在不可恢复项，已回退到项目推荐值。',
-    }
-  }
-
-  return baseStatus
-}
-
 export function useStudioBridge() {
   const [bridge, setBridge] = useState(() => window.xnovaStudio ?? null)
-  const [hostStatus, setHostStatus] = useState<'loading' | 'ready' | 'disabled' | 'error'>(
-    bridge ? 'loading' : 'disabled',
+  const {
+    hostState,
+    shellSnapshot,
+    selectedProjectPath,
+    selectedSessionId,
+    recoveryState,
+    setHostStatus,
+    setHostState,
+    setHostError,
+    setIsOpeningWorkspace,
+    setShellStatus,
+    setShellSnapshot,
+    setShellError,
+    setSelectedProjectPath,
+    setSelectedSessionId,
+    setRecoveryState,
+    resetSessionState,
+  } = useSessionStore(
+    useShallow((state) => ({
+      hostStatus: state.hostStatus,
+      hostState: state.hostState,
+      shellSnapshot: state.shellSnapshot,
+      selectedProjectPath: state.selectedProjectPath,
+      selectedSessionId: state.selectedSessionId,
+      recoveryState: state.recoveryState,
+      setHostStatus: state.setHostStatus,
+      setHostState: state.setHostState,
+      setHostError: state.setHostError,
+      setIsOpeningWorkspace: state.setIsOpeningWorkspace,
+      setShellStatus: state.setShellStatus,
+      setShellSnapshot: state.setShellSnapshot,
+      setShellError: state.setShellError,
+      setSelectedProjectPath: state.setSelectedProjectPath,
+      setSelectedSessionId: state.setSelectedSessionId,
+      setRecoveryState: state.setRecoveryState,
+      resetSessionState: state.resetSessionState,
+    })),
   )
-  const [hostState, setHostState] = useState<StudioHostState>({
-    workspacePath: null,
-    lastSelection: null,
-  })
-  const [hostError, setHostError] = useState<string | null>(null)
-  const [isOpeningWorkspace, setIsOpeningWorkspace] = useState(false)
-  const [shellStatus, setShellStatus] = useState<'loading' | 'ready' | 'disabled' | 'error'>(
-    bridge ? 'loading' : 'disabled',
+  const {
+    currentMode,
+    currentAgentId,
+    currentProviderId,
+    currentModelId,
+    setCurrentMode,
+    setCurrentAgentId,
+    setCurrentProviderId,
+    setCurrentModelId,
+    setCurrentProviderModel,
+    resetSettingsState,
+  } = useSettingsStore(
+    useShallow((state) => ({
+      currentMode: state.currentMode,
+      currentAgentId: state.currentAgentId,
+      currentProviderId: state.currentProviderId,
+      currentModelId: state.currentModelId,
+      setCurrentMode: state.setCurrentMode,
+      setCurrentAgentId: state.setCurrentAgentId,
+      setCurrentProviderId: state.setCurrentProviderId,
+      setCurrentModelId: state.setCurrentModelId,
+      setCurrentProviderModel: state.setCurrentProviderModel,
+      resetSettingsState: state.resetSettingsState,
+    })),
   )
-  const [shellSnapshot, setShellSnapshot] = useState<StudioShellSnapshot | null>(null)
-  const [shellError, setShellError] = useState<string | null>(null)
-  const [runtimeStatus, setRuntimeStatus] = useState<
-    'loading' | 'ready' | 'not-ready' | 'disabled' | 'error'
-  >(bridge ? 'loading' : 'disabled')
-  const [runtimeInspectResult, setRuntimeInspectResult] = useState<RuntimeInspectResult | null>(null)
-  const [runtimeError, setRuntimeError] = useState<string | null>(null)
-  const [lastRuntimeEvent, setLastRuntimeEvent] = useState<StudioRuntimeEvent | null>(null)
-  const [pendingPermissionRequest, setPendingPermissionRequest] =
-    useState<PermissionDialogRequest | null>(null)
-  const [pendingUserInputRequest, setPendingUserInputRequest] =
-    useState<UserQuestionDialogRequest | null>(null)
-  const [selectedProjectPath, setSelectedProjectPath] = useState<string | null>(null)
-  const [selectedSessionId, setSelectedSessionId] = useState<string | null>(null)
-  const [currentMode, setCurrentMode] = useState<'standard' | 'xforge'>('standard')
-  const [currentAgentId, setCurrentAgentId] = useState<string | null>(null)
-  const [currentProviderId, setCurrentProviderId] = useState<string | null>(null)
-  const [currentModelId, setCurrentModelId] = useState<string | null>(null)
-  const [isSubmitting, setIsSubmitting] = useState(false)
-  const [runStatus, setRunStatus] = useState<StudioRunStatus>('idle')
-  const [currentRunId, setCurrentRunId] = useState<string | null>(null)
-  const [lastRuntimeEventAt, setLastRuntimeEventAt] = useState<number | null>(null)
-  const [runIdleWarning, setRunIdleWarning] = useState<string | null>(null)
-  const [currentRunStep, setCurrentRunStep] = useState<string | null>(null)
+  const {
+    runtimeStatus,
+    runtimeInspectResult,
+    runStatus,
+    currentRunId,
+    lastRuntimeEventAt,
+    setRuntimeStatus,
+    setRuntimeInspectResult,
+    setRuntimeError,
+    setLastRuntimeEvent,
+    setPendingPermissionRequest,
+    setPendingUserInputRequest,
+    setIsSubmitting,
+    setRunStatus,
+    setCurrentRunId,
+    setLastRuntimeEventAt,
+    setRunIdleWarning,
+    setCurrentRunStep,
+    setLiveConversation,
+    setContextState,
+    handleRuntimeEvent,
+    resetRuntimeState,
+  } = useRuntimeStore(
+    useShallow((state) => ({
+      runtimeStatus: state.runtimeStatus,
+      runtimeInspectResult: state.runtimeInspectResult,
+      runStatus: state.runStatus,
+      currentRunId: state.currentRunId,
+      lastRuntimeEventAt: state.lastRuntimeEventAt,
+      setRuntimeStatus: state.setRuntimeStatus,
+      setRuntimeInspectResult: state.setRuntimeInspectResult,
+      setRuntimeError: state.setRuntimeError,
+      setLastRuntimeEvent: state.setLastRuntimeEvent,
+      setPendingPermissionRequest: state.setPendingPermissionRequest,
+      setPendingUserInputRequest: state.setPendingUserInputRequest,
+      setIsSubmitting: state.setIsSubmitting,
+      setRunStatus: state.setRunStatus,
+      setCurrentRunId: state.setCurrentRunId,
+      setLastRuntimeEventAt: state.setLastRuntimeEventAt,
+      setRunIdleWarning: state.setRunIdleWarning,
+      setCurrentRunStep: state.setCurrentRunStep,
+      setLiveConversation: state.setLiveConversation,
+      setContextState: state.setContextState,
+      handleRuntimeEvent: state.handleRuntimeEvent,
+      resetRuntimeState: state.resetRuntimeState,
+    })),
+  )
   const cancelRequestedRef = useRef(false)
   const rendererSubmitTimingRef = useRef<RendererSubmitTimingState>({
     enabled: false,
@@ -533,32 +296,6 @@ export function useStudioBridge() {
   const liveBlockSequenceRef = useRef(0)
   const pendingLiveDeltaChunksRef = useRef<PendingLiveDeltaChunk[]>([])
   const pendingLiveDeltaRafRef = useRef<number | null>(null)
-  const [liveConversation, setLiveConversation] = useState<LiveConversationState>(
-    () => createEmptyLiveConversation(),
-  )
-  const [contextState, setContextState] = useState<ContextState>({
-    usedPercentage: 0,
-    lastInputTokens: 0,
-    effectiveWindow: 128_000,
-    level: 'normal',
-  })
-  const [recoveryState, setRecoveryState] = useState<RecoveryState>({
-    status: {
-      kind: 'empty',
-      message: '当前没有可恢复的最近工作状态，已使用项目推荐值。',
-    },
-    sources: {
-      session: 'none',
-      mode: 'builtin',
-      agent: 'none',
-      model: 'none',
-    },
-    projectDefaults: {
-      mode: 'standard',
-      agentId: null,
-      modelId: null,
-    },
-  })
   const activeRunIdRef = useRef<string | null>(null)
   const finalizedRunIdsRef = useRef<Set<string>>(new Set())
   const recordFinalizedRunId = (runId: string): void => {
@@ -604,7 +341,7 @@ export function useStudioBridge() {
     cancelPendingLiveDeltaFlush()
     const chunks = drainPendingLiveDeltaChunks()
     setLiveConversation((current) =>
-      updater(applyBufferedLiveDeltaChunks(current, chunks, createLiveBlockId)),
+      updater(applyBufferedLiveDeltaChunks(current, chunks)),
     )
   }
 
@@ -632,7 +369,7 @@ export function useStudioBridge() {
         return
       }
       setLiveConversation((current) =>
-        applyBufferedLiveDeltaChunks(current, pendingChunks, createLiveBlockId),
+        applyBufferedLiveDeltaChunks(current, pendingChunks),
       )
     })
   }
@@ -671,103 +408,11 @@ export function useStudioBridge() {
     })
   }
 
-  const startupRoute: StartupRouteResult = useMemo(
-    () =>
-      resolveStartupRoute({
-        recentProject: shellSnapshot?.startup.recentProject ?? null,
-        recentSession: shellSnapshot?.startup.recentSession ?? null,
-      }),
-    [shellSnapshot],
-  )
-
-  const activeSession: StudioProjectSessionSummary | null = useMemo(() => {
-    if (!selectedSessionId) {
-      return null
-    }
-
-    if (shellSnapshot?.activeSession?.sessionId === selectedSessionId) {
-      return shellSnapshot.activeSession
-    }
-
-    return (
-      shellSnapshot?.projectSessions.find(
-        (session) => session.sessionId === selectedSessionId,
-      ) ?? null
-    )
-  }, [selectedSessionId, shellSnapshot])
-
-  const scratchpadEntries: StudioScratchpadEntry[] = useMemo(() => {
-    if (!shellSnapshot) {
-      return []
-    }
-
-    if (shellSnapshot.scratchpadEntries.length > 0) {
-      return shellSnapshot.scratchpadEntries
-    }
-
-    return [
-      {
-        id: 'global-scratchpad',
-        title: '全局 Scratchpad',
-        updatedAt: null,
-      },
-    ]
-  }, [shellSnapshot])
-
-  const workContext = useMemo(
-    () =>
-      resolveWorkContext({
-        selectedProjectPath,
-        activeSession,
-        defaults: shellSnapshot?.defaults ?? null,
-        agentId: currentAgentId,
-        modelId: currentModelId,
-        mode: currentMode,
-        contextUsageLabel: contextState.effectiveWindow > 0
-          ? `${Math.round(contextState.usedPercentage * 100)}%`
-          : null,
-        contextState,
-      }),
-    [
-      activeSession,
-      contextState,
-      currentAgentId,
-      currentMode,
-      currentModelId,
-      selectedProjectPath,
-      shellSnapshot,
-    ],
-  )
-
   const canRestoreProjectDefaults =
     selectedProjectPath !== null &&
     (currentMode !== recoveryState.projectDefaults.mode ||
       currentAgentId !== recoveryState.projectDefaults.agentId ||
       currentModelId !== recoveryState.projectDefaults.modelId)
-
-  const availablePrimaryAgentIds = useMemo(() => {
-    const ids = shellSnapshot?.defaults.availablePrimaryAgentIds ?? []
-    const next = [...ids]
-    if (currentAgentId && !next.includes(currentAgentId)) {
-      next.unshift(currentAgentId)
-    }
-    if (next.length === 0) {
-      next.push('general')
-    }
-    return next
-  }, [currentAgentId, shellSnapshot?.defaults.availablePrimaryAgentIds])
-
-  const statusIssues = useMemo(() => {
-    const issues = [
-      ...(shellSnapshot?.issues ?? []),
-      ...(runtimeInspectResult?.issues ?? []),
-    ]
-
-    return issues.filter((issue, index) => {
-      const key = `${issue.code}:${issue.message}`
-      return issues.findIndex((candidate) => `${candidate.code}:${candidate.message}` === key) === index
-    })
-  }, [runtimeInspectResult, shellSnapshot])
 
   const inspectRuntime = async (
     activeBridge: StudioBridgeApi,
@@ -816,59 +461,49 @@ export function useStudioBridge() {
     }
   }, [bridge])
 
-  useEffect(() => {
+  useLayoutEffect(() => {
     if (!bridge) {
+      resetSessionState()
+      resetSettingsState()
+      resetRuntimeState()
       setHostStatus('disabled')
       setHostError('宿主桥接不可用')
       setShellStatus('disabled')
       setShellError('宿主桥接不可用')
       setRuntimeStatus('disabled')
       setRuntimeError('宿主桥接不可用')
-      setIsSubmitting(false)
-      setRunStatus('idle')
-      setRuntimeInspectResult(null)
-      setPendingPermissionRequest(null)
-      setPendingUserInputRequest(null)
-      setCurrentRunId(null)
-      setLastRuntimeEventAt(null)
-      setRunIdleWarning(null)
-      setCurrentRunStep(null)
-      clearPendingLiveDeltaChunks()
       activeRunIdRef.current = null
       finalizedRunIdsRef.current.clear()
       finalizedTerminalStatusRef.current = null
       cancelRequestedRef.current = false
-      setCurrentAgentId(null)
-      setCurrentProviderId(null)
-      setCurrentModelId(null)
-      setLiveConversation(createEmptyLiveConversation())
-      setRecoveryState({
-        status: {
-          kind: 'empty',
-          message: '当前没有可恢复的最近工作状态，已使用项目推荐值。',
-        },
-        sources: {
-          session: 'none',
-          mode: 'builtin',
-          agent: 'none',
-          model: 'none',
-        },
-        projectDefaults: {
-          mode: 'standard',
-          agentId: null,
-          modelId: null,
-        },
-      })
+      clearPendingLiveDeltaChunks()
       return
     }
 
-    let disposed = false
+    resetSessionState()
+    resetSettingsState()
+    resetRuntimeState()
     setHostStatus('loading')
     setHostError(null)
     setShellStatus('loading')
     setShellError(null)
     setRuntimeStatus('loading')
     setRuntimeError(null)
+    activeRunIdRef.current = null
+    finalizedRunIdsRef.current.clear()
+    finalizedTerminalStatusRef.current = null
+    cancelRequestedRef.current = false
+    clearPendingLiveDeltaChunks()
+  }, [
+    bridge,
+  ])
+
+  useEffect(() => {
+    if (!bridge) {
+      return
+    }
+
+    let disposed = false
 
     const applySnapshot = (
       snapshot: StudioShellSnapshot,
@@ -877,47 +512,21 @@ export function useStudioBridge() {
         sessionId?: string | null
       },
     ) => {
-      const nextProjectPath = resolveProjectPathFromSnapshot(snapshot, selection)
-      const nextStartupRoute = resolveStartupRoute({
-        recentProject: snapshot.startup.recentProject,
-        recentSession: snapshot.startup.recentSession,
+      const hydrated = hydrateStudioBridgeSnapshot({
+        snapshot,
+        ...(selection === undefined ? {} : { selection }),
+        readStoredPreference: readProjectWorkPreference,
       })
-      const storedPreference = readProjectWorkPreference(nextProjectPath)
-      const restored = resolveWorkPreferenceRestore({
-        projectPath: nextProjectPath,
-        startupSessionId:
-          selection?.sessionId ??
-          (nextStartupRoute.kind === 'restore-session' &&
-          nextStartupRoute.projectPath === nextProjectPath
-            ? nextStartupRoute.sessionId
-            : null),
-        sessions: snapshot.projectSessions,
-        defaults: snapshot.defaults,
-        storedPreference,
-      })
-      const nextSelectedSessionId = selection?.sessionId ?? restored.sessionId
-      const nextActiveSession =
-        snapshot.activeSession?.sessionId === nextSelectedSessionId
-          ? snapshot.activeSession
-          : (snapshot.projectSessions.find(
-              (session) => session.sessionId === nextSelectedSessionId,
-            ) ?? null)
 
       setShellSnapshot(snapshot)
       setShellStatus('ready')
-      setSelectedProjectPath(nextProjectPath)
-      setSelectedSessionId(nextSelectedSessionId)
-      setCurrentMode(restored.mode)
-      setCurrentAgentId(restored.agentId)
-      setCurrentProviderId(
-        nextActiveSession?.providerId ?? snapshot.defaults.providerId ?? null,
-      )
-      setCurrentModelId(restored.modelId)
-      setRecoveryState({
-        status: resolveDisplayRecoveryStatus(nextStartupRoute, restored.status),
-        sources: restored.sources,
-        projectDefaults: restored.projectDefaults,
-      })
+      setSelectedProjectPath(hydrated.projectPath)
+      setSelectedSessionId(hydrated.selectedSessionId)
+      setCurrentMode(hydrated.mode)
+      setCurrentAgentId(hydrated.agentId)
+      setCurrentProviderId(hydrated.providerId)
+      setCurrentModelId(hydrated.modelId)
+      setRecoveryState(hydrated.recoveryState)
     }
 
     const loadShellSnapshot = async (
@@ -1019,15 +628,6 @@ export function useStudioBridge() {
         }
       }
 
-      if (
-        event.type !== 'text_delta' &&
-        event.type !== 'thinking' &&
-        event.type !== 'context_update'
-      ) {
-        setLastRuntimeEvent(event)
-      }
-      setLastRuntimeEventAt(Date.now())
-      setRunIdleWarning(null)
       switch (event.type) {
         case 'run_started':
           markRendererSubmitTiming('renderer_received_run_started')
@@ -1052,52 +652,6 @@ export function useStudioBridge() {
         case 'run_started':
           cancelRequestedRef.current = false
           activeRunIdRef.current = event.runId ?? null
-          setCurrentRunId(event.runId ?? null)
-          setIsSubmitting(true)
-          setRunStatus('running')
-          setCurrentRunStep(RUN_STEP_CALLING_MODEL)
-          break
-        case 'timing_mark': {
-          // bootstrap / 上下文准备阶段，用 stage 翻译为中文步骤
-          // 给用户在"正在启动运行"和"正在请求模型"之间的空窗补反馈。
-          const stage =
-            typeof event.payload?.stage === 'string'
-              ? event.payload.stage
-              : undefined
-          const bootstrapStep = resolveBootstrapStepFromTimingStage(stage)
-          if (bootstrapStep) {
-            setCurrentRunStep((current) =>
-              current === RUN_STEP_STOPPING ? current : bootstrapStep,
-            )
-          }
-          break
-        }
-        case 'model_request_started':
-          setRunStatus((current) =>
-            isActiveButNotCancelling(current) || current === 'idle'
-              ? 'running'
-              : current,
-          )
-          setCurrentRunStep((current) =>
-            current === RUN_STEP_STOPPING ? current : '正在请求模型',
-          )
-          break
-        case 'model_first_chunk':
-          setRunStatus((current) =>
-            isActiveButNotCancelling(current) || current === 'idle'
-              ? 'running'
-              : current,
-          )
-          setCurrentRunStep((current) =>
-            current === RUN_STEP_STOPPING ? current : '模型已开始响应',
-          )
-          break
-        case 'model_request_finished':
-          setRunStatus((current) =>
-            isActiveButNotCancelling(current) || current === 'idle'
-              ? 'running'
-              : current,
-          )
           break
         case 'model_request_failed':
           finishRendererSubmitTiming('failed')
@@ -1106,65 +660,6 @@ export function useStudioBridge() {
           }
           finalizedTerminalStatusRef.current = 'failed'
           activeRunIdRef.current = null
-          setIsSubmitting(false)
-          setRunStatus('failed')
-          setCurrentRunId(null)
-          setCurrentRunStep('运行失败')
-          break
-        case 'text_delta':
-        case 'thinking':
-        case 'context_update':
-          setCurrentRunStep((current) =>
-            current === RUN_STEP_STOPPING ? current : RUN_STEP_CALLING_MODEL,
-          )
-          setRunStatus((current) =>
-            isActiveButNotCancelling(current) || current === 'idle'
-              ? 'running'
-              : current,
-          )
-          break
-        case 'warning':
-          setRunStatus((current) =>
-            isActiveButNotCancelling(current) || current === 'idle'
-              ? 'running'
-              : current,
-          )
-          break
-        case 'tool_start':
-          // cancelling 期间不再切到 tool_calling，避免 Stop 反馈被冲刷
-          setRunStatus((current) =>
-            current === 'cancelling' ? current : 'tool_calling',
-          )
-          setCurrentRunStep((current) =>
-            current === RUN_STEP_STOPPING
-              ? current
-              : (createRunningStepFromRuntimeEvent(event) ?? '正在执行工具'),
-          )
-          break
-        case 'tool_end':
-          setRunStatus((current) =>
-            current === 'tool_calling' ? 'running' : current,
-          )
-          setCurrentRunStep((current) =>
-            current === RUN_STEP_STOPPING ? current : RUN_STEP_CALLING_MODEL,
-          )
-          break
-        case 'permission.request':
-          // cancelling 期间不再切到 waiting_permission
-          setRunStatus((current) =>
-            current === 'cancelling' ? current : 'waiting_permission',
-          )
-          setCurrentRunStep((current) =>
-            current === RUN_STEP_STOPPING ? current : '等待用户确认',
-          )
-          break
-        case 'permission.decision':
-          setRunStatus((current) =>
-            current === 'waiting_permission' ? 'running' : current,
-          )
-          setCurrentRunStep((current) =>
-            current === RUN_STEP_STOPPING ? current : RUN_STEP_CALLING_MODEL,
-          )
           break
         case 'run_completed':
         case 'session_end':
@@ -1174,10 +669,6 @@ export function useStudioBridge() {
           }
           finalizedTerminalStatusRef.current = 'completed'
           activeRunIdRef.current = null
-          setIsSubmitting(false)
-          setRunStatus('completed')
-          setCurrentRunId(null)
-          setCurrentRunStep('运行已完成')
           break
         case 'turn_end':
           finishRendererSubmitTiming(
@@ -1193,18 +684,6 @@ export function useStudioBridge() {
               ? 'failed'
               : 'completed'
           activeRunIdRef.current = null
-          setIsSubmitting(false)
-          setRunStatus(
-            event.payload?.error || event.payload?.aborted === true
-              ? 'failed'
-              : 'completed',
-          )
-          setCurrentRunId(null)
-          setCurrentRunStep(
-            event.payload?.error || event.payload?.aborted === true
-              ? '运行失败'
-              : '运行已完成',
-          )
           break
         case 'run_failed':
           finishRendererSubmitTiming('failed')
@@ -1213,10 +692,6 @@ export function useStudioBridge() {
           }
           finalizedTerminalStatusRef.current = 'failed'
           activeRunIdRef.current = null
-          setIsSubmitting(false)
-          setRunStatus('failed')
-          setCurrentRunId(null)
-          setCurrentRunStep('运行失败')
           break
         case 'run_cancelled':
           finishRendererSubmitTiming('cancelled')
@@ -1225,165 +700,11 @@ export function useStudioBridge() {
           }
           finalizedTerminalStatusRef.current = 'cancelled'
           activeRunIdRef.current = null
-          setIsSubmitting(false)
-          setRunStatus('cancelled')
-          setCurrentRunId(null)
-          setCurrentRunStep('已停止当前运行')
           break
         default:
           break
       }
-      if (event.type === 'text_delta') {
-        queuePendingLiveDeltaChunk(
-          'text',
-          typeof event.payload?.text === 'string' ? event.payload.text : '',
-        )
-        return
-      }
-      if (event.type === 'thinking') {
-        queuePendingLiveDeltaChunk(
-          'thinking',
-          typeof event.payload?.text === 'string' ? event.payload.text : '',
-        )
-        return
-      }
-
-      updateLiveConversationWithPending((current) => {
-        switch (event.type) {
-          case 'run_started':
-            return deriveLiveConversation(current.pendingUserText, [])
-          case 'tool_start': {
-            const toolCallId =
-              typeof event.payload?.toolCallId === 'string'
-                ? event.payload.toolCallId
-                : createLiveBlockId('tool')
-            const toolName =
-              typeof event.payload?.toolName === 'string'
-                ? event.payload.toolName
-                : 'unknown'
-            const args =
-              event.payload?.args && typeof event.payload.args === 'object'
-                ? (event.payload.args as Record<string, unknown>)
-                : {}
-            const runningStep = createToolRunningStep(toolName, args)
-            const finalizedCurrent = finalizeOpenThinkingBlocks(current)
-            const lastBlock = finalizedCurrent.blocks.at(-1)
-            const shouldInsertStatus =
-              finalizedCurrent.blocks.length === 0 ||
-              (lastBlock?.type !== 'text' && lastBlock?.type !== 'status')
-            const blocks: LiveConversationBlock[] = shouldInsertStatus
-              ? [
-                  ...finalizedCurrent.blocks,
-                  {
-                    id: createLiveBlockId('status'),
-                    type: 'status',
-                    content: runningStep,
-                  },
-                ]
-              : finalizedCurrent.blocks
-
-            return replaceLiveBlocks(finalizedCurrent, [
-              ...blocks,
-                {
-                  id: createLiveBlockId('tool'),
-                  type: 'tool',
-                  toolCallId,
-                  toolName,
-                  args,
-                  status: 'running',
-                },
-            ])
-          }
-          case 'tool_end': {
-            const toolCallId =
-              typeof event.payload?.toolCallId === 'string'
-                ? event.payload.toolCallId
-                : ''
-            let changed = false
-            const nextBlocks = current.blocks.map((block) => {
-              if (block.type !== 'tool' || block.toolCallId !== toolCallId) {
-                return block
-              }
-              changed = true
-              return {
-                ...block,
-                status:
-                  event.payload?.success === false ? 'error' as const : 'done' as const,
-                ...(typeof event.payload?.durationMs === 'number'
-                  ? { durationMs: event.payload.durationMs }
-                  : {}),
-                ...(typeof event.payload?.success === 'boolean'
-                  ? { success: event.payload.success }
-                  : {}),
-                ...(typeof event.payload?.resultSummary === 'string'
-                  ? { resultSummary: event.payload.resultSummary }
-                  : {}),
-                ...(typeof event.payload?.resultFull === 'string'
-                  ? { resultFull: event.payload.resultFull }
-                  : {}),
-              }
-            })
-            return changed ? replaceLiveBlocks(current, nextBlocks) : current
-          }
-          case 'run_completed':
-          case 'session_end':
-            return appendLiveStatusBlock(
-              finalizeOpenThinkingBlocks(current),
-              createLiveBlockId('status'),
-              '运行已完成',
-            )
-          case 'turn_end':
-            return appendLiveStatusBlock(
-              finalizeOpenThinkingBlocks(current),
-              createLiveBlockId('status'),
-              event.payload?.error || event.payload?.aborted === true
-                ? '运行失败'
-                : '运行已完成',
-            )
-          case 'model_request_failed':
-          case 'warning':
-          case 'error':
-          case 'runtime.error':
-          case 'run_failed':
-          case 'run_cancelled': {
-            const message =
-              typeof event.payload?.message === 'string'
-                ? event.payload.message
-                : typeof event.payload?.error === 'string'
-                  ? event.payload.error
-                  : null
-            if (!message) {
-              return current
-            }
-            const level =
-              event.type === 'warning'
-                ? 'warning'
-                : event.type === 'run_cancelled'
-                  ? 'info'
-                  : 'error'
-            return appendLiveSystemBlock(
-              finalizeOpenThinkingBlocks(current),
-              createLiveBlockId('system'),
-              message,
-              level,
-            )
-          }
-          default:
-            return current
-        }
-      })
-
-      // 上下文窗口状态更新（不在 setLiveConversation 内，因为是独立状态）
-      if (event.type === 'context_update' && event.payload) {
-        setContextState({
-          usedPercentage: typeof event.payload.usedPercentage === 'number' ? event.payload.usedPercentage : 0,
-          lastInputTokens: typeof event.payload.lastInputTokens === 'number' ? event.payload.lastInputTokens : 0,
-          effectiveWindow: typeof event.payload.effectiveWindow === 'number' ? event.payload.effectiveWindow : 128_000,
-          level: (['normal', 'warning', 'critical', 'overflow'].includes(event.payload.level as string)
-            ? event.payload.level as ContextState['level']
-            : 'normal'),
-        })
-      }
+      handleRuntimeEvent(event)
     })
     const unsubscribePermission =
       bridge.permission?.onRequest((request) => {
@@ -1462,30 +783,21 @@ export function useStudioBridge() {
         ),
       )
       setShellStatus('ready')
-      const selection = {
-        projectPath: response.state.workspacePath,
-      }
-      const nextProjectPath = resolveProjectPathFromSnapshot(snapshot, selection)
-      const nextStoredPreference = readProjectWorkPreference(nextProjectPath)
-      const restored = resolveWorkPreferenceRestore({
-        projectPath: nextProjectPath,
-        startupSessionId: snapshot.startup.recentSession?.sessionId ?? null,
-        sessions: snapshot.projectSessions,
-        defaults: snapshot.defaults,
-        storedPreference: nextStoredPreference,
+      const hydrated = hydrateStudioBridgeSnapshot({
+        snapshot,
+        selection: {
+          projectPath: response.state.workspacePath,
+        },
+        readStoredPreference: readProjectWorkPreference,
       })
       setShellSnapshot(snapshot)
-      setSelectedProjectPath(nextProjectPath)
-      setSelectedSessionId(restored.sessionId)
-      setCurrentMode(restored.mode)
-      setCurrentAgentId(restored.agentId)
-      setCurrentProviderId(snapshot.activeSession?.providerId ?? snapshot.defaults.providerId ?? null)
-      setCurrentModelId(restored.modelId)
-      setRecoveryState({
-        status: resolveDisplayRecoveryStatus(startupRoute, restored.status),
-        sources: restored.sources,
-        projectDefaults: restored.projectDefaults,
-      })
+      setSelectedProjectPath(hydrated.projectPath)
+      setSelectedSessionId(hydrated.selectedSessionId)
+      setCurrentMode(hydrated.mode)
+      setCurrentAgentId(hydrated.agentId)
+      setCurrentProviderId(hydrated.providerId)
+      setCurrentModelId(hydrated.modelId)
+      setRecoveryState(hydrated.recoveryState)
       await inspectRuntime(bridge, true)
     } catch (error) {
       const message = getErrorMessage(error)
@@ -1516,26 +828,22 @@ export function useStudioBridge() {
         projectPath,
         ...(storedPreference?.sessionId ? { sessionId: storedPreference.sessionId } : {}),
       })
-      const restored = resolveWorkPreferenceRestore({
-        projectPath,
-        startupSessionId: snapshot.startup.recentSession?.sessionId ?? null,
-        sessions: snapshot.projectSessions,
-        defaults: snapshot.defaults,
-        storedPreference,
+      const hydrated = hydrateStudioBridgeSnapshot({
+        snapshot,
+        selection: {
+          projectPath,
+        },
+        readStoredPreference: readProjectWorkPreference,
       })
       setShellSnapshot(snapshot)
       setShellStatus('ready')
-      setSelectedProjectPath(projectPath)
-      setSelectedSessionId(restored.sessionId)
-      setCurrentMode(restored.mode)
-      setCurrentAgentId(restored.agentId)
-      setCurrentProviderId(snapshot.activeSession?.providerId ?? snapshot.defaults.providerId ?? null)
-      setCurrentModelId(restored.modelId)
-      setRecoveryState({
-        status: resolveDisplayRecoveryStatus(startupRoute, restored.status),
-        sources: restored.sources,
-        projectDefaults: restored.projectDefaults,
-      })
+      setSelectedProjectPath(hydrated.projectPath)
+      setSelectedSessionId(hydrated.selectedSessionId)
+      setCurrentMode(hydrated.mode)
+      setCurrentAgentId(hydrated.agentId)
+      setCurrentProviderId(hydrated.providerId)
+      setCurrentModelId(hydrated.modelId)
+      setRecoveryState(hydrated.recoveryState)
       await inspectRuntime(bridge, true)
     } catch (error) {
       setShellStatus('error')
@@ -1559,61 +867,32 @@ export function useStudioBridge() {
         projectPath: selectedProjectPath,
         sessionId,
       })
-      const nextStartupRoute = resolveStartupRoute({
-        recentProject: snapshot.startup.recentProject,
-        recentSession: snapshot.startup.recentSession,
+      const hydrated = hydrateStudioBridgeSnapshot({
+        snapshot,
+        selection: {
+          projectPath: selectedProjectPath,
+          sessionId,
+        },
+        readStoredPreference: readProjectWorkPreference,
       })
-      const storedPreference = readProjectWorkPreference(selectedProjectPath)
-      const restored = resolveWorkPreferenceRestore({
-        projectPath: selectedProjectPath,
-        startupSessionId: sessionId,
-        sessions: snapshot.projectSessions,
-        defaults: snapshot.defaults,
-        storedPreference,
-      })
-      const nextSession =
-        snapshot.projectSessions.find((session) => session.sessionId === sessionId) ?? null
       setShellSnapshot(snapshot)
       setShellStatus('ready')
-      setSelectedProjectPath(selectedProjectPath)
-      setSelectedSessionId(sessionId)
-      setCurrentMode(restored.mode)
-      setCurrentAgentId(restored.agentId)
-      setCurrentProviderId(nextSession?.providerId ?? snapshot.defaults.providerId ?? null)
-      setCurrentModelId(nextSession?.modelId ?? restored.modelId)
-      setRecoveryState({
-        status: resolveDisplayRecoveryStatus(nextStartupRoute, restored.status),
-        sources: restored.sources,
-        projectDefaults: restored.projectDefaults,
-      })
+      setSelectedProjectPath(hydrated.projectPath)
+      setSelectedSessionId(hydrated.selectedSessionId)
+      setCurrentMode(hydrated.mode)
+      setCurrentAgentId(hydrated.agentId)
+      setCurrentProviderId(hydrated.providerId)
+      setCurrentModelId(hydrated.modelId)
+      setRecoveryState(hydrated.recoveryState)
       writeProjectWorkPreference(selectedProjectPath, {
         sessionId,
-        modelId: nextSession?.modelId ?? recoveryState.projectDefaults.modelId,
+        modelId: hydrated.modelId ?? recoveryState.projectDefaults.modelId,
       })
     } catch (error) {
       setShellStatus('error')
       setShellError(getErrorMessage(error))
     }
   }
-
-  const startupNotice = useMemo(() => {
-    if (!bridge) {
-      return '宿主桥接不可用'
-    }
-
-    if (startupRoute.kind === 'restore-session') {
-      return shellError
-    }
-
-    switch (startupRoute.reason) {
-      case 'project-missing':
-        return '最近项目路径已失效，已回退到空白聊天页。'
-      case 'session-invalid':
-        return '最近会话数据损坏，已回退到空白聊天页。'
-      default:
-        return shellError
-    }
-  }, [bridge, shellError, startupRoute])
 
   const switchMode = (mode: 'standard' | 'xforge'): string | null => {
     if (!shellSnapshot?.defaults.allowedModes.includes(mode)) {
@@ -1793,46 +1072,26 @@ export function useStudioBridge() {
           if (submitEpochRef.current !== submitEpoch) {
             return
           }
-          const selection = {
-            ...(projectPath === undefined ? {} : { projectPath }),
-            ...(submitResult.sessionId === null
-              ? {}
-              : { sessionId: submitResult.sessionId }),
-          }
-          const nextProjectPath = resolveProjectPathFromSnapshot(snapshot, selection)
-          const nextStartupRoute = resolveStartupRoute({
-            recentProject: snapshot.startup.recentProject,
-            recentSession: snapshot.startup.recentSession,
-          })
-          const storedPreference = readProjectWorkPreference(nextProjectPath)
-          const restored = resolveWorkPreferenceRestore({
-            projectPath: nextProjectPath,
-            startupSessionId:
-              submitResult.sessionId ??
-              (nextStartupRoute.kind === 'restore-session' &&
-              nextStartupRoute.projectPath === nextProjectPath
-                ? nextStartupRoute.sessionId
-                : null),
-            sessions: snapshot.projectSessions,
-            defaults: snapshot.defaults,
-            storedPreference,
+          const hydrated = hydrateStudioBridgeSnapshot({
+            snapshot,
+            selection: {
+              ...(projectPath === undefined ? {} : { projectPath }),
+              ...(submitResult.sessionId === null
+                ? {}
+                : { sessionId: submitResult.sessionId }),
+            },
+            readStoredPreference: readProjectWorkPreference,
           })
 
           setShellSnapshot(snapshot)
           setShellStatus('ready')
-          setSelectedProjectPath(nextProjectPath)
-          setSelectedSessionId(submitResult.sessionId ?? restored.sessionId)
-          setCurrentMode(restored.mode)
-          setCurrentAgentId(restored.agentId)
-          setCurrentProviderId(
-            snapshot.activeSession?.providerId ?? snapshot.defaults.providerId ?? null,
-          )
-          setCurrentModelId(restored.modelId)
-          setRecoveryState({
-            status: resolveDisplayRecoveryStatus(nextStartupRoute, restored.status),
-            sources: restored.sources,
-            projectDefaults: restored.projectDefaults,
-          })
+          setSelectedProjectPath(hydrated.projectPath)
+          setSelectedSessionId(hydrated.selectedSessionId)
+          setCurrentMode(hydrated.mode)
+          setCurrentAgentId(hydrated.agentId)
+          setCurrentProviderId(hydrated.providerId)
+          setCurrentModelId(hydrated.modelId)
+          setRecoveryState(hydrated.recoveryState)
           const inspectResult = await inspectRuntime(bridge, true)
           // 第二次 epoch 守卫：inspectRuntime 期间又可能发起新 submit
           if (submitEpochRef.current !== submitEpoch) {
@@ -2023,57 +1282,19 @@ export function useStudioBridge() {
   }
 
   return {
-    hostStatus,
-    hostState,
-    hostError,
-    isOpeningWorkspace,
     openWorkspace,
-    shellStatus,
-    shellSnapshot,
-    shellError,
-    runtimeStatus,
-    runtimeInspectResult,
-    runtimeError,
-    startupRoute,
-    startupNotice,
-    activeSession,
-    selectedProjectPath,
-    selectedSessionId,
     selectProject,
     selectSession,
-    scratchpadEntries,
-    workContext,
-    currentMode,
-    currentAgentId,
-    currentProviderId,
-    currentModelId,
     setCurrentProviderModel: (providerId: string, modelId: string) => {
       setCurrentProviderId(providerId || null)
       setCurrentModelId(modelId || null)
     },
-    availablePrimaryAgentIds,
-    recoveryStatus: recoveryState.status,
-    recoverySources: recoveryState.sources,
-    statusIssues,
-    canRestoreProjectDefaults,
     restoreProjectDefaults,
     switchMode,
     switchPrimaryAgent,
     submitPrompt,
     cancelCurrentRun,
-    isSubmitting,
-    runStatus,
-    isRunActive: isActiveRunStatus(runStatus),
     runtimeSubmitAvailable: typeof bridge?.runtime.submit === 'function',
-    currentRunId,
-    currentRunStep,
-    lastRuntimeEventAt,
-    runIdleWarning,
-    liveConversation,
-    contextState,
-    lastRuntimeEvent,
-    pendingPermissionRequest,
-    pendingUserInputRequest,
     respondPermissionRequest,
     respondUserInputRequest,
     settingsApi: (bridge?.settings ?? null) as StudioSettingsApi | null,

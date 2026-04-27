@@ -3,7 +3,7 @@ import type {
   StudioProjectSessionSummary,
   StudioShellDefaults,
 } from '../../shared/studio-bridge-contract'
-import type { ContextState } from '../hooks/useStudioBridge'
+import type { ContextState } from '../stores/runtime-store'
 
 export interface WorkContext {
   projectPath: string | null
@@ -41,4 +41,3 @@ export function resolveWorkContext(input: WorkContextInput): WorkContext {
       0,
   }
 }
-

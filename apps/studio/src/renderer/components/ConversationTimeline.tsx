@@ -5,7 +5,7 @@ import type {
 } from '../../shared/studio-bridge-contract'
 import type {
   LiveConversationState,
-} from '../hooks/useStudioBridge'
+} from '../stores/runtime-store'
 import { MarkdownContent } from '../utils/markdown-renderer'
 import {
   buildConversationRenderRows,
