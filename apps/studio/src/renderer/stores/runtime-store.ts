@@ -9,6 +9,12 @@ import type {
   UserQuestionDialogRequest,
 } from '../../shared/studio-bridge-contract'
 import { createToolRunningStep } from '../utils/tool-event-summary'
+import {
+  clampLiveConversationBlocks,
+  MAX_TOOL_RESULT_FULL_CHARS,
+  MAX_TOOL_RESULT_SUMMARY_CHARS,
+  truncateConversationText,
+} from '../utils/conversation-memory-guards'
 
 export interface ContextState {
   usedPercentage: number
@@ -77,7 +83,7 @@ export function deriveLiveConversation(
 ): LiveConversationState {
   return {
     pendingUserText,
-    blocks,
+    blocks: clampLiveConversationBlocks(blocks),
   }
 }
 
@@ -689,10 +695,20 @@ export const useRuntimeStore = create<RuntimeStoreState & RuntimeStoreActions>()
                     ? { success: event.payload.success }
                     : {}),
                   ...(typeof event.payload?.resultSummary === 'string'
-                    ? { resultSummary: event.payload.resultSummary }
+                    ? {
+                        resultSummary: truncateConversationText(
+                          event.payload.resultSummary,
+                          MAX_TOOL_RESULT_SUMMARY_CHARS,
+                        ),
+                      }
                     : {}),
                   ...(typeof event.payload?.resultFull === 'string'
-                    ? { resultFull: event.payload.resultFull }
+                    ? {
+                        resultFull: truncateConversationText(
+                          event.payload.resultFull,
+                          MAX_TOOL_RESULT_FULL_CHARS,
+                        ),
+                      }
                     : {}),
                 }
               }),

@@ -1,4 +1,11 @@
 ## 2026-04-27
+- **Studio 交互现代化 Phase 3**：接入时间线虚拟化、窗口化历史与输出体量防线
+  - `apps/studio` 引入 `react-virtuoso`，`ConversationTimeline` 改为动态高度虚拟列表；默认只展示最近 240 条持久化消息，并支持按 80 条批量加载更早历史
+  - `liveConversation.blocks` 现在有 200 条窗口上限；超出后会插入“更早的实时输出已折叠”状态标记，避免无提示地在边界处截断
+  - 工具 `resultSummary / resultFull` 在进入 renderer 状态层前统一截断，历史 `shellSnapshot.activeSession` 也会在 hydration 时做同样裁剪，防止长工具输出撑爆时间线和内存
+  - 补齐 remount 回归：thinking 计时改为基于 `startedAt` 可重建，工具组/工具行的展开状态由时间线父层持有，虚拟列表回收后再进入视口不会丢用户展开意图
+  - 验证：`pnpm --filter xnova-studio typecheck`、`pnpm --filter xnova-studio test`、`pnpm --filter xnova-studio build` 全部通过
+  - 任务详情见 `.trellis/tasks/04-27-studio-interaction-phase3-virtualization/`
 - **Studio 交互现代化 Phase 2**：引入 renderer store 分层，收口 `useStudioBridge` 的状态事实源
   - `apps/studio` 新增 `runtime-store / session-store / settings-store`，用 `zustand + immer` 承接运行态、项目/会话态与工作偏好态
   - `useStudioBridge` 不再通过本地 `useState` 持有主状态，改为作为 bridge 层读写 store，并保留原有 hook 对外 contract 以兼容页面与测试

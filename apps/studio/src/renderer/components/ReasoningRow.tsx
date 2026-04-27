@@ -6,46 +6,59 @@ interface ReasoningRowProps {
   content: string
   isLive: boolean
   durationMs?: number
+  startedAt?: number
+  endedAt?: number
+  isExpanded?: boolean
+  onExpandedChange?: (nextExpanded: boolean) => void
 }
 
 export const ReasoningRow = memo(function ReasoningRow(props: ReasoningRowProps) {
-  const [isExpanded, setIsExpanded] = useState(props.isLive)
-  const [elapsedMs, setElapsedMs] = useState(props.durationMs ?? 0)
+  const isExpandedControlled = typeof props.isExpanded === 'boolean'
+  const [internalExpanded, setInternalExpanded] = useState(props.isLive)
+  const isExpanded = isExpandedControlled ? props.isExpanded : internalExpanded
+  const setExpanded = (nextExpanded: boolean) => {
+    if (!isExpandedControlled) {
+      setInternalExpanded(nextExpanded)
+    }
+    props.onExpandedChange?.(nextExpanded)
+  }
+  const [elapsedMs, setElapsedMs] = useState(() => {
+    if (props.durationMs !== undefined) {
+      return props.durationMs
+    }
+    if (props.startedAt !== undefined) {
+      return Math.max(0, Date.now() - props.startedAt)
+    }
+    return 0
+  })
   const previousLiveRef = useRef(props.isLive)
-  const startTimeRef = useRef<number | null>(props.isLive ? Date.now() : null)
-  const elapsedRef = useRef(elapsedMs)
-
-  useEffect(() => {
-    elapsedRef.current = elapsedMs
-  }, [elapsedMs])
 
   useEffect(() => {
     if (!props.isLive) {
-      if (startTimeRef.current !== null) {
-        setElapsedMs(Date.now() - startTimeRef.current)
-      }
       if (props.durationMs !== undefined) {
         setElapsedMs(props.durationMs)
+        return
       }
-      startTimeRef.current = null
+      if (props.startedAt !== undefined) {
+        const endedAt = props.endedAt ?? Date.now()
+        setElapsedMs(Math.max(0, endedAt - props.startedAt))
+      }
       return
     }
 
-    setIsExpanded(true)
-    startTimeRef.current = Date.now() - elapsedRef.current
+    setExpanded(true)
+    const startTime = props.startedAt ?? Date.now()
+    setElapsedMs(Math.max(0, Date.now() - startTime))
     const timer = window.setInterval(() => {
-      if (startTimeRef.current === null) {
-        return
-      }
-      setElapsedMs(Date.now() - startTimeRef.current)
+      setElapsedMs(Math.max(0, Date.now() - startTime))
     }, 100)
 
     return () => window.clearInterval(timer)
-  }, [props.durationMs, props.isLive])
+  }, [props.durationMs, props.endedAt, props.isLive, props.startedAt])
 
   useEffect(() => {
     if (previousLiveRef.current && !props.isLive) {
-      setIsExpanded(false)
+      setExpanded(false)
     }
     previousLiveRef.current = props.isLive
   }, [props.isLive])
@@ -59,7 +72,7 @@ export const ReasoningRow = memo(function ReasoningRow(props: ReasoningRowProps)
       <button
         type="button"
         className="reasoning-row-header"
-        onClick={() => setIsExpanded((current) => !current)}
+        onClick={() => setExpanded(!isExpanded)}
         aria-expanded={isExpanded}
       >
         <span className="reasoning-row-chevron">

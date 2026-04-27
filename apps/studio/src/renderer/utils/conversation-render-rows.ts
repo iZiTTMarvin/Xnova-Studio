@@ -3,6 +3,7 @@ import {
   isExplorationTool,
   normalizeToolName,
 } from './tool-classification'
+import { sanitizeConversationBlock } from './conversation-memory-guards'
 
 export interface ToolRowModel {
   id: string
@@ -20,7 +21,15 @@ export interface ToolRowModel {
 
 export type ConversationRenderRow =
   | { type: 'text'; id: string; content: string }
-  | { type: 'reasoning'; id: string; content: string; isLive: boolean; durationMs?: number }
+  | {
+      type: 'reasoning'
+      id: string
+      content: string
+      isLive: boolean
+      durationMs?: number
+      startedAt?: number
+      endedAt?: number
+    }
   | { type: 'tool_activity_group'; id: string; title: string; running: boolean; tools: ToolRowModel[] }
   | { type: 'tool_action'; id: string; tool: ToolRowModel }
   | { type: 'status'; id: string; content: string }
@@ -56,18 +65,40 @@ function isFailedTool(tool: ToolRowModel): boolean {
 function toToolRowModel(
   block: Extract<StudioConversationBlock, { type: 'tool' }>,
 ): ToolRowModel {
+  const sanitizedBlock = sanitizeConversationBlock(block)
+  if (sanitizedBlock.type !== 'tool') {
+    return {
+      id: block.id,
+      toolCallId: block.toolCallId,
+      toolName: block.toolName,
+      normalizedToolName: normalizeToolName(block.toolName),
+      args: block.args,
+      status: block.status,
+    }
+  }
+
   return {
-    id: block.id,
-    toolCallId: block.toolCallId,
-    toolName: block.toolName,
-    normalizedToolName: normalizeToolName(block.toolName),
-    args: block.args,
-    status: block.status,
-    ...(block.success === undefined ? {} : { success: block.success }),
-    ...(block.durationMs === undefined ? {} : { durationMs: block.durationMs }),
-    ...(block.resultSummary === undefined ? {} : { resultSummary: block.resultSummary }),
-    ...(block.resultFull === undefined ? {} : { resultFull: block.resultFull }),
-    ...(block.agentId === undefined ? {} : { agentId: block.agentId }),
+    id: sanitizedBlock.id,
+    toolCallId: sanitizedBlock.toolCallId,
+    toolName: sanitizedBlock.toolName,
+    normalizedToolName: normalizeToolName(sanitizedBlock.toolName),
+    args: sanitizedBlock.args,
+    status: sanitizedBlock.status,
+    ...(sanitizedBlock.success === undefined
+      ? {}
+      : { success: sanitizedBlock.success }),
+    ...(sanitizedBlock.durationMs === undefined
+      ? {}
+      : { durationMs: sanitizedBlock.durationMs }),
+    ...(sanitizedBlock.resultSummary === undefined
+      ? {}
+      : { resultSummary: sanitizedBlock.resultSummary }),
+    ...(sanitizedBlock.resultFull === undefined
+      ? {}
+      : { resultFull: sanitizedBlock.resultFull }),
+    ...(sanitizedBlock.agentId === undefined
+      ? {}
+      : { agentId: sanitizedBlock.agentId }),
   }
 }
 
@@ -181,6 +212,8 @@ export function buildConversationRenderRows(
           content: block.content,
           isLive: index === liveThinkingIndex,
           ...(block.durationMs === undefined ? {} : { durationMs: block.durationMs }),
+          ...(block.startedAt === undefined ? {} : { startedAt: block.startedAt }),
+          ...(block.endedAt === undefined ? {} : { endedAt: block.endedAt }),
         })
         break
 

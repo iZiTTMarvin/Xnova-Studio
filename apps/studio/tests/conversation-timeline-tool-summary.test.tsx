@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 
-import { cleanup, render, screen } from '@testing-library/react'
+import { cleanup, fireEvent, render, screen } from '@testing-library/react'
 import { afterEach, describe, expect, it } from 'vitest'
 import { ConversationTimeline } from '../src/renderer/components/ConversationTimeline'
 
@@ -350,5 +350,44 @@ describe('ConversationTimeline blocks-first', () => {
     )
 
     expect(screen.queryByTestId('conversation-thinking-placeholder')).toBeNull()
+  })
+
+  it('长会话默认只展示最近窗口，并允许继续展开更早消息', () => {
+    render(
+      <ConversationTimeline
+        session={{
+          sessionId: 'session-window',
+          projectPath: 'D:/workspace/demo',
+          title: '窗口化会话',
+          updatedAt: '2026-04-26T00:00:00.000Z',
+          gitBranch: 'main',
+          messageCount: 360,
+          subagents: [],
+          leafEventUuid: 'assistant-359',
+          messages: Array.from({ length: 360 }, (_, index) => ({
+            id: `assistant-${index}`,
+            role: 'assistant' as const,
+            blocks: [
+              {
+                id: `text-${index}`,
+                type: 'text' as const,
+                content: `消息 ${index}`,
+              },
+            ],
+          })),
+        }}
+        isRunActive={false}
+        liveConversation={createEmptyLiveConversation()}
+      />,
+    )
+
+    expect(screen.queryByText('消息 0')).toBeNull()
+    expect(screen.getByText('消息 359')).toBeTruthy()
+    expect(screen.getByRole('button', { name: /加载更早消息/ })).toBeTruthy()
+
+    fireEvent.click(screen.getByRole('button', { name: /加载更早消息/ }))
+
+    expect(screen.getByText('消息 40')).toBeTruthy()
+    expect(screen.queryByText('消息 0')).toBeNull()
   })
 })

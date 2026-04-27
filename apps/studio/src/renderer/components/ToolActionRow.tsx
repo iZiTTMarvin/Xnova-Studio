@@ -10,6 +10,8 @@ import {
 
 interface ToolActionRowProps {
   tool: ToolRowModel
+  isExpanded?: boolean
+  onExpandedChange?: (nextExpanded: boolean) => void
 }
 
 function isToolFailure(tool: ToolRowModel): boolean {
@@ -37,7 +39,15 @@ function getVisibleFailureSummary(tool: ToolRowModel): string | null {
 }
 
 export const ToolActionRow = memo(function ToolActionRow(props: ToolActionRowProps) {
-  const [isExpanded, setIsExpanded] = useState(false)
+  const isExpandedControlled = typeof props.isExpanded === 'boolean'
+  const [internalExpanded, setInternalExpanded] = useState(false)
+  const isExpanded = isExpandedControlled ? props.isExpanded : internalExpanded
+  const setExpanded = (nextExpanded: boolean) => {
+    if (!isExpandedControlled) {
+      setInternalExpanded(nextExpanded)
+    }
+    props.onExpandedChange?.(nextExpanded)
+  }
   const summary = createToolEventSummary(
     props.tool.toolName,
     props.tool.args,
@@ -75,7 +85,7 @@ export const ToolActionRow = memo(function ToolActionRow(props: ToolActionRowPro
         className="tool-action-row-main"
         onClick={() => {
           if (hasExpandableDetails) {
-            setIsExpanded((current) => !current)
+            setExpanded(!isExpanded)
           }
         }}
         aria-expanded={hasExpandableDetails ? isExpanded : undefined}

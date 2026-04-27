@@ -56,4 +56,35 @@ describe('ReasoningRow', () => {
     expect(screen.getByText('⏱ 0.1s')).toBeTruthy()
     expect(screen.getByText('思考过程')).toBeTruthy()
   })
+
+  it('live thinking 重新挂载后会沿用 startedAt 继续计时', () => {
+    vi.useFakeTimers()
+
+    const startedAt = Date.now() - 1_200
+    const { unmount } = render(
+      <ReasoningRow
+        content="继续思考"
+        isLive={true}
+        startedAt={startedAt}
+      />,
+    )
+
+    expect(screen.getByText('⏱ 1.2s')).toBeTruthy()
+
+    unmount()
+
+    act(() => {
+      vi.advanceTimersByTime(800)
+    })
+
+    render(
+      <ReasoningRow
+        content="继续思考"
+        isLive={true}
+        startedAt={startedAt}
+      />,
+    )
+
+    expect(screen.getByText('⏱ 2.0s')).toBeTruthy()
+  })
 })

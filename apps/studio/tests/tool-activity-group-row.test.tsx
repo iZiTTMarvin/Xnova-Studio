@@ -1,7 +1,8 @@
 // @vitest-environment jsdom
 
-import { cleanup, render, screen } from '@testing-library/react'
+import { cleanup, fireEvent, render, screen } from '@testing-library/react'
 import { act } from 'react'
+import { useState } from 'react'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { ToolActivityGroupRow } from '../src/renderer/components/ToolActivityGroupRow'
 import type { ToolRowModel } from '../src/renderer/utils/conversation-render-rows'
@@ -23,6 +24,33 @@ function createToolModel(id: string): ToolRowModel {
     status: 'done',
     success: true,
   }
+}
+
+function ControlledGroupHarness(props: {
+  tools: ToolRowModel[]
+}) {
+  const [mounted, setMounted] = useState(true)
+  const [expanded, setExpanded] = useState(true)
+  const [hasInteracted, setHasInteracted] = useState(true)
+
+  return (
+    <div>
+      <button type="button" onClick={() => setMounted((current) => !current)}>
+        {mounted ? '卸载' : '挂载'}
+      </button>
+      {mounted ? (
+        <ToolActivityGroupRow
+          title="已搜索代码库"
+          running={false}
+          tools={props.tools}
+          isExpanded={expanded}
+          hasInteracted={hasInteracted}
+          onExpandedChange={setExpanded}
+          onInteractedChange={setHasInteracted}
+        />
+      ) : null}
+    </div>
+  )
 }
 
 describe('ToolActivityGroupRow', () => {
@@ -80,5 +108,19 @@ describe('ToolActivityGroupRow', () => {
       vi.advanceTimersByTime(200)
     })
     expect(screen.queryByText('file-1.ts')).toBeNull()
+  })
+
+  it('受控展开状态在 remount 后保持一致', () => {
+    const tools = [createToolModel('1'), createToolModel('2')]
+
+    render(<ControlledGroupHarness tools={tools} />)
+
+    expect(screen.getByText('file-1.ts')).toBeTruthy()
+
+    fireEvent.click(screen.getByRole('button', { name: '卸载' }))
+    expect(screen.queryByText('file-1.ts')).toBeNull()
+
+    fireEvent.click(screen.getByRole('button', { name: '挂载' }))
+    expect(screen.getByText('file-1.ts')).toBeTruthy()
   })
 })

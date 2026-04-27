@@ -10,6 +10,10 @@ interface ToolActivityGroupRowProps {
   title: string
   running: boolean
   tools: ToolRowModel[]
+  isExpanded?: boolean
+  hasInteracted?: boolean
+  onExpandedChange?: (nextExpanded: boolean) => void
+  onInteractedChange?: (nextHasInteracted: boolean) => void
 }
 
 const MAX_VISIBLE_TOOLS = 6
@@ -20,14 +24,32 @@ function isToolRunning(tool: ToolRowModel): boolean {
 }
 
 export function ToolActivityGroupRow(props: ToolActivityGroupRowProps) {
-  const [isExpanded, setIsExpanded] = useState(props.running)
-  const [hasInteracted, setHasInteracted] = useState(false)
+  const isExpandedControlled = typeof props.isExpanded === 'boolean'
+  const hasInteractedControlled = typeof props.hasInteracted === 'boolean'
+  const [internalExpanded, setInternalExpanded] = useState(props.running)
+  const [internalHasInteracted, setInternalHasInteracted] = useState(false)
+  const isExpanded = isExpandedControlled ? props.isExpanded : internalExpanded
+  const hasInteracted = hasInteractedControlled
+    ? props.hasInteracted
+    : internalHasInteracted
+  const setExpanded = (nextExpanded: boolean) => {
+    if (!isExpandedControlled) {
+      setInternalExpanded(nextExpanded)
+    }
+    props.onExpandedChange?.(nextExpanded)
+  }
+  const setInteracted = (nextHasInteracted: boolean) => {
+    if (!hasInteractedControlled) {
+      setInternalHasInteracted(nextHasInteracted)
+    }
+    props.onInteractedChange?.(nextHasInteracted)
+  }
   const previousRunningRef = useRef(props.running)
 
   useEffect(() => {
     if (props.running) {
       if (!hasInteracted) {
-        setIsExpanded(true)
+        setExpanded(true)
       }
       previousRunningRef.current = true
       return
@@ -35,7 +57,7 @@ export function ToolActivityGroupRow(props: ToolActivityGroupRowProps) {
 
     if (previousRunningRef.current && !hasInteracted) {
       const timer = window.setTimeout(() => {
-        setIsExpanded(false)
+        setExpanded(false)
       }, AUTO_COLLAPSE_DELAY_MS)
       previousRunningRef.current = false
       return () => window.clearTimeout(timer)
@@ -61,8 +83,8 @@ export function ToolActivityGroupRow(props: ToolActivityGroupRowProps) {
         type="button"
         className="tool-activity-group-row-main"
         onClick={() => {
-          setHasInteracted(true)
-          setIsExpanded((current) => !current)
+          setInteracted(true)
+          setExpanded(!isExpanded)
         }}
         aria-expanded={isExpanded}
       >

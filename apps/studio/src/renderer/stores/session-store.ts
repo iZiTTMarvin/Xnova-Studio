@@ -9,6 +9,7 @@ import type {
   WorkPreferenceRestoreSources,
   WorkPreferenceRestoreStatus,
 } from '../utils/work-preferences'
+import { sanitizeShellSnapshot } from '../utils/conversation-memory-guards'
 
 export interface RecoveryState {
   status: WorkPreferenceRestoreStatus
@@ -111,7 +112,8 @@ export const useSessionStore = create<SessionStoreState & SessionStoreActions>()
     },
     setShellSnapshot(snapshot) {
       set((state) => {
-        state.shellSnapshot = snapshot
+        state.shellSnapshot =
+          snapshot === null ? null : sanitizeShellSnapshot(snapshot)
       })
     },
     setShellError(error) {

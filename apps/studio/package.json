@@ -24,6 +24,7 @@
     "libsql": "^0.5.22",
     "react": "^19.2.5",
     "react-dom": "^19.2.5",
+    "react-virtuoso": "^4.18.6",
     "zustand": "^5.0.12"
   },
   "devDependencies": {
