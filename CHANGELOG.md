@@ -6,6 +6,7 @@
   - 会话页把 composer 固定悬浮在底部，并将项目、分支、Agent、模型、Context、SubAgent 上下文移到输入框附近
   - 时间线滚动区固定为 `ConversationTimeline` 本身，并新增“回到底部”入口：流式输出默认跟随底部，用户上滚后可显式恢复跟随
   - 修复点击会话刷新快照时，侧边栏项目/聊天块短暂闪成 loading 文案的问题
+  - 修复悬浮 composer 遮住最后一段对话后无法继续下滑的问题，最后一条消息现在可以滚到输入框上方完整显示
   - 新增 `DESIGN.md` 和 Trellis research，固化本轮 Codex App 参考布局与后续 UI 决策边界
 - **Studio 交互现代化 Phase 3**：接入时间线虚拟化、窗口化历史与输出体量防线
   - `apps/studio` 引入 `react-virtuoso`，`ConversationTimeline` 改为动态高度虚拟列表；默认只展示最近 240 条持久化消息，并支持按 80 条批量加载更早历史

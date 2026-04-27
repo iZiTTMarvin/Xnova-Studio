@@ -2883,6 +2883,7 @@ body,
 }
 
 #app .workspace-surface {
+  --conversation-floating-safe-area: clamp(320px, 34vh, 420px);
   height: 100%;
   min-height: 0;
   display: flex;
@@ -2927,12 +2928,20 @@ body,
   width: min(885px, calc(100vw - 420px));
   min-height: 100%;
   margin: 0 auto;
-  padding: 76px 0 230px;
+  padding: 76px 0 24px;
   display: grid;
   gap: 18px;
   box-sizing: border-box;
 }
 
+#app .conversation-bottom-spacer {
+  width: min(885px, 100%);
+  height: var(--conversation-floating-safe-area);
+  min-height: var(--conversation-floating-safe-area);
+  margin: 0 auto;
+  pointer-events: none;
+}
+
 #app .conversation-scroll-bottom {
-  bottom: 196px;
+  bottom: calc(var(--conversation-floating-safe-area) - 84px);
 }

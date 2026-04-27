@@ -457,4 +457,54 @@ describe('ConversationTimeline blocks-first', () => {
       Element.prototype.scrollIntoView = originalScrollIntoView
     }
   })
+
+  it('会话末尾渲染悬浮 composer 安全留白，最后一条消息可继续上滑', () => {
+    render(
+      <ConversationTimeline
+        session={{
+          sessionId: 'session-bottom-spacer',
+          projectPath: 'D:/workspace/demo',
+          title: '底部留白会话',
+          updatedAt: '2026-04-28T00:00:00.000Z',
+          gitBranch: 'main',
+          messageCount: 2,
+          subagents: [],
+          leafEventUuid: 'assistant-1',
+          messages: [
+            {
+              id: 'user-1',
+              role: 'user',
+              blocks: [
+                {
+                  id: 'text-user-1',
+                  type: 'text',
+                  content: '帮我继续展开最后的信息',
+                },
+              ],
+            },
+            {
+              id: 'assistant-1',
+              role: 'assistant',
+              blocks: [
+                {
+                  id: 'text-assistant-1',
+                  type: 'text',
+                  content: '这是最后一条需要完整露出的回复。',
+                },
+              ],
+            },
+          ],
+        }}
+        isRunActive={false}
+        liveConversation={createEmptyLiveConversation()}
+      />,
+    )
+
+    const spacer = document.querySelector('.conversation-bottom-spacer')
+
+    expect(screen.getByText('这是最后一条需要完整露出的回复。')).toBeTruthy()
+    expect(spacer).toBeTruthy()
+    expect(spacer?.getAttribute('aria-hidden')).toBe('true')
+    expect(spacer?.parentElement?.classList.contains('conversation-timeline-list')).toBe(true)
+  })
 })

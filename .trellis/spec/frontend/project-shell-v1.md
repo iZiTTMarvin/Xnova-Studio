@@ -128,6 +128,7 @@ interface StudioHostApi {
 - 全局项目 `+` 只打开新 workspace；项目行里的“开始新对话”只清空当前 `selectedSessionId` 并保留该项目作为下一次 submit 的归属。
 - 会话页只让 `ConversationTimeline` 成为滚动区；侧边栏、顶部 header 与底部 composer 都必须保持固定，不随消息记录滚动。
 - 会话页 composer 必须悬浮在底部且尺寸稳定，不能因为消息条数、工具输出或上下文条变化而向下移动或变高到遮住主内容。
+- `ConversationTimeline` 末尾必须提供独立的 composer 安全留白；即使悬浮 composer 覆盖内容，最后一条消息也必须能继续上滑到输入框上方完整可见。
 - 工作上下文条应靠近 composer，表示本次发送会携带的项目、分支、Agent、模型、Context 与 SubAgent 状态；不要把它做成远离输入区的 dashboard 卡片。
 - assistant 消息优先使用正文排版，user 消息可用轻量气泡区分；不要把所有消息统一包成厚重大卡片。
 - 自动滚动策略必须至少区分：

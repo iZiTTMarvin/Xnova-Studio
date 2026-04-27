@@ -256,6 +256,10 @@ const TimelineList = forwardRef<HTMLDivElement, ComponentPropsWithoutRef<'div'>>
   },
 )
 
+const TimelineBottomSpacer = memo(function TimelineBottomSpacer() {
+  return <div className="conversation-bottom-spacer" aria-hidden="true" />
+})
+
 const TimelineLoadMoreRow = memo(function TimelineLoadMoreRow(props: {
   hiddenCount: number
   onLoadMore: () => void
@@ -554,9 +558,8 @@ export function ConversationTimeline(props: ConversationTimelineProps) {
   const handleScrollToBottom = () => {
     setIsAtBottom(true)
     if (canUseVirtualizedTimeline()) {
-      virtuosoRef.current?.scrollToIndex({
-        index: Math.max(0, timelineItems.length - 1),
-        align: 'end',
+      virtuosoRef.current?.scrollTo({
+        top: Number.MAX_SAFE_INTEGER,
         behavior: 'smooth',
       })
       return
@@ -586,6 +589,7 @@ export function ConversationTimeline(props: ConversationTimelineProps) {
               })}
             </div>
           ))}
+          <TimelineBottomSpacer />
         </div>
         <div ref={fallbackBottomRef} />
         {!isAtBottom ? (
@@ -613,6 +617,7 @@ export function ConversationTimeline(props: ConversationTimelineProps) {
         components={{
           Scroller: TimelineScroller,
           List: TimelineList,
+          Footer: TimelineBottomSpacer,
         }}
         atBottomStateChange={setIsAtBottom}
         followOutput={() =>
