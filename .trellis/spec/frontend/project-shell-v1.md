@@ -119,6 +119,21 @@ interface StudioHostApi {
 - 首轮 submit 尚未落盘出 `activeSession` 时，只要 `liveConversation` 已经存在待发送消息、流式内容或系统错误，renderer 也必须直接进入会话视图；不得继续停留在空白项目入口页。
 - 不能只显示会话标题、项目路径、分支和消息条数，而不显示“对话本身”。
 
+#### Codex-like 主界面布局
+
+- 默认首页必须是“中央 composer + 工作上下文条 + 少量建议动作”的项目入口，不允许退回 overview、统计卡片墙或 dashboard 首页。
+- 左侧栏固定在视口内，项目块右侧只保留真实可用动作；当前基线为“折叠/展开项目”和“添加新项目”，不要提前加入无实现的筛选、排序按钮。
+- 项目块内部必须是 workspace 抽屉结构：项目行负责选择/展开项目，项目下缩进展示该项目的会话，不允许把所有项目和所有会话平铺成两个无归属列表。
+- 全局项目 `+` 只打开新 workspace；项目行里的“开始新对话”只清空当前 `selectedSessionId` 并保留该项目作为下一次 submit 的归属。
+- 会话页只让 `ConversationTimeline` 成为滚动区；侧边栏、顶部 header 与底部 composer 都必须保持固定，不随消息记录滚动。
+- 会话页 composer 必须悬浮在底部且尺寸稳定，不能因为消息条数、工具输出或上下文条变化而向下移动或变高到遮住主内容。
+- 工作上下文条应靠近 composer，表示本次发送会携带的项目、分支、Agent、模型、Context 与 SubAgent 状态；不要把它做成远离输入区的 dashboard 卡片。
+- assistant 消息优先使用正文排版，user 消息可用轻量气泡区分；不要把所有消息统一包成厚重大卡片。
+- 自动滚动策略必须至少区分：
+  - 默认跟随流式输出到底部；
+  - 用户主动上滚后暂停跟随；
+  - 提供显式“回到底部”入口恢复跟随。
+
 #### 模型选择器
 
 - `SessionModelPicker` 必须位于 composer 附近，表示“当前会话要用哪个 provider / model”。
@@ -162,6 +177,8 @@ interface StudioHostApi {
 | renderer 通过 `submitPrompt` / `setCurrentPrimaryAgent` 等旧 fallback 路径工作 | 视为 contract 漂移，必须回到 shared bridge |
 | `selectProject` 只更新 renderer 状态，不同步 `host.bindWorkspace` | 视为 workspace 双轨漂移，必须补 shared contract 调用 |
 | submit 时 `selectedProjectPath` 与 `hostState.workspacePath` 不一致 | 必须先重新绑定 host workspace，再进入 runtime submit |
+| 用户上滚查看历史时仍被流式输出强制拉回底部 | 视为 Phase 5 滚动策略缺陷，必须暂停跟随并展示“回到底部”入口 |
+| 会话页 composer 跟随时间线滚动或被长消息挤出可视区 | 视为主工作台布局缺陷，必须恢复底部固定悬浮 |
 
 ### 5. Good / Base / Bad Cases
 

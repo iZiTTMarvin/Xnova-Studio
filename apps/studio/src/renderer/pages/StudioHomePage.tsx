@@ -96,6 +96,36 @@ function isActiveRunStatus(status: ReturnType<typeof useRuntimeStore.getState>['
   )
 }
 
+function StudioPreviewTitlebar() {
+  return (
+    <header className="studio-preview-titlebar" aria-label="预览窗口标题栏">
+      <div className="studio-preview-window-icon" aria-hidden />
+      <div className="studio-preview-nav-arrow" aria-hidden>
+        <svg width="18" height="18" viewBox="0 0 24 24" fill="none">
+          <path d="M15 18l-6-6 6-6" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" />
+        </svg>
+      </div>
+      <div className="studio-preview-nav-arrow studio-preview-nav-arrow-next" aria-hidden>
+        <svg width="18" height="18" viewBox="0 0 24 24" fill="none">
+          <path d="M9 18l6-6-6-6" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" />
+        </svg>
+      </div>
+      <nav className="studio-preview-menu" aria-label="应用菜单">
+        <span>文件</span>
+        <span>编辑</span>
+        <span>查看</span>
+        <span>窗口</span>
+        <span>帮助</span>
+      </nav>
+      <div className="studio-preview-window-controls" aria-hidden>
+        <div className="studio-preview-win-btn">-</div>
+        <div className="studio-preview-win-btn">□</div>
+        <div className="studio-preview-win-btn">×</div>
+      </div>
+    </header>
+  )
+}
+
 export function StudioHomePage() {
   const {
     openWorkspace,
@@ -126,6 +156,7 @@ export function StudioHomePage() {
     selectedProjectPath,
     selectedSessionId,
     recoveryState,
+    setSelectedSessionId,
   } = useSessionStore(
     useShallow((state) => ({
       hostStatus: state.hostStatus,
@@ -138,6 +169,7 @@ export function StudioHomePage() {
       selectedProjectPath: state.selectedProjectPath,
       selectedSessionId: state.selectedSessionId,
       recoveryState: state.recoveryState,
+      setSelectedSessionId: state.setSelectedSessionId,
     })),
   )
   const {
@@ -376,6 +408,19 @@ export function StudioHomePage() {
         setSelectedSubagent(null)
         setActiveNavId('projects')
         void selectProject(projectPath)
+      }}
+      onStartProjectSession={(projectPath) => {
+        setSelectedSubagent(null)
+        setActiveNavId('projects')
+
+        if (selectedProjectPath === projectPath) {
+          setSelectedSessionId(null)
+          return
+        }
+
+        void selectProject(projectPath).finally(() => {
+          setSelectedSessionId(null)
+        })
       }}
       sessions={shellSnapshot?.projectSessions ?? []}
       activeSessionId={selectedSessionId}
@@ -876,7 +921,6 @@ export function StudioHomePage() {
     </section>
   ) : activeSession || hasVisibleLiveConversation ? (
     <section className="workspace-surface">
-      {workContextBar}
       <section className="conversation-stage conversation-stage-main">
         <div className="conversation-header">
           <div>
@@ -912,6 +956,9 @@ export function StudioHomePage() {
 
       <div className="composer-context-shell composer-context-shell-session composer-floating">
         {composerArea}
+        <div className="composer-floating-context">
+          {workContextBar}
+        </div>
       </div>
     </section>
   ) : (
@@ -966,168 +1013,177 @@ export function StudioHomePage() {
     : activeNavId === 'agents'
       ? agentsContent
       : activeNavId === 'tools'
-        ? <StudioToolsPage page={toolsPage} mcpApi={mcpApi} skillsPluginsApi={skillsPluginsApi} />
-        : projectSurfaceContent
+      ? <StudioToolsPage page={toolsPage} mcpApi={mcpApi} skillsPluginsApi={skillsPluginsApi} />
+      : projectSurfaceContent
+  const shouldShowPreviewTitlebar =
+    typeof window !== 'undefined' && !window.xnovaStudio
 
   return (
-    <div className="project-shell-layout">
-      <ProjectShellSidebar
-        activeNavId={activeNavId}
-        onNavigate={(nextNavId) => {
-          setActiveNavId(nextNavId)
-          if (nextNavId !== 'projects') {
-            setSelectedSubagent(null)
-          }
-        }}
-        onOpenSettings={() => {
-          setSettingsDialogOpen(true)
-        }}
-        projectBlock={{
-          title: '项目',
-          status: projectBlockStatus,
-          message:
-            projectBlockStatus === 'loading'
-              ? '正在加载项目结构…'
-              : projectBlockStatus === 'disabled'
-                ? '当前宿主不可用'
-                : '暂无项目数据',
-          content: projectBlockContent,
-        }}
-        chatBlock={{
-          title: '聊天',
-          status: chatBlockStatus,
-          message:
-            chatBlockStatus === 'loading'
-              ? '正在准备 scratchpad…'
-              : chatBlockStatus === 'disabled'
-                ? 'scratchpad 暂不可用'
-                : 'scratchpad 暂无内容',
-          content: chatBlockContent,
-        }}
-      />
+    <div className={`studio-window-frame ${shouldShowPreviewTitlebar ? 'studio-window-frame-preview' : ''}`}>
+      {shouldShowPreviewTitlebar ? <StudioPreviewTitlebar /> : null}
 
-      <main className="project-shell-page">
-        <header className="workspace-header">
-          <div className="workspace-header-start">
-            <p className="workspace-header-title">{pageTitle}</p>
-          </div>
-          <div className="workspace-header-center">
-            {shouldShowWorkSurfaceChrome ? (
-              <ModeSwitch
-                currentMode={currentMode}
-                allowedModes={shellSnapshot?.defaults.allowedModes ?? ['standard', 'xforge']}
-                onModeChange={(mode) => {
-                  const notice = switchMode(mode)
-                  if (notice) {
-                    setModeNotice({
-                      title: notice,
-                      message: '当前阶段请先使用标准模式继续主链路。',
-                    })
-                  }
-                }}
-              />
-            ) : null}
-          </div>
-          <div className="workspace-header-end">
-            <button
-              type="button"
-              className="secondary-button"
-              onClick={() => {
-                void openWorkspace()
-              }}
-              disabled={isOpeningWorkspace}
-            >
-              {isOpeningWorkspace ? '正在打开…' : '打开 Workspace'}
-            </button>
-          </div>
-        </header>
+      <div className="project-shell-layout">
+        <ProjectShellSidebar
+          activeNavId={activeNavId}
+          onNavigate={(nextNavId) => {
+            setActiveNavId(nextNavId)
+            if (nextNavId !== 'projects') {
+              setSelectedSubagent(null)
+            }
+          }}
+          onOpenSettings={() => {
+            setSettingsDialogOpen(true)
+          }}
+          onAddProject={() => {
+            void openWorkspace()
+          }}
+          projectBlock={{
+            title: '项目',
+            status: projectBlockStatus,
+            message:
+              projectBlockStatus === 'loading'
+                ? '正在加载项目结构…'
+                : projectBlockStatus === 'disabled'
+                  ? '当前宿主不可用'
+                  : '暂无项目数据',
+            content: projectBlockContent,
+          }}
+          chatBlock={{
+            title: '聊天',
+            status: chatBlockStatus,
+            message:
+              chatBlockStatus === 'loading'
+                ? '正在准备 scratchpad…'
+                : chatBlockStatus === 'disabled'
+                  ? 'scratchpad 暂不可用'
+                  : 'scratchpad 暂无内容',
+            content: chatBlockContent,
+          }}
+        />
 
-        {startupNotice ? (
-          <div className="notice-bar notice-bar-error">
-            <strong>{startupNotice}</strong>
-          </div>
-        ) : null}
-
-        {statusIssues.length > 0 ? (
-          <div className="notice-bar notice-bar-warning">
-            <strong>状态问题:</strong>
-            {' '}
-            {statusIssues.map((issue) => issue.message).join(' · ')}
-            {/*
-             * 关键体验修复：当 issues 含 workspace-missing（路径已失效）时，
-             * 给一个可点击的"重新选择 Workspace"快速恢复入口，
-             * 避免用户必须手动到顶部去找入口。
-             */}
-            {statusIssues.some((issue) => issue.code === 'workspace-missing') ? (
-              <>
-                {' '}
-                <button
-                  type="button"
-                  className="link-button"
-                  onClick={() => {
-                    void openWorkspace()
+        <main className="project-shell-page">
+          <header className="workspace-header">
+            <div className="workspace-header-start">
+              <p className="workspace-header-title">{pageTitle}</p>
+            </div>
+            <div className="workspace-header-center">
+              {shouldShowWorkSurfaceChrome ? (
+                <ModeSwitch
+                  currentMode={currentMode}
+                  allowedModes={shellSnapshot?.defaults.allowedModes ?? ['standard', 'xforge']}
+                  onModeChange={(mode) => {
+                    const notice = switchMode(mode)
+                    if (notice) {
+                      setModeNotice({
+                        title: notice,
+                        message: '当前阶段请先使用标准模式继续主链路。',
+                      })
+                    }
                   }}
-                  disabled={isOpeningWorkspace}
-                  data-testid="status-issue-reopen-workspace"
-                >
-                  {isOpeningWorkspace ? '打开中…' : '重新选择 Workspace'}
-                </button>
-              </>
-            ) : null}
-          </div>
-        ) : null}
+                />
+              ) : null}
+            </div>
+            <div className="workspace-header-end">
+              <button
+                type="button"
+                className="secondary-button"
+                onClick={() => {
+                  void openWorkspace()
+                }}
+                disabled={isOpeningWorkspace}
+              >
+                {isOpeningWorkspace ? '正在打开…' : '打开 Workspace'}
+              </button>
+            </div>
+          </header>
 
-        {shouldShowMemoryFeedback ? (
-          <div className="notice-bar notice-bar-warning">
-            <strong>Memory</strong>
-            {' '}
-            <span>{memoryFeedback.statusLabel}</span>
-            <span>:</span>
-            {' '}
-            <span>{memoryFeedback.statusMessage}</span>
-            {memoryFeedback.actionHint ? (
-              <>
-                {' '}
-                <span>{`建议动作: ${memoryFeedback.actionHint}`}</span>
-              </>
-            ) : null}
-          </div>
-        ) : null}
+          {startupNotice ? (
+            <div className="notice-bar notice-bar-error">
+              <strong>{startupNotice}</strong>
+            </div>
+          ) : null}
 
-        {liveSubagentFeedback ? (
-          <div className="notice-bar notice-bar-warning">
-            <strong>{liveSubagentFeedback.message}</strong>
-            {liveSubagentFeedback.partialResult ? (
-              <>
-                {' '}
-                <span>{liveSubagentFeedback.partialResult}</span>
-              </>
-            ) : null}
-          </div>
-        ) : null}
+          {statusIssues.length > 0 ? (
+            <div className="notice-bar notice-bar-warning">
+              <strong>状态问题:</strong>
+              {' '}
+              {statusIssues.map((issue) => issue.message).join(' · ')}
+              {/*
+               * 关键体验修复：当 issues 含 workspace-missing（路径已失效）时，
+               * 给一个可点击的"重新选择 Workspace"快速恢复入口，
+               * 避免用户必须手动到顶部去找入口。
+               */}
+              {statusIssues.some((issue) => issue.code === 'workspace-missing') ? (
+                <>
+                  {' '}
+                  <button
+                    type="button"
+                    className="link-button"
+                    onClick={() => {
+                      void openWorkspace()
+                    }}
+                    disabled={isOpeningWorkspace}
+                    data-testid="status-issue-reopen-workspace"
+                  >
+                    {isOpeningWorkspace ? '打开中…' : '重新选择 Workspace'}
+                  </button>
+                </>
+              ) : null}
+            </div>
+          ) : null}
 
-        {sessionSubagentFeedback.length > 0 ? (
-          <div className="notice-bar notice-bar-warning">
-            <strong>子 Agent 状态:</strong>
-            {' '}
-            <span>
-              {sessionSubagentFeedback
-                .map((subagent) => subagent.stateMessage ?? getSubagentStatusLabel(subagent.status))
-                .join(' · ')}
-            </span>
-          </div>
-        ) : null}
+          {shouldShowMemoryFeedback ? (
+            <div className="notice-bar notice-bar-warning">
+              <strong>Memory</strong>
+              {' '}
+              <span>{memoryFeedback.statusLabel}</span>
+              <span>:</span>
+              {' '}
+              <span>{memoryFeedback.statusMessage}</span>
+              {memoryFeedback.actionHint ? (
+                <>
+                  {' '}
+                  <span>{`建议动作: ${memoryFeedback.actionHint}`}</span>
+                </>
+              ) : null}
+            </div>
+          ) : null}
 
-        {recoveryNotice}
+          {liveSubagentFeedback ? (
+            <div className="notice-bar notice-bar-warning">
+              <strong>{liveSubagentFeedback.message}</strong>
+              {liveSubagentFeedback.partialResult ? (
+                <>
+                  {' '}
+                  <span>{liveSubagentFeedback.partialResult}</span>
+                </>
+              ) : null}
+            </div>
+          ) : null}
 
-        {isConversationView ? (
-          content
-        ) : (
-          <div className="main-scroll-area">
-            {content}
-          </div>
-        )}
-      </main>
+          {sessionSubagentFeedback.length > 0 ? (
+            <div className="notice-bar notice-bar-warning">
+              <strong>子 Agent 状态:</strong>
+              {' '}
+              <span>
+                {sessionSubagentFeedback
+                  .map((subagent) => subagent.stateMessage ?? getSubagentStatusLabel(subagent.status))
+                  .join(' · ')}
+              </span>
+            </div>
+          ) : null}
+
+          {recoveryNotice}
+
+          {isConversationView ? (
+            content
+          ) : (
+            <div className="main-scroll-area">
+              {content}
+            </div>
+          )}
+        </main>
+      </div>
 
       {modeNotice ? (
         <div className="mode-notice-backdrop" role="presentation">

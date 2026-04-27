@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 
 import { cleanup, fireEvent, render, screen } from '@testing-library/react'
-import { afterEach, describe, expect, it } from 'vitest'
+import { afterEach, describe, expect, it, vi } from 'vitest'
 import { ConversationTimeline } from '../src/renderer/components/ConversationTimeline'
 
 afterEach(() => {
@@ -389,5 +389,72 @@ describe('ConversationTimeline blocks-first', () => {
 
     expect(screen.getByText('消息 40')).toBeTruthy()
     expect(screen.queryByText('消息 0')).toBeNull()
+  })
+
+  it('用户主动上滚后显示回到底部入口', () => {
+    const scrollIntoView = vi.fn()
+    const originalScrollIntoView = Element.prototype.scrollIntoView
+    Element.prototype.scrollIntoView =
+      scrollIntoView as unknown as typeof Element.prototype.scrollIntoView
+
+    try {
+      render(
+        <ConversationTimeline
+          session={{
+            sessionId: 'session-scroll',
+            projectPath: 'D:/workspace/demo',
+            title: '滚动会话',
+            updatedAt: '2026-04-26T00:00:00.000Z',
+            gitBranch: 'main',
+            messageCount: 20,
+            subagents: [],
+            leafEventUuid: 'assistant-19',
+            messages: Array.from({ length: 20 }, (_, index) => ({
+              id: `assistant-${index}`,
+              role: 'assistant' as const,
+              blocks: [
+                {
+                  id: `text-${index}`,
+                  type: 'text' as const,
+                  content: `滚动消息 ${index}`,
+                },
+              ],
+            })),
+          }}
+          isRunActive={true}
+          liveConversation={{
+            pendingUserText: null,
+            blocks: [
+              {
+                id: 'live-text-1',
+                type: 'text',
+                content: '正在继续输出',
+              },
+            ],
+          }}
+        />,
+      )
+
+      const scroller = screen.getByRole('region', { name: '项目会话聊天流' })
+      Object.defineProperty(scroller, 'scrollHeight', {
+        value: 1200,
+        configurable: true,
+      })
+      Object.defineProperty(scroller, 'clientHeight', {
+        value: 420,
+        configurable: true,
+      })
+      Object.defineProperty(scroller, 'scrollTop', {
+        value: 120,
+        configurable: true,
+      })
+
+      fireEvent.scroll(scroller)
+      fireEvent.click(screen.getByRole('button', { name: '回到底部' }))
+
+      expect(scrollIntoView).toHaveBeenCalled()
+    } finally {
+      Element.prototype.scrollIntoView = originalScrollIntoView
+    }
   })
 })

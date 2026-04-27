@@ -42,6 +42,15 @@ const projectSessions = [
       },
     ],
   },
+  {
+    sessionId: 'session-2',
+    projectPath: 'D:/workspace/alpha',
+    title: '整理 Alpha 工作区',
+    updatedAt: '2026-04-22T11:00:00.000Z',
+    gitBranch: 'feature/phase5',
+    messageCount: 4,
+    subagents: [],
+  },
 ]
 
 describe('project session trees', () => {
@@ -62,7 +71,37 @@ describe('project session trees', () => {
     const projectTree = screen.getByLabelText('项目树')
     expect(within(projectTree).getByText('demo')).toBeTruthy()
     expect(within(projectTree).getByText('alpha')).toBeTruthy()
-    expect(within(projectTree).getByText('实现 Phase 5 主壳')).toBeTruthy()
+    expect(within(screen.getByLabelText('demo 的会话')).getByText('实现 Phase 5 主壳')).toBeTruthy()
+    expect(within(projectTree).queryByText('整理 Alpha 工作区')).toBeNull()
+
+    fireEvent.click(
+      screen.getByRole('button', {
+        name: '展开 alpha 项目会话',
+      }),
+    )
+    expect(within(screen.getByLabelText('alpha 的会话')).getByText('整理 Alpha 工作区')).toBeTruthy()
+  })
+
+  it('项目抽屉支持在当前项目下开始新对话', () => {
+    const handleStartProjectSession = vi.fn()
+
+    render(
+      <ProjectTreePanel
+        recentProjects={recentProjects}
+        selectedProjectPath="D:/workspace/demo"
+        onProjectSelect={vi.fn()}
+        sessions={projectSessions}
+        activeSessionId="session-1"
+        onSessionSelect={vi.fn()}
+        activeSubagentId={null}
+        onSubagentSelect={vi.fn()}
+        onStartProjectSession={handleStartProjectSession}
+      />,
+    )
+
+    fireEvent.click(screen.getByRole('button', { name: '在 demo 中开始新对话' }))
+
+    expect(handleStartProjectSession).toHaveBeenCalledWith('D:/workspace/demo')
   })
 
   it('子代理会话默认折叠，并可独立展开', () => {

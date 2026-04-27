@@ -370,6 +370,7 @@ function renderTimelineItem(
 
 export function ConversationTimeline(props: ConversationTimelineProps) {
   const virtuosoRef = useRef<VirtuosoHandle | null>(null)
+  const fallbackScrollerRef = useRef<HTMLElement | null>(null)
   const fallbackBottomRef = useRef<HTMLDivElement>(null)
   const pendingPrependScrollIndexRef = useRef<number | null>(null)
   const persistedMessages = props.session?.messages ?? []
@@ -480,12 +481,15 @@ export function ConversationTimeline(props: ConversationTimelineProps) {
     if (canUseVirtualizedTimeline()) {
       return
     }
+    if (!isAtBottom) {
+      return
+    }
     const bottomElement = fallbackBottomRef.current
     if (typeof bottomElement?.scrollIntoView !== 'function') {
       return
     }
     bottomElement.scrollIntoView({ behavior: 'smooth' })
-  }, [liveBlocks, timelineItems.length])
+  }, [isAtBottom, liveBlocks, timelineItems.length])
 
   if (persistedMessages.length === 0 && !hasLiveContent) {
     return (
@@ -536,9 +540,39 @@ export function ConversationTimeline(props: ConversationTimelineProps) {
     })
   }
 
+  const handleFallbackScroll = () => {
+    const scroller = fallbackScrollerRef.current
+    if (!scroller) {
+      return
+    }
+
+    const distanceToBottom =
+      scroller.scrollHeight - scroller.scrollTop - scroller.clientHeight
+    setIsAtBottom(distanceToBottom < 56)
+  }
+
+  const handleScrollToBottom = () => {
+    setIsAtBottom(true)
+    if (canUseVirtualizedTimeline()) {
+      virtuosoRef.current?.scrollToIndex({
+        index: Math.max(0, timelineItems.length - 1),
+        align: 'end',
+        behavior: 'smooth',
+      })
+      return
+    }
+
+    fallbackBottomRef.current?.scrollIntoView({ behavior: 'smooth' })
+  }
+
   if (!canUseVirtualizedTimeline()) {
     return (
-      <section className="conversation-timeline" aria-label="项目会话聊天流">
+      <section
+        ref={fallbackScrollerRef}
+        className="conversation-timeline"
+        aria-label="项目会话聊天流"
+        onScroll={handleFallbackScroll}
+      >
         <div className="conversation-timeline-list">
           {timelineItems.map((item) => (
             <div key={item.id} className="conversation-timeline-item">
@@ -554,40 +588,60 @@ export function ConversationTimeline(props: ConversationTimelineProps) {
           ))}
         </div>
         <div ref={fallbackBottomRef} />
+        {!isAtBottom ? (
+          <button
+            type="button"
+            className="conversation-scroll-bottom"
+            onClick={handleScrollToBottom}
+          >
+            回到底部
+          </button>
+        ) : null}
       </section>
     )
   }
 
   return (
-    <Virtuoso
-      ref={virtuosoRef}
-      aria-label="项目会话聊天流"
-      className="conversation-timeline-virtuoso"
-      style={{ flex: 1, minHeight: 0 }}
-      data={timelineItems}
-      computeItemKey={(_index, item) => item.id}
-      components={{
-        Scroller: TimelineScroller,
-        List: TimelineList,
-      }}
-      atBottomStateChange={setIsAtBottom}
-      followOutput={() =>
-        (hasLiveContent || props.isRunActive) && isAtBottom ? 'smooth' : false
-      }
-      increaseViewportBy={{ top: 320, bottom: 720 }}
-      initialTopMostItemIndex={Math.max(0, timelineItems.length - 1)}
-      itemContent={(_index, item) => (
-        <div className="conversation-timeline-item">
-          {renderTimelineItem(item, {
-            isRunActive: props.isRunActive,
-            onLoadMore: handleLoadMore,
-            expandedRows,
-            interactedRows,
-            onExpandedChange: handleExpandedChange,
-            onInteractedChange: handleInteractedChange,
-          })}
-        </div>
-      )}
-    />
+    <>
+      <Virtuoso
+        ref={virtuosoRef}
+        aria-label="项目会话聊天流"
+        className="conversation-timeline-virtuoso"
+        style={{ flex: 1, minHeight: 0 }}
+        data={timelineItems}
+        computeItemKey={(_index, item) => item.id}
+        components={{
+          Scroller: TimelineScroller,
+          List: TimelineList,
+        }}
+        atBottomStateChange={setIsAtBottom}
+        followOutput={() =>
+          (hasLiveContent || props.isRunActive) && isAtBottom ? 'smooth' : false
+        }
+        increaseViewportBy={{ top: 320, bottom: 720 }}
+        initialTopMostItemIndex={Math.max(0, timelineItems.length - 1)}
+        itemContent={(_index, item) => (
+          <div className="conversation-timeline-item">
+            {renderTimelineItem(item, {
+              isRunActive: props.isRunActive,
+              onLoadMore: handleLoadMore,
+              expandedRows,
+              interactedRows,
+              onExpandedChange: handleExpandedChange,
+              onInteractedChange: handleInteractedChange,
+            })}
+          </div>
+        )}
+      />
+      {!isAtBottom ? (
+        <button
+          type="button"
+          className="conversation-scroll-bottom"
+          onClick={handleScrollToBottom}
+        >
+          回到底部
+        </button>
+      ) : null}
+    </>
   )
 }

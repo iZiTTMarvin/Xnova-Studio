@@ -132,3 +132,11 @@ export function IconCross(props: IconProps) {
     </svg>
   )
 }
+
+export function IconPlus(props: IconProps) {
+  return (
+    <svg width="14" height="14" viewBox="0 0 14 14" fill="none" xmlns="http://www.w3.org/2000/svg" {...props}>
+      <path d="M7 2.75v8.5M2.75 7h8.5" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round"/>
+    </svg>
+  )
+}

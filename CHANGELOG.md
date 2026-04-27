@@ -1,4 +1,11 @@
 ## 2026-04-27
+- **Studio Codex-like 界面重构**：重做主壳首页、侧边栏、会话排版与底部悬浮输入体验
+  - 侧边栏改为固定的低装饰项目工作台形态；项目区按 workspace 抽屉管理会话，全局 `+` 仍只负责添加新项目
+  - 项目抽屉内新增“在当前项目中开始新对话”入口，清空当前会话选择后复用该项目创建新会话
+  - 首页围绕中央 composer 和项目上下文条展开，弱化旧 dashboard / 大卡片视觉
+  - 会话页把 composer 固定悬浮在底部，并将项目、分支、Agent、模型、Context、SubAgent 上下文移到输入框附近
+  - 时间线滚动区固定为 `ConversationTimeline` 本身，并新增“回到底部”入口：流式输出默认跟随底部，用户上滚后可显式恢复跟随
+  - 新增 `DESIGN.md` 和 Trellis research，固化本轮 Codex App 参考布局与后续 UI 决策边界
 - **Studio 交互现代化 Phase 3**：接入时间线虚拟化、窗口化历史与输出体量防线
   - `apps/studio` 引入 `react-virtuoso`，`ConversationTimeline` 改为动态高度虚拟列表；默认只展示最近 240 条持久化消息，并支持按 80 条批量加载更早历史
   - `liveConversation.blocks` 现在有 200 条窗口上限；超出后会插入“更早的实时输出已折叠”状态标记，避免无提示地在边界处截断

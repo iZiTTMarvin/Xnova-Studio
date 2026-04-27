@@ -1,5 +1,15 @@
 import { useState, type ReactNode } from 'react'
-import { IconChat, IconSearch, IconAgent, IconFolder, IconTool, IconSettings } from './Icons'
+import {
+  IconAgent,
+  IconChat,
+  IconChevronDown,
+  IconChevronRight,
+  IconFolder,
+  IconPlus,
+  IconSearch,
+  IconSettings,
+  IconTool,
+} from './Icons'
 import xnovaLogo from '../assets/xnova-logo.png'
 import './ProjectShellSidebar.css'
 
@@ -37,6 +47,7 @@ export interface ProjectShellSidebarProps {
   activeNavId: PrimaryNavId
   onNavigate: (id: PrimaryNavId) => void
   onOpenSettings: () => void
+  onAddProject?: () => void
   projectBlock: SidebarBlockConfig
   chatBlock: SidebarBlockConfig
 }
@@ -97,16 +108,29 @@ export function ProjectShellSidebar(props: ProjectShellSidebarProps) {
         <section className="sidebar-block">
           <header className="sidebar-block-header">
             <h2>项目</h2>
-            <button
-              type="button"
-              className="sidebar-toggle"
-              aria-label={projectCollapsed ? '展开项目' : '折叠项目'}
-              onClick={() => {
-                setProjectCollapsed((value) => !value)
-              }}
-            >
-              {projectCollapsed ? '展开' : '折叠'}
-            </button>
+            <div className="sidebar-block-actions">
+              <button
+                type="button"
+                className="sidebar-icon-button"
+                aria-label={projectCollapsed ? '展开项目' : '折叠项目'}
+                title={projectCollapsed ? '展开项目' : '折叠项目'}
+                onClick={() => {
+                  setProjectCollapsed((value) => !value)
+                }}
+              >
+                {projectCollapsed ? <IconChevronRight /> : <IconChevronDown />}
+              </button>
+              <button
+                type="button"
+                className="sidebar-icon-button"
+                aria-label="添加新项目"
+                title="添加新项目"
+                onClick={props.onAddProject}
+                disabled={!props.onAddProject}
+              >
+                <IconPlus />
+              </button>
+            </div>
           </header>
           {!projectCollapsed ? (
             <div className="sidebar-block-body sidebar-block-scroll">
@@ -120,13 +144,14 @@ export function ProjectShellSidebar(props: ProjectShellSidebarProps) {
             <h2>聊天</h2>
             <button
               type="button"
-              className="sidebar-toggle"
+              className="sidebar-icon-button"
               aria-label={chatCollapsed ? '展开聊天' : '折叠聊天'}
+              title={chatCollapsed ? '展开聊天' : '折叠聊天'}
               onClick={() => {
                 setChatCollapsed((value) => !value)
               }}
             >
-              {chatCollapsed ? '展开' : '折叠'}
+              {chatCollapsed ? <IconChevronRight /> : <IconChevronDown />}
             </button>
           </header>
           {!chatCollapsed ? (
