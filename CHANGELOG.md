@@ -1,4 +1,9 @@
 ## 2026-04-27
+- **Studio 权限与启动修复**：修复 Electron dev 解析失败与项目内写入误拒绝
+  - 根 `.npmrc` 增加 Electron 精确 hoist；新增 `host.bindWorkspace` 让项目选择同步 main 侧 Workspace
+  - `request.projectPath` 作为 runtime workspaceRoot 与权限判定基准，权限拒绝 reason 透传到 AgentLoop 工具结果
+  - `TokenMeter` 改为惰性实例化，避免导入 runtime/core 时提前打开 SQLite 造成全量测试 DB 锁
+  - 任务详情已记录至 `.trellis/tasks/04-27-studio-electron-permission-fixes/`
 - **Studio 稳定性批量修复**：覆盖 P0 真死锁 / 真泄漏与 P1-P3 多项 UX、性能、可访问性问题
   - **P0 修复**：`createRuntime.submit` 复用时不再静默吞咽并发 submit，返回 `error` + 补发 `error`/`turn_end` 事件；`studio-runtime-service.submit` 新增主进程串行化门禁拒绝并发提交
   - **P0 修复**：`StudioRuntimeManager` 实施 LRU 淘汰（默认保留 3 个 idle 实例），切换 `(workspace, agent, sessionId)` 时旧实例被真正 `dispose()`，不再永久驻留
@@ -395,4 +400,3 @@
   - 新增 runtime boundary、config TOML migration、agent schema v1 三份 backend 专项 spec，并接入 backend index
   - 扩展 spec 验收测试，要求 backend index 显式纳入 3 份专项 spec
   - 重写仓库根 `.gitignore`，覆盖依赖、构建产物、本地运行态与 Trellis 本地工作区
-

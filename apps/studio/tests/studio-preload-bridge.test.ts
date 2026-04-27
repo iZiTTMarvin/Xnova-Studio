@@ -29,6 +29,29 @@ class FakeIpcRenderer {
       }
     }
 
+    if (channel === STUDIO_BRIDGE_CHANNELS.hostBindWorkspace) {
+      return {
+        workspacePath:
+          payload &&
+          typeof payload === 'object' &&
+          'workspacePath' in payload &&
+          typeof payload.workspacePath === 'string'
+            ? payload.workspacePath
+            : null,
+        lastSelection:
+          payload &&
+          typeof payload === 'object' &&
+          'workspacePath' in payload &&
+          typeof payload.workspacePath === 'string'
+            ? {
+                ok: true,
+                code: 'selected',
+                path: payload.workspacePath,
+              }
+            : null,
+      }
+    }
+
     if (channel === STUDIO_BRIDGE_CHANNELS.runtimeInspect) {
       return {
         ok: true,
@@ -158,18 +181,48 @@ describe('studio preload bridge', () => {
     })
     expect(listener).toHaveBeenCalledTimes(1)
 
+    await expect(api.host.bindWorkspace('  D:/workspace/project-b  ')).resolves.toEqual({
+      workspacePath: 'D:/workspace/project-b',
+      lastSelection: {
+        ok: true,
+        code: 'selected',
+        path: 'D:/workspace/project-b',
+      },
+    })
+    expect(ipcRenderer.invoke).toHaveBeenCalledWith(
+      STUDIO_BRIDGE_CHANNELS.hostBindWorkspace,
+      {
+        workspacePath: 'D:/workspace/project-b',
+      },
+    )
+    expect(listener).toHaveBeenCalledTimes(2)
+
     ipcRenderer.emit(STUDIO_BRIDGE_CHANNELS.hostStateChanged, {
       workspacePath: 'D:/workspace/changed',
       lastSelection: null,
     })
-    expect(listener).toHaveBeenCalledTimes(2)
+    expect(listener).toHaveBeenCalledTimes(3)
 
     unsubscribe()
     ipcRenderer.emit(STUDIO_BRIDGE_CHANNELS.hostStateChanged, {
       workspacePath: 'D:/workspace/ignored',
       lastSelection: null,
     })
-    expect(listener).toHaveBeenCalledTimes(2)
+    expect(listener).toHaveBeenCalledTimes(3)
+  })
+
+  it('host.bindWorkspace 校验项目路径', async () => {
+    const ipcRenderer = new FakeIpcRenderer()
+    const api = createStudioBridgeApi({
+      ipcRenderer,
+    })
+
+    await expect(api.host.bindWorkspace('   ')).rejects.toThrow(
+      'studio.host.bindWorkspace.workspacePath 不能为空',
+    )
+    await expect(
+      (api.host.bindWorkspace as (payload: unknown) => Promise<unknown>)(123),
+    ).rejects.toThrow('studio.host.bindWorkspace.workspacePath 必须是字符串')
   })
 
   it('校验 runtime inspect 参数，并支持 runtime 事件订阅清理', async () => {

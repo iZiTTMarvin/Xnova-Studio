@@ -1982,4 +1982,107 @@ describe('studio runtime service', () => {
       }),
     )
   })
+
+  it('显式 projectPath 与旧 workspace 不一致时，权限判定必须以当前项目为准', async () => {
+    let runtimeBridge: RuntimeHostBridge | null = null
+    let mutationPermission: Awaited<ReturnType<RuntimeHostBridge['requestPermission']>> | null = null
+    const emittedEvents: Array<{ type: string; payload?: Record<string, unknown> }> = []
+
+    const runtimeInstance: RuntimeInstance = {
+      submit: vi.fn(async () => {
+        mutationPermission = await runtimeBridge!.requestPermission({
+          toolName: 'write_file',
+          args: {
+            path: 'D:/workspace/project-b/SPEC.md',
+            content: '# Spec',
+          },
+          sessionId: 'session-1',
+        })
+        return {
+          text: 'done',
+          thinking: '',
+          stopReason: 'end_turn',
+          llmCallCount: 1,
+          toolCallCount: 1,
+          usage: {
+            inputTokens: 1,
+            outputTokens: 1,
+            cacheReadTokens: 0,
+            cacheWriteTokens: 0,
+          },
+          aborted: false,
+          historyCompacted: false,
+          sessionId: 'session-1',
+        }
+      }),
+      abort: vi.fn(),
+      dispose: vi.fn(async () => undefined),
+      getSnapshot: vi.fn(() => ({
+        sessionId: 'session-1',
+        isRunning: false,
+        provider: 'openai',
+        model: 'gpt-4o',
+        warnings: [],
+      })),
+    }
+
+    const createRuntimeFn = vi.fn(async (_input, bridge) => {
+      runtimeBridge = bridge
+      return runtimeInstance
+    })
+
+    const service = createStudioRuntimeService({
+      createRuntimeFn,
+      loadResolvedConfigFn: vi.fn(() => ({
+        effective: {
+          defaultProvider: 'openai',
+          defaultModel: 'gpt-4o',
+          providers: {},
+        },
+        source: {},
+        warnings: [],
+      })),
+    })
+
+    await expect(
+      service.submit(
+        {
+          text: '继续',
+          projectPath: 'D:/workspace/project-b',
+        },
+        {
+          workspacePath: 'D:/workspace/project-a',
+          lastSelection: null,
+        },
+        (event) => {
+          emittedEvents.push(event)
+        },
+      ),
+    ).resolves.toEqual({
+      ok: true,
+      sessionId: 'session-1',
+    })
+
+    expect(createRuntimeFn).toHaveBeenCalledWith(
+      expect.objectContaining({
+        cwd: 'D:/workspace/project-b',
+        workspaceRoot: 'D:/workspace/project-b',
+      }),
+      expect.any(Object),
+    )
+    expect(mutationPermission).toEqual(
+      expect.objectContaining({
+        allow: true,
+        reason: 'workspace-scoped-tool',
+      }),
+    )
+    expect(
+      emittedEvents.find((event) => event.type === 'permission.decision')?.payload,
+    ).toEqual(
+      expect.objectContaining({
+        allow: true,
+        reason: 'workspace-scoped-tool',
+      }),
+    )
+  })
 })

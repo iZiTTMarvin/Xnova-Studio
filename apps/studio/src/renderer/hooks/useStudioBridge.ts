@@ -1400,6 +1400,8 @@ export function useStudioBridge() {
     setShellError(null)
 
     try {
+      const boundHostState = await bridge.host.bindWorkspace(projectPath)
+      setHostState(boundHostState)
       const storedPreference = readProjectWorkPreference(projectPath)
       const snapshot = await bridge.shell.getSnapshot({
         projectPath,
@@ -1619,6 +1621,13 @@ export function useStudioBridge() {
         'renderer_runtime_submit_invoked',
         rendererRuntimeSubmitInvokedAt,
       )
+      if (
+        selectedProjectPath &&
+        selectedProjectPath !== hostState.workspacePath
+      ) {
+        const boundHostState = await bridge.host.bindWorkspace(selectedProjectPath)
+        setHostState(boundHostState)
+      }
       const submitResult = await bridge.runtime.submit({
         text: prompt,
         projectPath,

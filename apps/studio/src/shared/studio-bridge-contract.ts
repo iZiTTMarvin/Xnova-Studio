@@ -20,6 +20,10 @@ export interface OpenWorkspaceResponse {
   state: StudioHostState
 }
 
+export interface BindWorkspaceRequest {
+  workspacePath: string
+}
+
 export interface RuntimeInspectRequest {
   refresh?: boolean
 }
@@ -501,6 +505,7 @@ export interface StudioSkillsPluginsOverviewSnapshot {
 export interface StudioHostApi {
   getState(): Promise<StudioHostState>
   openWorkspace(): Promise<OpenWorkspaceResponse>
+  bindWorkspace(workspacePath: string): Promise<StudioHostState>
   onStateChanged(listener: (state: StudioHostState) => void): () => void
 }
 
@@ -567,6 +572,7 @@ export const STUDIO_BRIDGE_GLOBAL_KEY = 'xnovaStudio'
 export const STUDIO_BRIDGE_CHANNELS = {
   hostGetState: 'studio:host:get-state',
   hostOpenWorkspace: 'studio:host:open-workspace',
+  hostBindWorkspace: 'studio:host:bind-workspace',
   hostStateChanged: 'studio:host:state-changed',
   runtimeInspect: 'studio:runtime:inspect',
   runtimeSubmit: 'studio:runtime:submit',

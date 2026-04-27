@@ -68,6 +68,10 @@ interface RuntimeSubmitRequest {
   providerId?: string | null
   modelId?: string | null
 }
+
+interface StudioHostApi {
+  bindWorkspace(workspacePath: string): Promise<StudioHostState>
+}
 ```
 
 ### 3. Contracts
@@ -136,6 +140,13 @@ interface RuntimeSubmitRequest {
 - 系统不得在“未就绪”状态下回退到错误目录偷偷执行。
 - 当前主 Agent 切换属于 renderer 会话偏好；不得依赖未固化的 `shell.setCurrentPrimaryAgent` 一类隐藏入口。
 
+#### 项目选择与 Host Workspace 同步
+
+- `selectProject(projectPath)` 不只是 renderer 本地选择；它必须先通过 `host.bindWorkspace(projectPath)` 同步 main 侧 `StudioHostState.workspacePath`。
+- `host.bindWorkspace(...)` 成功后，renderer 必须用返回的 host state 更新本地状态，再刷新 shell snapshot / runtime inspect。
+- `submitPrompt()` 发送前必须二次检查：如果 `selectedProjectPath` 与 `hostState.workspacePath` 不一致，必须先重新绑定 host workspace，再提交。
+- 不允许让 `selectedProjectPath`、`hostState.workspacePath`、`RuntimeSubmitRequest.projectPath` 三者长期漂移；当前项目必须成为 submit contract 的项目事实源。
+
 ### 4. Validation & Error Matrix
 
 | 条件 | 处理方式 |
@@ -149,12 +160,15 @@ interface RuntimeSubmitRequest {
 | 首轮消息已经发出，但因为 `activeSession` 尚未持久化而仍停留在空白入口页 | 视为 P0 可见性缺陷，必须立即展示 `liveConversation` |
 | 工具过程只存在 main 日志，renderer 不显示 | 视为主链路缺口，必须补时间线呈现 |
 | renderer 通过 `submitPrompt` / `setCurrentPrimaryAgent` 等旧 fallback 路径工作 | 视为 contract 漂移，必须回到 shared bridge |
+| `selectProject` 只更新 renderer 状态，不同步 `host.bindWorkspace` | 视为 workspace 双轨漂移，必须补 shared contract 调用 |
+| submit 时 `selectedProjectPath` 与 `hostState.workspacePath` 不一致 | 必须先重新绑定 host workspace，再进入 runtime submit |
 
 ### 5. Good / Base / Bad Cases
 
 - Good：
   - `resolveStartupRoute(...)` 纯函数决定冷启动结果
   - `useStudioBridge.submitPrompt(...)` 同时做门禁、submit、会话刷新、live conversation 清理
+  - `useStudioBridge.selectProject(...)` 先绑定 host workspace，再刷新 shell/runtime 状态
   - `ConversationTimeline` 同时呈现持久化与流式过程
   - `SessionModelPicker` 的选择真正进入 submit contract
 - Base：
@@ -176,6 +190,7 @@ interface RuntimeSubmitRequest {
   - `ModeSwitch` 点击 `XForge` 的提示行为
   - `renderer-shell.test.tsx` 断言首轮 submit 尚未生成持久化 session 时，仍会立即显示对话流
   - `renderer-shell.test.tsx` / `use-studio-bridge-submit.test.tsx` 断言不再依赖 legacy fallback 语义
+  - `use-studio-bridge-submit.test.tsx` 断言 `selectProject` 会调用 `host.bindWorkspace(projectPath)`，且 submit 前会修复 workspace 漂移
 - E2E / smoke：
   - 打开 workspace -> 发送消息 -> 收到流式回复与工具过程
   - 重启后恢复最近项目与会话
@@ -237,6 +252,11 @@ await bridge.runtime.submit({
   providerId: currentProviderId,
   modelId: currentModelId,
 })
+```
+
+```ts
+const boundHostState = await bridge.host.bindWorkspace(projectPath)
+setHostState(boundHostState)
 ```
 
 ### 当前代码参考

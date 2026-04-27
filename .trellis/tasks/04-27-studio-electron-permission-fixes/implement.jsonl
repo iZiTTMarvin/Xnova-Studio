@@ -1,0 +1,9 @@
+{"file": ".trellis/workflow.md", "reason": "Project workflow and conventions"}
+{"file": ".trellis/spec/backend/index.md", "reason": "Backend development guide"}
+{"file": ".trellis/spec/frontend/index.md", "reason": "Frontend development guide"}
+{"file": ".trellis/spec/backend/runtime-boundary.md", "reason": "runtime host renderer permission contract"}
+}
+{"file": ".trellis/spec/backend/directory-structure.md", "reason": "backend package and Studio main boundaries"}
+{"file": ".trellis/spec/frontend/state-management.md", "reason": "selected project and workspace state synchronization"}
+{"file": ".trellis/spec/frontend/project-shell-v1.md", "reason": "project selection and submit state flow"}
+{"file": ".trellis/spec/guides/cross-layer-thinking-guide.md", "reason": "permission resolution crosses renderer main runtime core"}

@@ -107,6 +107,112 @@ const runtimeService = createStudioRuntimeService({ runtimeManager })
 
 把 runtime / engine service 的长生命周期收回 `main`，而不是让入口文件继续临时拼接。
 
+## 场景：Studio 当前项目必须成为 runtime workspace 与权限判定基准
+
+### 1. Scope / Trigger
+
+- 触发条件：
+  - 修改 `RuntimeSubmitRequest.projectPath`
+  - 修改 `StudioHostState.workspacePath`
+  - 修改 `apps/studio/src/main/studio-runtime-service.ts`
+  - 修改 `packages/runtime/src/create-runtime.ts`
+  - 修改 `packages/core/src/agent-loop.ts` 的权限结果处理
+- 这是 cross-layer contract：renderer 选择的当前项目、main 持有的 workspace、runtime `cwd/workspaceRoot`、core 工具权限必须指向同一个根目录。
+
+### 2. Signatures
+
+```ts
+interface RuntimeSubmitRequest {
+  text: string
+  projectPath?: string | null
+  sessionId?: string | null
+  agentId?: string | null
+  providerId?: string | null
+  modelId?: string | null
+}
+
+interface StudioRuntimeSelection {
+  cwd: string
+  workspaceRoot: string
+  sessionId: string | null
+  agentId: string | null
+}
+
+interface PermissionResolution {
+  allow: boolean
+  reason?: string
+}
+
+type AgentPermissionResolveInput = boolean | PermissionResolution
+```
+
+### 3. Contracts
+
+- `RuntimeSubmitRequest.projectPath` 显式存在且非空时，host 必须把它作为本轮 `workspaceRoot` 与 `cwd` 的优先来源。
+- main 传入 `runtimeManager.acquireRuntime(...)` 的 `hostState.workspacePath` 必须与本轮有效 `workspaceRoot` 一致；不得继续使用旧 host state 做权限判定。
+- `createRuntime()` 收到 runtime bridge 的 `PermissionResolution.reason` 后必须原样传给 `AgentLoop.permission_request.resolve(...)`。
+- `AgentLoop` 必须兼容旧 boolean resolve，但内部统一归一化为 `{ allow, reason }`。
+- 工具被拒绝时，tool result / tool done summary 必须包含真实 reason；不得硬编码为 `rejected by user`。
+
+### 4. Validation & Error Matrix
+
+| 条件 | 处理方式 |
+|---|---|
+| `projectPath` 与旧 `hostState.workspacePath` 不一致 | 本轮 submit 以 `projectPath` 为准，并同步传给 runtime manager 与权限 resolver |
+| `projectPath` 为空且 host 未绑定 workspace | 直接返回 workspace 未绑定错误，不回退到 Electron 启动目录 |
+| 权限 resolver 返回 `{ allow: false, reason }` | core 工具结果输出 `permission denied (<reason>)` |
+| 权限 resolver 返回旧 boolean `false` | core 工具结果输出通用 `permission denied` |
+| runtime 把 permission resolution 压扁成 boolean | 视为 contract 违规，必须恢复 reason 透传 |
+
+### 5. Good / Base / Bad Cases
+
+- Good：
+  - 用户选择 `D:/workspace/project-b` 后，本轮 submit 的 `cwd/workspaceRoot/hostState.workspacePath` 全部指向 project-b
+  - project-b 内的 `write_file/edit_file` 走 workspace-scoped allow
+  - project-b 外路径被拒绝，并把 `outside-workspace` 等 reason 返回给 LLM 与 UI
+- Base：
+  - 至少保证当前项目内写入不因旧 host state 被误拒绝
+- Bad：
+  - UI 显示当前项目是 project-b，但权限层仍以 project-a 判断
+  - 拒绝原因被统一显示为 `rejected by user`
+
+### 6. Tests Required
+
+- 单元测试：
+  - `studio-runtime-service.test.ts` 断言显式 `projectPath` 优先成为 `cwd/workspaceRoot`
+  - `create-runtime.test.ts` 断言 permission resolution 不被压扁成 boolean
+  - `core-kernel-extract.test.mjs` 断言 `AgentLoop` 不再硬编码 `rejected by user`
+- 集成测试：
+  - `use-studio-bridge-submit.test.tsx` 断言项目选择会先绑定 host workspace，再刷新 shell/runtime 状态
+
+### 7. Wrong vs Correct
+
+#### Wrong
+
+```ts
+const workspaceRoot = hostState.workspacePath ?? process.cwd()
+event.resolve(resolution.allow)
+```
+
+问题：
+
+- 旧 workspace 会污染当前 submit
+- 权限拒绝 reason 被丢弃，LLM 只能看到误导性的通用拒绝
+
+#### Correct
+
+```ts
+const workspaceRoot = request.projectPath?.trim() || hostState.workspacePath
+const permissionHostState = { ...hostState, workspacePath: workspaceRoot }
+
+event.resolve({
+  allow: resolution.allow,
+  reason: resolution.reason,
+})
+```
+
+当前项目路径是本轮 submit 的事实源；权限拒绝必须保留可诊断 reason。
+
 ## 场景：定义 shared runtime / host / renderer contract
 
 ### 1. Scope / Trigger
@@ -165,6 +271,7 @@ function createRuntime(
 - 配置解析后的消费
 - `RuntimeConfigInput.cwd` 是运行时唯一权威工作目录；`bootstrapAll()`、`AgentLoop`、ToolContext、Memory、Git context、项目级 hooks / instructions 都必须显式消费该 cwd，不得在 Studio/Electron 主链路中回退依赖 `process.cwd()`。
 - runtime bootstrap 中的文件索引必须在 glob 阶段跳过 `node_modules`、`dist`、`build`、`.git` 等重型目录，并禁止跟随符号链接；不得先全量扫描再用 ignore 过滤。
+- runtime / core 公共 barrel 被轻量 inspect、Studio preload 测试或静态边界测试导入时，不得在模块加载阶段打开 SQLite、启动 MCP 或执行重型扫描；`TokenMeter` 这类会触达持久化的观测对象必须惰性实例化。
 
 #### Host 负责什么
 
@@ -205,6 +312,7 @@ function createRuntime(
 | host 对权限请求无条件放行 | 视为安全红线，至少要有显式 allow / deny 策略与审计事件 |
 | Studio submit 配置了 workspace，但 runtime/core 仍使用 Electron 启动目录 `process.cwd()` | 视为主链路缺陷，必须把 cwd 从 host contract 透传到 runtime/core/tool context |
 | 文件索引扫描没有在 `fast-glob` 阶段忽略重型目录或仍跟随符号链接 | 视为 P0 性能缺陷，必须补回归测试后修复 |
+| 导入 `@xnova/runtime` 或 `@xnova/core` barrel 时立刻打开 SQLite | 视为模块加载副作用，必须改成惰性实例化并补并发测试/静态测试 |
 
 ### 5. Good / Base / Bad Cases
 
@@ -226,6 +334,7 @@ function createRuntime(
   - preload 参数透传与类型约束
   - `createRuntime()` 必须断言 `bootstrapAll(input.cwd)` 与 `AgentLoop` config.cwd 透传
   - 文件索引必须断言 glob ignore 与 `followSymbolicLinks: false`
+  - `bootstrap.ts` 必须断言 `TokenMeter` 不在模块加载阶段直接 `new`
 - 集成测试：
   - Studio host 通过 shared contract 调用 runtime
   - runtime 事件能够到达 renderer 订阅层

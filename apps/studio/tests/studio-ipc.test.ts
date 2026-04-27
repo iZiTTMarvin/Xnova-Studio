@@ -133,6 +133,97 @@ describe('studio main ipc handlers', () => {
     )
   })
 
+  it('host.bindWorkspace 直接绑定项目路径并广播 host state', async () => {
+    const handlers = new Map<string, (_event: unknown, payload: unknown) => unknown>()
+    const send = vi.fn()
+    const logger = createLogger()
+
+    registerStudioMainIpcHandlers({
+      ipcMainLike: {
+        handle(channel, handler) {
+          handlers.set(channel, handler)
+        },
+      },
+      selectWorkspaceDirectory: vi.fn(async () => ({
+        ok: false as const,
+        code: 'cancelled' as const,
+        message: '用户取消了 workspace 目录选择',
+      })),
+      mainWindowManager: {
+        getMainWindow: () => ({
+          webContents: {
+            send,
+          },
+        }),
+      },
+      inspectRuntime: vi.fn(),
+      inspectShell: vi.fn(async () => createShellSnapshot()),
+      logger,
+    })
+
+    const bindWorkspaceHandler = handlers.get(STUDIO_BRIDGE_CHANNELS.hostBindWorkspace)
+    await expect(
+      Promise.resolve(
+        bindWorkspaceHandler?.({}, {
+          workspacePath: '  D:/workspace/project-b  ',
+        }),
+      ),
+    ).resolves.toEqual({
+      workspacePath: 'D:/workspace/project-b',
+      lastSelection: {
+        ok: true,
+        code: 'selected',
+        path: 'D:/workspace/project-b',
+      },
+    })
+
+    expect(send).toHaveBeenCalledWith(
+      STUDIO_BRIDGE_CHANNELS.hostStateChanged,
+      {
+        workspacePath: 'D:/workspace/project-b',
+        lastSelection: {
+          ok: true,
+          code: 'selected',
+          path: 'D:/workspace/project-b',
+        },
+      },
+    )
+    expect(logger.info).toHaveBeenCalledWith('host workspace 已绑定', {
+      workspacePath: 'D:/workspace/project-b',
+    })
+  })
+
+  it('host.bindWorkspace 拒绝空路径和非法参数', async () => {
+    const handlers = new Map<string, (_event: unknown, payload: unknown) => unknown>()
+
+    registerStudioMainIpcHandlers({
+      ipcMainLike: {
+        handle(channel, handler) {
+          handlers.set(channel, handler)
+        },
+      },
+      selectWorkspaceDirectory: vi.fn(async () => ({
+        ok: false as const,
+        code: 'cancelled' as const,
+        message: '用户取消了 workspace 目录选择',
+      })),
+      mainWindowManager: {
+        getMainWindow: () => null,
+      },
+      inspectRuntime: vi.fn(),
+      inspectShell: vi.fn(async () => createShellSnapshot()),
+      logger: createLogger(),
+    })
+
+    const bindWorkspaceHandler = handlers.get(STUDIO_BRIDGE_CHANNELS.hostBindWorkspace)
+    await expect(
+      Promise.resolve(bindWorkspaceHandler?.({}, { workspacePath: '   ' })),
+    ).rejects.toThrow('studio.host.bindWorkspace.workspacePath 不能为空')
+    await expect(
+      Promise.resolve(bindWorkspaceHandler?.({}, { workspacePath: 123 })),
+    ).rejects.toThrow('studio.host.bindWorkspace.workspacePath 必须是字符串')
+  })
+
   it('runtime.inspect 通过 main process 委托 shared runtime，并广播 runtime 事件', async () => {
     const handlers = new Map<string, (_event: unknown, payload: unknown) => unknown>()
     const send = vi.fn()

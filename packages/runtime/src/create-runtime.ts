@@ -443,7 +443,10 @@ export async function createRuntime(
                 args: event.args,
                 sessionId: lastSessionId ?? '',
               })
-              event.resolve(resolution.allow)
+              event.resolve({
+                allow: resolution.allow,
+                ...(resolution.reason === undefined ? {} : { reason: resolution.reason }),
+              })
               break
             }
 

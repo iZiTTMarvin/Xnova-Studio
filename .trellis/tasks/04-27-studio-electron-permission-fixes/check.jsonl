@@ -1,0 +1,4 @@
+{"file": ".kilocode/workflows/finish-work.md", "reason": "Finish work checklist"}
+{"file": ".agents/skills/trellis-check/SKILL.md", "reason": "Code quality check spec"}
+{"file": ".trellis/spec/frontend/project-shell-v1.md", "reason": "verify project selection and submit UX state"}
+{"file": ".trellis/spec/backend/runtime-boundary.md", "reason": "verify cross-layer runtime permission contract"}

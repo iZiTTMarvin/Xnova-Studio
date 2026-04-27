@@ -62,6 +62,13 @@ export interface UserQuestionResult {
     answers?: Record<string, string | string[]>
 }
 
+export interface AgentPermissionResolution {
+    allow: boolean
+    reason?: string
+}
+
+type AgentPermissionResolveInput = boolean | AgentPermissionResolution
+
 /**
  * AgentEvent — run() 的 yield 类型。
  *
@@ -89,7 +96,7 @@ export type AgentEvent =
     resultFull?: string;
     meta?: ToolResultMeta
 }
-    | { type: 'permission_request'; toolName: string; args: Record<string, unknown>; resolve: (allow: boolean) => void }
+    | { type: 'permission_request'; toolName: string; args: Record<string, unknown>; resolve: (resolution: AgentPermissionResolveInput) => void }
     | { type: 'user_question_request'; questions: UserQuestion[]; resolve: (result: UserQuestionResult) => void }
     | { type: 'error'; error: string }
     | { type: 'done'; reason?: 'complete' | 'max_turns' | 'aborted' | 'stopped' }
@@ -592,11 +599,12 @@ export class AgentLoop {
         }
 
         // 权限检查：isSidechain 模式跳过弹窗（主 Agent 派发即授权）
-        const allowed = yield* this.#checkPermission(tc)
-        if (!allowed) {
+        const permission = yield* this.#checkPermission(tc)
+        if (!permission.allow) {
+            const denialMessage = formatPermissionDenied(permission.reason)
             history.push({
                 role: 'user',
-                content: [{type: 'tool_result', toolCallId: tc.toolCallId, result: 'rejected by user', isError: true}]
+                content: [{type: 'tool_result', toolCallId: tc.toolCallId, result: denialMessage, isError: true}]
             })
             yield {
                 type: 'tool_done',
@@ -604,7 +612,7 @@ export class AgentLoop {
                 toolCallId: tc.toolCallId,
                 durationMs: 0,
                 success: false,
-                resultSummary: 'rejected by user'
+                resultSummary: denialMessage
             }
             return
         }
@@ -751,24 +759,26 @@ export class AgentLoop {
     }
 
     /** 安全工具直接放行；危险工具 yield permission_request 暂停等待用户确认 */
-    async* #checkPermission(tc: ToolCallContent): AsyncGenerator<AgentEvent, boolean> {
-        if (this.#shouldStop()) return false
+    async* #checkPermission(tc: ToolCallContent): AsyncGenerator<AgentEvent, AgentPermissionResolution> {
+        if (this.#shouldStop()) return {allow: false, reason: 'stopped'}
         // isSidechain 模式：子 Agent 内所有工具自动批准（主 Agent 派发即授权）
-        if (this.#config.isSidechain) return true
+        if (this.#config.isSidechain) return {allow: true}
 
-        if (!this.#registry.isDangerous(tc.toolName)) return true
+        if (!this.#registry.isDangerous(tc.toolName)) return {allow: true}
 
-        let resolvePermission!: (v: boolean) => void
-        const promise = new Promise<boolean>(r => {
-            resolvePermission = r
+        let resolvePermission!: (v: AgentPermissionResolveInput) => void
+        const promise = new Promise<AgentPermissionResolution>(r => {
+            resolvePermission = (resolution) => {
+                r(normalizePermissionResolution(resolution))
+            }
         })
         yield {type: 'permission_request', toolName: tc.toolName, args: tc.args, resolve: resolvePermission}
-        const allowed = await promise
+        const permission = await promise
 
-        if (allowed) {
+        if (permission.allow) {
             yield {type: 'permission_grant', toolName: tc.toolName, always: false}
         }
-        return allowed
+        return permission
     }
 }
 
@@ -781,6 +791,30 @@ function truncate(text: string, maxLength: number): string {
     return maxLength >= 10000
         ? text.slice(0, maxLength) + `\n... (truncated, total ${text.length} chars)`
         : text.slice(0, maxLength) + '...'
+}
+
+function normalizePermissionResolution(
+    resolution: AgentPermissionResolveInput,
+): AgentPermissionResolution {
+    if (typeof resolution === 'boolean') {
+        return {allow: resolution}
+    }
+
+    const reason = typeof resolution.reason === 'string'
+        ? resolution.reason.trim()
+        : ''
+
+    return {
+        allow: resolution.allow,
+        ...(reason ? {reason} : {}),
+    }
+}
+
+function formatPermissionDenied(reason?: string): string {
+    const normalizedReason = reason?.trim()
+    return normalizedReason
+        ? `permission denied (${normalizedReason})`
+        : 'permission denied'
 }
 
 /** 工具专属的截断后引导提示 */

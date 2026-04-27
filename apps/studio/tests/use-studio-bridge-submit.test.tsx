@@ -145,6 +145,13 @@ function HookHarness() {
       >
         切换会话
       </button>
+      <button
+        onClick={() => {
+          void bridgeState.selectProject('D:/workspace/project-b')
+        }}
+      >
+        切换项目
+      </button>
       <input
         data-testid="select-session-target"
         value={selectSessionTarget}
@@ -172,6 +179,9 @@ function HookHarness() {
       <div data-testid="current-run-step">{bridgeState.currentRunStep ?? ''}</div>
       <div data-testid="selected-session-id">
         {bridgeState.selectedSessionId ?? ''}
+      </div>
+      <div data-testid="selected-project-path">
+        {bridgeState.selectedProjectPath ?? ''}
       </div>
     </div>
   )
@@ -343,6 +353,93 @@ describe('useStudioBridge runtime submit', () => {
       )
     })
     expect(legacySubmitPrompt).not.toHaveBeenCalled()
+  })
+
+  it('selectProject 会同步绑定主进程 workspace，避免权限层继续使用旧路径', async () => {
+    const bindWorkspace = vi.fn(async (workspacePath: string) => ({
+      workspacePath,
+      lastSelection: {
+        ok: true as const,
+        code: 'selected' as const,
+        path: workspacePath,
+      },
+    }))
+    const inspect = vi.fn(async () => ({
+      ...createRuntimeInspectResult(),
+      workspacePath: 'D:/workspace/project-b',
+    }))
+    const projectSnapshot = {
+      ...createShellSnapshot(null),
+      startup: {
+        recentProject: {
+          path: 'D:/workspace/project-b',
+          lastActiveAt: 20,
+          exists: true,
+        },
+        recentSession: null,
+      },
+      defaults: {
+        ...createShellSnapshot(null).defaults,
+        projectPath: 'D:/workspace/project-b',
+      },
+    }
+    const getSnapshot = vi
+      .fn()
+      .mockResolvedValueOnce(createShellSnapshot(null))
+      .mockResolvedValueOnce(projectSnapshot)
+
+    ;(window as Window & { xnovaStudio?: unknown }).xnovaStudio = {
+      host: {
+        getState: vi.fn(async () => ({
+          workspacePath: 'D:/workspace/demo',
+          lastSelection: null,
+        })),
+        openWorkspace: vi.fn(),
+        bindWorkspace,
+        onStateChanged: () => () => {},
+      },
+      runtime: {
+        inspect,
+        submit: vi.fn(),
+        onEvent: () => () => {},
+      },
+      shell: {
+        getSnapshot,
+      },
+      settings: {
+        getProviderSettings: vi.fn(),
+        saveProviderSettings: vi.fn(),
+        testProviderConnection: vi.fn(),
+      },
+      memory: {
+        getOverview: vi.fn(),
+        rebuild: vi.fn(),
+      },
+      mcp: {
+        getOverview: vi.fn(),
+        addServer: vi.fn(),
+        deleteServer: vi.fn(),
+      },
+      skillsPlugins: {
+        getOverview: vi.fn(),
+      },
+    }
+
+    render(<HookHarness />)
+
+    await waitFor(() => {
+      expect(screen.getByTestId('shell-status').textContent).toBe('ready')
+    })
+
+    fireEvent.click(screen.getByRole('button', { name: '切换项目' }))
+
+    await waitFor(() => {
+      expect(bindWorkspace).toHaveBeenCalledWith('D:/workspace/project-b')
+    })
+    expect(screen.getByTestId('selected-project-path').textContent).toBe(
+      'D:/workspace/project-b',
+    )
+    expect(inspect).toHaveBeenLastCalledWith({ refresh: true })
   })
 
   it('submit 失败时同一条系统错误不会重复显示两次', async () => {

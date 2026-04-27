@@ -91,6 +91,8 @@ export interface PermissionResolution {
   allow: boolean
   /** 是否记住本次决策（本 session 内同工具不再询问） */
   remember?: boolean
+  /** Host 给出的结构化决策原因，用于 UI 与 LLM 诊断 */
+  reason?: string
 }
 
 // ═══════════════════════════════════════════════

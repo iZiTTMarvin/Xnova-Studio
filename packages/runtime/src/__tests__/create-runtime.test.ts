@@ -7,6 +7,9 @@
  * 不启动真实 LLM / MCP，只验证 runtime 骨架的结构正确性。
  */
 
+import { readFileSync } from 'node:fs'
+import { dirname, resolve } from 'node:path'
+import { fileURLToPath } from 'node:url'
 import { describe, it, expect, vi } from 'vitest'
 import { NoopBridge, CallbackBridge } from '../bridge.js'
 import { makeEvent, makeWarningEvent, makeErrorEvent } from '../events.js'
@@ -107,6 +110,17 @@ describe('CallbackBridge', () => {
 
     expect(result.cancelled).toBe(false)
     expect(result.answers).toEqual({})
+  })
+})
+
+describe('createRuntime 权限桥接契约', () => {
+  it('permission_request 需要把 PermissionResolution.reason 透传给 AgentLoop', () => {
+    const currentDir = dirname(fileURLToPath(import.meta.url))
+    const content = readFileSync(resolve(currentDir, '../create-runtime.ts'), 'utf-8')
+
+    expect(content).toContain('event.resolve({')
+    expect(content).toContain('reason: resolution.reason')
+    expect(content).not.toContain('event.resolve(resolution.allow)')
   })
 })
 

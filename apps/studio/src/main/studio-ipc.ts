@@ -1,5 +1,8 @@
 import type { MainLogger } from './logger'
-import type { WorkspaceSelectionResult } from '../shared/studio-bridge-contract'
+import type {
+  BindWorkspaceRequest,
+  WorkspaceSelectionResult,
+} from '../shared/studio-bridge-contract'
 import {
   STUDIO_BRIDGE_CHANNELS,
   type StudioSkillsPluginsOverviewSnapshot,
@@ -49,6 +52,25 @@ function assertNoPayload(payload: unknown, methodName: string): void {
   if (payload !== undefined) {
     throw new Error(`${methodName} 不接受参数。`)
   }
+}
+
+function parseBindWorkspacePayload(payload: unknown): BindWorkspaceRequest {
+  if (!isPlainObject(payload)) {
+    throw new Error('studio.host.bindWorkspace 参数必须是对象。')
+  }
+  if (Object.keys(payload).some((key) => key !== 'workspacePath')) {
+    throw new Error('studio.host.bindWorkspace 只允许 workspacePath 字段。')
+  }
+  if (typeof payload.workspacePath !== 'string') {
+    throw new Error('studio.host.bindWorkspace.workspacePath 必须是字符串。')
+  }
+
+  const workspacePath = payload.workspacePath.trim()
+  if (!workspacePath) {
+    throw new Error('studio.host.bindWorkspace.workspacePath 不能为空。')
+  }
+
+  return { workspacePath }
 }
 
 function parseRuntimeInspectPayload(payload: unknown): RuntimeInspectRequest {
@@ -713,6 +735,32 @@ export function registerStudioMainIpcHandlers(
           selection,
           state: hostState,
         }
+      })
+    },
+  )
+
+  options.ipcMainLike.handle(
+    STUDIO_BRIDGE_CHANNELS.hostBindWorkspace,
+    async (_event, payload): Promise<StudioHostState> => {
+      const request = parseBindWorkspacePayload(payload)
+
+      return enqueueWorkspaceSelection(async () => {
+        const selection: WorkspaceSelectionResult = {
+          ok: true,
+          code: 'selected',
+          path: request.workspacePath,
+        }
+        hostState = {
+          workspacePath: request.workspacePath,
+          lastSelection: selection,
+        }
+
+        broadcast(STUDIO_BRIDGE_CHANNELS.hostStateChanged, hostState)
+        options.logger.info('host workspace 已绑定', {
+          workspacePath: hostState.workspacePath,
+        })
+
+        return hostState
       })
     },
   )

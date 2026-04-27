@@ -6,7 +6,7 @@
  * 职责：
  * - 构建包含全部内置工具的 ToolRegistry
  * - MCP 连接初始化（幂等）
- * - 模块级 SessionLogger / TokenMeter 单例
+ * - 模块级 SessionLogger / TokenMeter 惰性单例
  * - getCurrentSessionId() 供退出时打印 resume 命令
  */
 
@@ -58,11 +58,32 @@ let mcpInitialized = false
 /** 模块级 SkillStore 实例 */
 export const skillStore = new SkillStore()
 
-/** 模块级 SessionLogger 实例，管理会话持久化和观测事件 */
-export const sessionLogger = new SessionLogger()
+function createLazySingleton<TInstance extends object>(
+  createInstance: () => TInstance,
+): TInstance {
+  let instance: TInstance | null = null
 
-/** 模块级 TokenMeter 实例，管理 token 计量和计费 */
-export const tokenMeter = new TokenMeter()
+  function getInstance(): TInstance {
+    instance ??= createInstance()
+    return instance
+  }
+
+  return new Proxy({} as TInstance, {
+    get(_target, property) {
+      const value = Reflect.get(getInstance(), property, getInstance()) as unknown
+      return typeof value === 'function' ? value.bind(getInstance()) : value
+    },
+    set(_target, property, value) {
+      return Reflect.set(getInstance(), property, value, getInstance())
+    },
+  })
+}
+
+/** 模块级 SessionLogger 惰性实例，管理会话持久化和观测事件 */
+export const sessionLogger = createLazySingleton(() => new SessionLogger())
+
+/** 模块级 TokenMeter 惰性实例，首次计量使用时才打开 SQLite */
+export const tokenMeter = createLazySingleton(() => new TokenMeter())
 
 /** 获取当前活跃的 sessionId（退出时用于打印 resume 命令） */
 export function getCurrentSessionId(): string | null {

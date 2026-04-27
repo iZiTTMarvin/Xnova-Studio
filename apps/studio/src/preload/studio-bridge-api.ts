@@ -34,6 +34,7 @@ import {
   parseStudioMcpServerMutationInput,
   parseStudioMemoryOverviewSnapshot,
   parseStudioMemoryRebuildResult,
+  parseStudioBindWorkspaceRequest,
   parseStudioOpenWorkspaceResponse,
   parseStudioPermissionDialogRequest,
   parseStudioPermissionDialogResponse,
@@ -124,6 +125,20 @@ export function createStudioBridgeApi(
       listener(response.state)
     }
     return response
+  }
+
+  async function bindWorkspace(workspacePath: string): Promise<StudioHostState> {
+    const request = parseStudioBindWorkspaceRequest({ workspacePath })
+    const payload = await options.ipcRenderer.invoke(
+      STUDIO_BRIDGE_CHANNELS.hostBindWorkspace,
+      request,
+    )
+    const state = parseStudioHostState(payload)
+    hostState = state
+    for (const listener of hostListeners) {
+      listener(state)
+    }
+    return state
   }
 
   async function getShellSnapshot(
@@ -247,6 +262,9 @@ export function createStudioBridgeApi(
       async openWorkspace(...args: unknown[]) {
         assertStudioNoPayload(args[0], 'studio.host.openWorkspace')
         return openWorkspace()
+      },
+      async bindWorkspace(workspacePath: string) {
+        return bindWorkspace(workspacePath)
       },
       onStateChanged(listener) {
         hostListeners.add(listener)

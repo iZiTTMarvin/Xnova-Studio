@@ -172,6 +172,18 @@ function resolveRuntimeCwd(
   return null
 }
 
+function resolveRuntimeWorkspaceRoot(
+  request: RuntimeSubmitRequest,
+  hostState: StudioHostState,
+  cwd: string,
+): string {
+  const explicitProjectPath = request.projectPath?.trim()
+  if (explicitProjectPath) {
+    return explicitProjectPath
+  }
+  return hostState.workspacePath?.trim() || cwd
+}
+
 function buildStudioRuntimeHistory(
   text: string,
 ): NonNullable<RuntimeSubmitInput['history']> {
@@ -1141,7 +1153,11 @@ export function createStudioRuntimeService(
         submitTiming.mark('config_load_start')
         const resolved = loadResolvedConfigFn(cwd)
         submitTiming.mark('config_load_done')
-        const workspaceRoot = hostState.workspacePath ?? cwd
+        const workspaceRoot = resolveRuntimeWorkspaceRoot(request, hostState, cwd)
+        const permissionHostState: StudioHostState = {
+          ...hostState,
+          workspacePath: workspaceRoot,
+        }
         const engineServiceApi = runtimeManager.getEngineServiceApi(workspaceRoot)
         const runtimeConfig = {
           ...resolved.effective,
@@ -1172,7 +1188,7 @@ export function createStudioRuntimeService(
         const runtimeHandle = await runtimeManager.acquireRuntime({
           selection,
           config: runtimeConfig,
-          hostState,
+          hostState: permissionHostState,
           emitRuntimeEvent,
           createRuntimeFn,
           createBridge: (bridgeState) => createRuntimeBridge(bridgeState),

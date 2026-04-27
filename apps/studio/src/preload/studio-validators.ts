@@ -3,6 +3,7 @@ import type {
   StudioMcpMutationResult,
   StudioMcpOverviewSnapshot,
   StudioMcpServerMutationInput,
+  BindWorkspaceRequest,
   OpenWorkspaceResponse,
   StudioMemoryOverviewSnapshot,
   StudioMemoryRebuildResult,
@@ -114,6 +115,31 @@ export function assertStudioNoPayload(
   if (payload !== undefined) {
     throw new StudioBridgeValidationError(`${methodName} 不接受参数。`)
   }
+}
+
+export function parseStudioBindWorkspaceRequest(
+  payload: unknown,
+): BindWorkspaceRequest {
+  const value = assertPlainObject(payload, 'host.bindWorkspace 参数')
+  if (Object.keys(value).some((key) => key !== 'workspacePath')) {
+    throw new StudioBridgeValidationError(
+      'host.bindWorkspace 只允许 workspacePath 字段。',
+    )
+  }
+  if (typeof value.workspacePath !== 'string') {
+    throw new StudioBridgeValidationError(
+      'studio.host.bindWorkspace.workspacePath 必须是字符串。',
+    )
+  }
+
+  const workspacePath = value.workspacePath.trim()
+  if (!workspacePath) {
+    throw new StudioBridgeValidationError(
+      'studio.host.bindWorkspace.workspacePath 不能为空。',
+    )
+  }
+
+  return { workspacePath }
 }
 
 export function parseStudioRuntimeInspectRequest(
