@@ -81,6 +81,29 @@ function createShellSnapshot(sessionId: string | null) {
   }
 }
 
+function installManualRaf() {
+  let nextRafId = 1
+  const scheduledCallbacks = new Map<number, FrameRequestCallback>()
+
+  vi.stubGlobal('requestAnimationFrame', (callback: FrameRequestCallback) => {
+    const id = nextRafId
+    nextRafId += 1
+    scheduledCallbacks.set(id, callback)
+    return id
+  })
+  vi.stubGlobal('cancelAnimationFrame', (id: number) => {
+    scheduledCallbacks.delete(id)
+  })
+
+  return {
+    flushAll() {
+      const callbacks = [...scheduledCallbacks.values()]
+      scheduledCallbacks.clear()
+      callbacks.forEach((callback) => callback(Date.now()))
+    },
+  }
+}
+
 function HookHarness() {
   const bridgeState = useStudioBridge()
   const [submitResult, setSubmitResult] = useState('')
@@ -189,6 +212,8 @@ function HookHarness() {
 
 afterEach(() => {
   cleanup()
+  vi.useRealTimers()
+  vi.unstubAllGlobals()
   delete (window as Window & { xnovaStudio?: unknown }).xnovaStudio
 })
 
@@ -651,6 +676,112 @@ describe('useStudioBridge runtime submit', () => {
     expect(screen.getByTestId('current-run-step').textContent).toBe('运行已完成')
   })
 
+  it('text_delta 会在同一帧内批量 flush，并合并为单个 text block', async () => {
+    const raf = installManualRaf()
+    let runtimeEventHandler: ((event: {
+      type: string
+      timestamp: string
+      payload?: Record<string, unknown>
+    }) => void) | null = null
+
+    ;(window as Window & { xnovaStudio?: unknown }).xnovaStudio = {
+      host: {
+        getState: vi.fn(async () => ({
+          workspacePath: 'D:/workspace/demo',
+          lastSelection: null,
+        })),
+        openWorkspace: vi.fn(),
+        onStateChanged: () => () => {},
+      },
+      runtime: {
+        inspect: vi.fn(async () => createRuntimeInspectResult()),
+        submit: vi.fn(async () => {
+          runtimeEventHandler?.({
+            type: 'run_started',
+            timestamp: '2026-04-27T00:00:00.000Z',
+            payload: {
+              status: 'running',
+            },
+          })
+          runtimeEventHandler?.({
+            type: 'text_delta',
+            timestamp: '2026-04-27T00:00:01.000Z',
+            payload: {
+              text: '第一段',
+            },
+          })
+          runtimeEventHandler?.({
+            type: 'text_delta',
+            timestamp: '2026-04-27T00:00:01.100Z',
+            payload: {
+              text: '第二段',
+            },
+          })
+          return new Promise(() => undefined)
+        }),
+        onEvent: (listener: (event: {
+          type: string
+          timestamp: string
+          payload?: Record<string, unknown>
+        }) => void) => {
+          runtimeEventHandler = listener
+          return () => {
+            runtimeEventHandler = null
+          }
+        },
+      },
+      shell: {
+        getSnapshot: vi.fn(async () => createShellSnapshot(null)),
+      },
+      settings: {
+        getProviderSettings: vi.fn(),
+        saveProviderSettings: vi.fn(),
+        testProviderConnection: vi.fn(),
+      },
+      memory: {
+        getOverview: vi.fn(),
+        rebuild: vi.fn(),
+      },
+      mcp: {
+        getOverview: vi.fn(),
+        addServer: vi.fn(),
+        deleteServer: vi.fn(),
+      },
+      skillsPlugins: {
+        getOverview: vi.fn(),
+      },
+    }
+
+    render(<HookHarness />)
+
+    await waitFor(() => {
+      expect(screen.getByTestId('shell-status').textContent).toBe('ready')
+    })
+
+    fireEvent.click(screen.getByRole('button', { name: '提交' }))
+
+    await waitFor(() => {
+      expect(screen.getByTestId('run-status').textContent).toBe('running')
+    })
+
+    expect(screen.getByTestId('assistant-text').textContent).toBe('')
+    expect(screen.getByTestId('live-conversation-json').textContent).toBe('[]')
+
+    act(() => {
+      raf.flushAll()
+    })
+
+    expect(screen.getByTestId('assistant-text').textContent).toBe('第一段第二段')
+    const blocks = JSON.parse(
+      screen.getByTestId('live-conversation-json').textContent ?? '[]',
+    ) as Array<Record<string, unknown>>
+    expect(blocks).toHaveLength(1)
+    expect(blocks[0]).toMatchObject({
+      type: 'text',
+      content: '第一段第二段',
+    })
+  })
+
   it('liveConversation.blocks 会保留 text_delta / tool_start / tool_end / text_delta 的真实顺序', async () => {
     let runtimeEventHandler: ((event: {
       type: string
@@ -867,6 +998,7 @@ describe('useStudioBridge runtime submit', () => {
   })
 
   it('submit 成功后若 runtime inspect 刷新失败，不应提前清空 liveConversation', async () => {
+    const raf = installManualRaf()
     let runtimeEventHandler: ((event: {
       type: string
       timestamp: string
@@ -953,6 +1085,9 @@ describe('useStudioBridge runtime submit', () => {
       expect(inspect).toHaveBeenCalledTimes(2)
     })
 
+    act(() => {
+      raf.flushAll()
+    })
     expect(screen.getByTestId('assistant-text').textContent).toBe(
       '刷新失败前的可见内容',
     )
@@ -1548,6 +1683,7 @@ describe('useStudioBridge runtime submit', () => {
   })
 
   it('run_cancelled 后会 finalize thinking block，并停止 live 状态', async () => {
+    const raf = installManualRaf()
     let runtimeEventHandler: ((event: {
       type: string
       timestamp: string
@@ -1636,9 +1772,10 @@ describe('useStudioBridge runtime submit', () => {
     })
 
     fireEvent.click(screen.getByRole('button', { name: '提交' }))
-    await waitFor(() => {
-      expect(screen.getByTestId('live-blocks').textContent).toContain('thinking:继续思考中')
+    act(() => {
+      raf.flushAll()
     })
+    expect(screen.getByTestId('live-blocks').textContent).toContain('thinking:继续思考中')
 
     fireEvent.click(screen.getByRole('button', { name: '停止' }))
     await waitFor(() => {

@@ -20,6 +20,10 @@ import type {
 } from '@xnova/runtime'
 import type { MainLogger } from './logger'
 import {
+  AdaptiveEventBatcher,
+  type AdaptiveEventBatcherConfig,
+} from './adaptive-event-batcher'
+import {
   createStudioRuntimeManager,
   type StudioRuntimeBridgeState,
   type StudioManagedRuntimeEntry,
@@ -57,6 +61,7 @@ export interface StudioRuntimeService {
 }
 
 interface PermissionWindowLike {
+  isFocused?(): boolean
   webContents?: {
     send(channel: string, payload: unknown): void
   }
@@ -85,6 +90,8 @@ export interface CreateStudioRuntimeServiceOptions {
     getMainWindow(): PermissionWindowLike | null
   }
   logger?: Pick<MainLogger, 'info' | 'warn' | 'error'>
+  eventBatcher?: AdaptiveEventBatcher
+  eventBatcherConfig?: Partial<AdaptiveEventBatcherConfig>
 }
 
 const SAFE_READ_TOOL_NAMES = new Set([
@@ -590,6 +597,9 @@ export function createStudioRuntimeService(
       return undefined
     },
   }
+  const eventBatcher =
+    options.eventBatcher ??
+    new AdaptiveEventBatcher(options.eventBatcherConfig)
   const rememberedPermissions = new Map<
     string,
     PermissionResolution & { reason?: string }
@@ -688,6 +698,17 @@ export function createStudioRuntimeService(
         createEngineServiceApi({ cwd: workspaceRoot }),
     })
   let currentRun: ActiveStudioRun | null = null
+
+  function emitBufferedRuntimeEvent(
+    handler: (event: StudioRuntimeEvent) => void,
+    event: StudioRuntimeEvent,
+  ): void {
+    eventBatcher.setHandler(handler)
+    eventBatcher.setForeground(
+      options.mainWindowManager?.getMainWindow()?.isFocused?.() ?? true,
+    )
+    eventBatcher.push(event)
+  }
 
   function touchActiveRun(run: ActiveStudioRun, sessionId?: string): void {
     run.lastProgressAt = Date.now()
@@ -1098,6 +1119,9 @@ export function createStudioRuntimeService(
     },
 
     async submit(request, hostState, emitRuntimeEvent) {
+      const emitStudioRuntimeEvent = (event: StudioRuntimeEvent): void => {
+        emitBufferedRuntimeEvent(emitRuntimeEvent, event)
+      }
       const text = request.text.trim()
       if (!text) {
         return {
@@ -1137,7 +1161,7 @@ export function createStudioRuntimeService(
       let hasEmittedRunFailed = false
 
       try {
-        emitRunLifecycleEvent(emitRuntimeEvent, {
+        emitRunLifecycleEvent(emitStudioRuntimeEvent, {
           type: 'run_started',
           runId,
           sessionId: request.sessionId ?? null,
@@ -1189,7 +1213,7 @@ export function createStudioRuntimeService(
           selection,
           config: runtimeConfig,
           hostState: permissionHostState,
-          emitRuntimeEvent,
+          emitRuntimeEvent: emitStudioRuntimeEvent,
           createRuntimeFn,
           createBridge: (bridgeState) => createRuntimeBridge(bridgeState),
         })
@@ -1197,7 +1221,7 @@ export function createStudioRuntimeService(
         runtimeEntry = runtimeHandle.entry
 
         for (const warning of resolved.warnings) {
-          emitRuntimeEvent({
+          emitStudioRuntimeEvent({
             type: 'warning',
             timestamp: new Date().toISOString(),
             payload: {
@@ -1219,7 +1243,7 @@ export function createStudioRuntimeService(
           agentId: selection.agentId,
           runtimeInstance,
           runtimeEntry: runtimeHandle.entry,
-          emitRuntimeEvent,
+          emitRuntimeEvent: emitStudioRuntimeEvent,
           startedAt: Date.now(),
           lastProgressAt: Date.now(),
           settled: false,
@@ -1343,7 +1367,7 @@ export function createStudioRuntimeService(
         if (turnResult.error) {
           if (!activeRun?.settled) {
             hasEmittedRunFailed = true
-            emitRunLifecycleEvent(emitRuntimeEvent, {
+            emitRunLifecycleEvent(emitStudioRuntimeEvent, {
               type: 'run_failed',
               runId,
               sessionId: turnResult.sessionId,
@@ -1367,7 +1391,7 @@ export function createStudioRuntimeService(
 
         runtimeManager.commitSession(runtimeHandle.entry, turnResult.sessionId)
         if (!activeRun?.settled) {
-          emitRunLifecycleEvent(emitRuntimeEvent, {
+          emitRunLifecycleEvent(emitStudioRuntimeEvent, {
             type: 'run_completed',
             runId,
             sessionId: turnResult.sessionId,
@@ -1400,7 +1424,7 @@ export function createStudioRuntimeService(
         logger.error('runtime submit 执行失败', error)
         submitTiming.markFirst('runtime_submit_resolved_or_rejected')
         if (!hasEmittedRunFailed && !activeRun?.settled) {
-          emitRunLifecycleEvent(emitRuntimeEvent, {
+          emitRunLifecycleEvent(emitStudioRuntimeEvent, {
             type: 'run_failed',
             runId,
             sessionId: request.sessionId ?? null,
@@ -1473,6 +1497,7 @@ export function createStudioRuntimeService(
         })
         pendingUserInputRequests.delete(requestId)
       }
+      eventBatcher.stop()
       await runtimeManager.dispose()
     },
   }

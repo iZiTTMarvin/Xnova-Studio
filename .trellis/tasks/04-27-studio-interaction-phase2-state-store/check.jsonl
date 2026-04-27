@@ -1,0 +1,11 @@
+{"file": ".kilocode/workflows/finish-work.md", "reason": "Finish work checklist"}
+{"file": ".agents/skills/trellis-check/SKILL.md", "reason": "Code quality check spec"}
+{"file": ".trellis/spec/backend/runtime-boundary.md", "reason": "store 重构不能破坏 shared contract 与 host 边界"}
+{"file": ".trellis/spec/frontend/directory-structure.md", "reason": "stores/hooks/pages/components 新增文件落点约束"}
+{"file": ".trellis/spec/frontend/hook-guidelines.md", "reason": "useStudioBridge 瘦身后的副作用边界"}
+{"file": ".trellis/spec/frontend/state-management.md", "reason": "项目/会话/运行时状态分层规则"}
+{"file": ".trellis/spec/frontend/project-shell-v1.md", "reason": "submit、恢复、模型选择等语义不能漂移"}
+{"file": ".trellis/spec/frontend/type-safety.md", "reason": "selector/store/runtime event 的类型安全"}
+{"file": ".trellis/spec/guides/cross-layer-thinking-guide.md", "reason": "状态源在 renderer/main/runtime 的边界划分"}
+{"file": ".trellis/spec/guides/code-reuse-thinking-guide.md", "reason": "避免复制旧 hook 逻辑到多个 store"}
+{"file": ".trellis/tasks/04-27-studio-interaction-modernization/research/opencowork-reference-index.md", "reason": "OpenCowork store 架构参考"}

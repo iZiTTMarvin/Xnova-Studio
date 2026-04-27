@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react'
+import { memo, useEffect, useRef, useState } from 'react'
 import { IconChevronDown, IconChevronRight } from './Icons'
 import { formatDurationLabel } from '../utils/tool-event-summary'
 
@@ -8,7 +8,7 @@ interface ReasoningRowProps {
   durationMs?: number
 }
 
-export function ReasoningRow(props: ReasoningRowProps) {
+export const ReasoningRow = memo(function ReasoningRow(props: ReasoningRowProps) {
   const [isExpanded, setIsExpanded] = useState(props.isLive)
   const [elapsedMs, setElapsedMs] = useState(props.durationMs ?? 0)
   const previousLiveRef = useRef(props.isLive)
@@ -80,4 +80,4 @@ export function ReasoningRow(props: ReasoningRowProps) {
       ) : null}
     </div>
   )
-}
+})

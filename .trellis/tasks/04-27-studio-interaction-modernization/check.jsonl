@@ -1,0 +1,15 @@
+{"file": ".kilocode/workflows/finish-work.md", "reason": "Finish work checklist"}
+{"file": ".agents/skills/trellis-check/SKILL.md", "reason": "Code quality check spec"}
+{"file": ".trellis/spec/backend/directory-structure.md", "reason": "主宿主与 packages 边界约束"}
+{"file": ".trellis/spec/backend/runtime-boundary.md", "reason": "Studio runtime host/main/shared 契约约束"}
+{"file": ".trellis/spec/frontend/directory-structure.md", "reason": "renderer/shared/main 目录边界"}
+{"file": ".trellis/spec/frontend/hook-guidelines.md", "reason": "桥接 hook 订阅与清理约束"}
+{"file": ".trellis/spec/frontend/state-management.md", "reason": "状态分层与恢复优先级约束"}
+{"file": ".trellis/spec/frontend/project-shell-v1.md", "reason": "Studio 主壳与时间线主链路约束"}
+{"file": ".trellis/spec/frontend/quality-guidelines.md", "reason": "前端验证门槛与失败态要求"}
+{"file": ".trellis/spec/frontend/type-safety.md", "reason": "流式事件与契约类型安全"}
+{"file": ".trellis/spec/guides/cross-layer-thinking-guide.md", "reason": "跨层数据流与契约思考"}
+{"file": ".trellis/spec/guides/code-reuse-thinking-guide.md", "reason": "避免重复实现 OpenCowork 迁移逻辑"}
+{"file": "implementation_plan.md", "reason": "本次改造阶段计划原始文档"}
+{"file": "项目交互改造计划.md", "reason": "本次改造详细 PRD 原始文档"}
+{"file": ".trellis/tasks/04-27-studio-interaction-modernization/research/opencowork-reference-index.md", "reason": "OpenCowork 参考索引"}

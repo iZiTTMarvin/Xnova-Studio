@@ -1,4 +1,16 @@
 ## 2026-04-27
+- **Studio 交互现代化 Phase 1**：在 main 侧引入 runtime event 批量缓冲
+  - 新增 `apps/studio/src/main/adaptive-event-batcher.ts`，按 `runId` 聚合 `text_delta / thinking`，前台 33ms、后台 150ms flush，并在控制/终端事件到来前先刷出已缓冲文本
+  - `studio-runtime-service` 的 runtime 事件出口接入 batcher，`run_started / tool_start / tool_end / permission.* / model_request_* / terminal` 继续立即透传，只把高频文本类事件限流到 renderer
+  - 补充 `adaptive-event-batcher.test.ts` 与 `studio-runtime-service.test.ts` 回归测试，锁住“相邻 delta 合并但顺序不乱”“控制事件前先 flush”“cancel 后不丢已见文本”等主链路契约
+  - 验证：`pnpm --filter xnova-studio typecheck`、`pnpm --filter xnova-studio test`、`pnpm --filter xnova-studio build` 全部通过
+  - 任务详情见 `.trellis/tasks/04-27-studio-interaction-phase1-batcher/`
+- **Studio 交互现代化 Phase 0**：为高频流式输出补齐 renderer 止血层
+  - `useStudioBridge` 为 `text_delta / thinking` 引入 RAF 批量缓冲，保持块顺序不变的前提下把同帧片段合并后再落地
+  - `ConversationTimeline` 将历史用户/assistant 消息提炼为 memo 化消息视图，避免 live blocks 每次增长都重跑整段历史 renderRows
+  - `ToolActionRow` 与 `ReasoningRow` 增加 `React.memo`；高频 delta 不再更新 `lastRuntimeEvent`，减少无意义页面级对象 churn
+  - 新增手动 RAF 回归测试，覆盖“同帧多个 text_delta 先缓冲、下一帧再合并展示”的行为；`pnpm --filter xnova-studio typecheck`、`pnpm --filter xnova-studio test`、`pnpm --filter xnova-studio build` 全部通过
+  - 任务详情见 `.trellis/tasks/04-27-studio-interaction-phase0-stopgap/`
 - **Studio 权限与启动修复**：修复 Electron dev 解析失败与项目内写入误拒绝
   - 根 `.npmrc` 增加 Electron 精确 hoist；新增 `host.bindWorkspace` 让项目选择同步 main 侧 Workspace
   - `request.projectPath` 作为 runtime workspaceRoot 与权限判定基准，权限拒绝 reason 透传到 AgentLoop 工具结果

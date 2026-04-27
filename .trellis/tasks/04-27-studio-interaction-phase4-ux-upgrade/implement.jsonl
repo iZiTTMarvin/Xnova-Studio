@@ -1,0 +1,8 @@
+{"file": ".trellis/workflow.md", "reason": "Project workflow and conventions"}
+{"file": ".trellis/spec/frontend/index.md", "reason": "Frontend development guide"}
+{"file": ".trellis/spec/frontend/component-guidelines.md", "reason": "thinking/tool/subagent 组件组织约束"}
+{"file": ".trellis/spec/frontend/quality-guidelines.md", "reason": "交互升级后的失败态与构建验证门槛"}
+{"file": ".trellis/spec/frontend/project-shell-v1.md", "reason": "时间线增强不能破坏主壳语义"}
+{"file": ".trellis/spec/frontend/type-safety.md", "reason": "markdown/tool/subagent 结构化数据类型安全"}
+{"file": ".trellis/spec/guides/code-reuse-thinking-guide.md", "reason": "避免重复造轮子，优先复用时间线基础组件"}
+{"file": ".trellis/tasks/04-27-studio-interaction-modernization/research/opencowork-reference-index.md", "reason": "OpenCowork ThinkingBlock / ToolCallCard / SubAgentCard 参考"}

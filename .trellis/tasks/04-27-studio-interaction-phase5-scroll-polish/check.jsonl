@@ -1,0 +1,7 @@
+{"file": ".kilocode/workflows/finish-work.md", "reason": "Finish work checklist"}
+{"file": ".agents/skills/trellis-check/SKILL.md", "reason": "Code quality check spec"}
+{"file": ".trellis/spec/frontend/component-guidelines.md", "reason": "自动滚动与时间线交互的组件职责边界"}
+{"file": ".trellis/spec/frontend/quality-guidelines.md", "reason": "最终联调验证门槛"}
+{"file": ".trellis/spec/frontend/project-shell-v1.md", "reason": "ConversationTimeline 收尾体验必须保持主链路可用"}
+{"file": ".trellis/spec/frontend/state-management.md", "reason": "滚动模式与会话状态边界"}
+{"file": ".trellis/tasks/04-27-studio-interaction-modernization/research/opencowork-reference-index.md", "reason": "OpenCowork MessageList 滚动策略参考"}

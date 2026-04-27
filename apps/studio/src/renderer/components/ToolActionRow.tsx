@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { memo, useState } from 'react'
 import { IconCheck, IconChevronDown, IconChevronRight, IconCross } from './Icons'
 import type { ToolRowModel } from '../utils/conversation-render-rows'
 import {
@@ -36,7 +36,7 @@ function getVisibleFailureSummary(tool: ToolRowModel): string | null {
   return truncateText(summary, 120)
 }
 
-export function ToolActionRow(props: ToolActionRowProps) {
+export const ToolActionRow = memo(function ToolActionRow(props: ToolActionRowProps) {
   const [isExpanded, setIsExpanded] = useState(false)
   const summary = createToolEventSummary(
     props.tool.toolName,
@@ -152,4 +152,4 @@ export function ToolActionRow(props: ToolActionRowProps) {
       ) : null}
     </div>
   )
-}
+})

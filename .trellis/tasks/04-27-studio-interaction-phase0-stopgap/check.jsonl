@@ -1,0 +1,10 @@
+{"file": ".kilocode/workflows/finish-work.md", "reason": "Finish work checklist"}
+{"file": ".agents/skills/trellis-check/SKILL.md", "reason": "Code quality check spec"}
+{"file": ".trellis/spec/frontend/directory-structure.md", "reason": "renderer 目标文件边界"}
+{"file": ".trellis/spec/frontend/quality-guidelines.md", "reason": "止血改造的验证门槛"}
+{"file": ".trellis/spec/frontend/hook-guidelines.md", "reason": "useStudioBridge 订阅与 cleanup 约束"}
+{"file": ".trellis/spec/frontend/component-guidelines.md", "reason": "时间线消息项拆分与 memo 约束"}
+{"file": ".trellis/spec/frontend/project-shell-v1.md", "reason": "live conversation 与时间线主链路必须保持兼容"}
+{"file": ".trellis/spec/frontend/type-safety.md", "reason": "runtime event 联合类型与 payload 收窄"}
+{"file": ".trellis/spec/guides/code-reuse-thinking-guide.md", "reason": "优先抽取可复用的缓冲与 memo 模式"}
+{"file": ".trellis/tasks/04-27-studio-interaction-modernization/research/opencowork-reference-index.md", "reason": "OpenCowork 渲染与批量机制参考"}

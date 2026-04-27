@@ -1,0 +1,9 @@
+{"file": ".trellis/workflow.md", "reason": "Project workflow and conventions"}
+{"file": ".trellis/spec/frontend/index.md", "reason": "Frontend development guide"}
+{"file": ".trellis/spec/frontend/directory-structure.md", "reason": "时间线虚拟化文件边界"}
+{"file": ".trellis/spec/frontend/component-guidelines.md", "reason": "虚拟化消息项与容器职责拆分"}
+{"file": ".trellis/spec/frontend/quality-guidelines.md", "reason": "长会话与失败态验证门槛"}
+{"file": ".trellis/spec/frontend/state-management.md", "reason": "live blocks 与会话窗口状态边界"}
+{"file": ".trellis/spec/frontend/project-shell-v1.md", "reason": "ConversationTimeline 主链路语义约束"}
+{"file": ".trellis/spec/guides/code-reuse-thinking-guide.md", "reason": "复用现有消息行与输出截断模式"}
+{"file": ".trellis/tasks/04-27-studio-interaction-modernization/research/opencowork-reference-index.md", "reason": "OpenCowork MessageList 与内存防护参考"}

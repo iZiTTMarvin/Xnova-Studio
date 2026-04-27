@@ -1,0 +1,10 @@
+{"file": ".trellis/workflow.md", "reason": "Project workflow and conventions"}
+{"file": ".trellis/spec/backend/index.md", "reason": "Backend development guide"}
+{"file": ".trellis/spec/frontend/index.md", "reason": "Frontend development guide"}
+{"file": ".trellis/spec/backend/directory-structure.md", "reason": "main host 新增 batcher 的落点边界"}
+{"file": ".trellis/spec/backend/runtime-boundary.md", "reason": "main -> renderer -> runtime 事件契约约束"}
+{"file": ".trellis/spec/backend/quality-guidelines.md", "reason": "主进程逻辑变更的测试与类型门槛"}
+{"file": ".trellis/spec/frontend/project-shell-v1.md", "reason": "renderer 事件消费顺序必须保持兼容"}
+{"file": ".trellis/spec/frontend/type-safety.md", "reason": "StudioRuntimeEvent 类型收敛"}
+{"file": ".trellis/spec/guides/cross-layer-thinking-guide.md", "reason": "事件在 main/shared/renderer 之间的流动边界"}
+{"file": ".trellis/tasks/04-27-studio-interaction-modernization/research/opencowork-reference-index.md", "reason": "OpenCowork AdaptiveEventBatcher 参考"}

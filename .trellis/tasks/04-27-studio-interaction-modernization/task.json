@@ -1,0 +1,33 @@
+{
+  "id": "studio-interaction-modernization",
+  "name": "studio-interaction-modernization",
+  "title": "Studio 交互现代化改造",
+  "description": "基于 OpenCowork 参考，对 Xnova Studio 的流式交互、状态管理、消息渲染和会话体验做分阶段现代化改造",
+  "status": "in_progress",
+  "dev_type": "fullstack",
+  "scope": "apps/studio renderer/main/shared 的交互现代化改造",
+  "package": null,
+  "priority": "P0",
+  "creator": "xuhaochen",
+  "assignee": "xuhaochen",
+  "createdAt": "2026-04-27",
+  "completedAt": null,
+  "branch": null,
+  "base_branch": "main",
+  "worktree_path": null,
+  "commit": null,
+  "pr_url": null,
+  "subtasks": [],
+  "children": [
+    "04-27-studio-interaction-phase0-stopgap",
+    "04-27-studio-interaction-phase1-batcher",
+    "04-27-studio-interaction-phase2-state-store",
+    "04-27-studio-interaction-phase3-virtualization",
+    "04-27-studio-interaction-phase4-ux-upgrade",
+    "04-27-studio-interaction-phase5-scroll-polish"
+  ],
+  "parent": null,
+  "relatedFiles": [],
+  "notes": "",
+  "meta": {}
+}

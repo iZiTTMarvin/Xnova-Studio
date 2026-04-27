@@ -1,6 +1,9 @@
 import { describe, expect, it, vi } from 'vitest'
 import { createStudioRuntimeService } from '../src/main/studio-runtime-service'
-import { STUDIO_BRIDGE_CHANNELS } from '../src/shared/studio-bridge-contract'
+import {
+  STUDIO_BRIDGE_CHANNELS,
+  type StudioRuntimeEvent,
+} from '../src/shared/studio-bridge-contract'
 import type {
   RuntimeHostBridge,
   RuntimeInstance,
@@ -133,6 +136,116 @@ describe('studio runtime service', () => {
     ])
   })
 
+  it('main 侧会先缓冲连续 text_delta，再以合并事件透传给 renderer', async () => {
+    vi.useFakeTimers()
+    let runtimeBridge: RuntimeHostBridge | null = null
+
+    try {
+      const runtimeInstance: RuntimeInstance = {
+        submit: vi.fn(
+          (): Promise<RuntimeTurnResult> =>
+            new Promise((resolve) => {
+              runtimeBridge?.emit({
+                type: 'text_delta',
+                timestamp: '2026-04-27T00:00:00.000Z',
+                sessionId: 'session-1',
+                payload: {
+                  text: '第一段',
+                },
+              })
+              runtimeBridge?.emit({
+                type: 'text_delta',
+                timestamp: '2026-04-27T00:00:00.100Z',
+                sessionId: 'session-1',
+                payload: {
+                  text: '第二段',
+                },
+              })
+              setTimeout(() => {
+                resolve({
+                  text: '分析完成',
+                  thinking: '',
+                  stopReason: 'end_turn',
+                  llmCallCount: 1,
+                  toolCallCount: 0,
+                  usage: {
+                    inputTokens: 10,
+                    outputTokens: 20,
+                    cacheReadTokens: 0,
+                    cacheWriteTokens: 0,
+                  },
+                  aborted: false,
+                  historyCompacted: false,
+                  sessionId: 'session-1',
+                })
+              }, 40)
+            }),
+        ),
+        abort: vi.fn(),
+        dispose: vi.fn(async () => undefined),
+        getSnapshot: vi.fn(() => ({
+          sessionId: 'session-1',
+          isRunning: false,
+          provider: 'openai',
+          model: 'gpt-4o',
+          warnings: [],
+        })),
+      }
+      const service = createStudioRuntimeService({
+        createRuntimeFn: vi.fn(async (_input, bridge) => {
+          runtimeBridge = bridge
+          return runtimeInstance
+        }),
+        loadResolvedConfigFn: vi.fn(() => ({
+          effective: {
+            defaultProvider: 'openai',
+            defaultModel: 'gpt-4o',
+            providers: {},
+          },
+          source: {},
+          warnings: [],
+        })),
+      })
+      const emittedEvents: StudioRuntimeEvent[] = []
+
+      const submitPromise = service.submit(
+        {
+          text: '继续',
+          projectPath: 'D:/workspace/demo',
+        },
+        {
+          workspacePath: 'D:/workspace/demo',
+          lastSelection: null,
+        },
+        (event) => {
+          emittedEvents.push(event)
+        },
+      )
+
+      expect(emittedEvents.map((event) => event.type)).toEqual(['run_started'])
+
+      await vi.advanceTimersByTimeAsync(33)
+      expect(emittedEvents.map((event) => event.type)).toEqual([
+        'run_started',
+        'text_delta',
+      ])
+      expect(emittedEvents[1]?.payload?.text).toBe('第一段第二段')
+
+      await vi.advanceTimersByTimeAsync(7)
+      await expect(submitPromise).resolves.toEqual({
+        ok: true,
+        sessionId: 'session-1',
+      })
+      expect(emittedEvents.map((event) => event.type)).toEqual([
+        'run_started',
+        'text_delta',
+        'run_completed',
+      ])
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+
   it('submit 失败时发出 run_failed，而不是只依赖 runtime.error', async () => {
     const runtimeInstance: RuntimeInstance = {
       submit: vi.fn(async () => ({
@@ -199,107 +312,115 @@ describe('studio runtime service', () => {
   })
 
   it('runtime 发出可见输出但 submit 不 resolve 时，用户 cancel 会 abort 并发 run_cancelled', async () => {
+    vi.useFakeTimers()
     let runtimeBridge: RuntimeHostBridge | null = null
 
-    const runtimeInstance: RuntimeInstance = {
-      submit: vi.fn((): Promise<RuntimeTurnResult> => {
-        runtimeBridge?.emit({
-          type: 'text_delta',
-          timestamp: '2026-04-26T00:00:01.000Z',
+    try {
+      const runtimeInstance: RuntimeInstance = {
+        submit: vi.fn((): Promise<RuntimeTurnResult> => {
+          runtimeBridge?.emit({
+            type: 'text_delta',
+            timestamp: '2026-04-26T00:00:01.000Z',
+            sessionId: 'session-1',
+            payload: {
+              text: '已经产生可见输出',
+            },
+          })
+          return new Promise(() => undefined)
+        }),
+        abort: vi.fn(),
+        dispose: vi.fn(async () => undefined),
+        getSnapshot: vi.fn(() => ({
+          sessionId: 'session-1',
+          isRunning: true,
+          provider: 'minimax',
+          model: 'MiniMax-M2.7',
+          warnings: [],
+        })),
+      }
+      const service = createStudioRuntimeService({
+        createRuntimeFn: vi.fn(async (_input, bridge) => {
+          runtimeBridge = bridge
+          return runtimeInstance
+        }),
+        loadResolvedConfigFn: vi.fn(() => ({
+          effective: {
+            defaultProvider: 'minimax',
+            defaultModel: 'MiniMax-M2.7',
+            providers: {},
+          },
+          source: {},
+          warnings: [],
+        })),
+      })
+      const emittedEvents: Array<{ type: string; payload?: Record<string, unknown> }> = []
+
+      const submitPromise = service.submit(
+        {
+          text: '继续',
+          projectPath: 'D:/workspace/demo',
+        },
+        {
+          workspacePath: 'D:/workspace/demo',
+          lastSelection: null,
+        },
+        (event) => {
+          emittedEvents.push(event)
+        },
+      )
+
+      await Promise.resolve()
+      await Promise.resolve()
+      expect(emittedEvents.map((event) => event.type)).toEqual(['run_started'])
+      await vi.advanceTimersByTimeAsync(33)
+      expect(emittedEvents.map((event) => event.type)).toContain('text_delta')
+
+      await expect(
+        service.cancel({
+          reason: 'user-stop',
+        }),
+      ).resolves.toMatchObject({
+        ok: true,
+      })
+
+      expect(runtimeInstance.abort).toHaveBeenCalledTimes(1)
+      expect(emittedEvents.map((event) => event.type)).toEqual([
+        'run_started',
+        'text_delta',
+        'run_cancelled',
+      ])
+      const lateRuntimeBridge = runtimeBridge as RuntimeHostBridge | null
+      if (lateRuntimeBridge) {
+        lateRuntimeBridge.emit({
+          type: 'turn_end',
+          timestamp: '2026-04-26T00:00:03.000Z',
           sessionId: 'session-1',
           payload: {
-            text: '已经产生可见输出',
+            stopReason: 'end_turn',
+            aborted: false,
           },
         })
-        return new Promise(() => undefined)
-      }),
-      abort: vi.fn(),
-      dispose: vi.fn(async () => undefined),
-      getSnapshot: vi.fn(() => ({
-        sessionId: 'session-1',
-        isRunning: true,
-        provider: 'minimax',
-        model: 'MiniMax-M2.7',
-        warnings: [],
-      })),
-    }
-    const service = createStudioRuntimeService({
-      createRuntimeFn: vi.fn(async (_input, bridge) => {
-        runtimeBridge = bridge
-        return runtimeInstance
-      }),
-      loadResolvedConfigFn: vi.fn(() => ({
-        effective: {
-          defaultProvider: 'minimax',
-          defaultModel: 'MiniMax-M2.7',
-          providers: {},
-        },
-        source: {},
-        warnings: [],
-      })),
-    })
-    const emittedEvents: Array<{ type: string; payload?: Record<string, unknown> }> = []
-
-    const submitPromise = service.submit(
-      {
-        text: '继续',
-        projectPath: 'D:/workspace/demo',
-      },
-      {
-        workspacePath: 'D:/workspace/demo',
-        lastSelection: null,
-      },
-      (event) => {
-        emittedEvents.push(event)
-      },
-    )
-
-    await flushMicrotasks()
-    expect(emittedEvents.map((event) => event.type)).toContain('text_delta')
-
-    await expect(
-      service.cancel({
-        reason: 'user-stop',
-      }),
-    ).resolves.toMatchObject({
-      ok: true,
-    })
-
-    expect(runtimeInstance.abort).toHaveBeenCalledTimes(1)
-    expect(emittedEvents.map((event) => event.type)).toEqual([
-      'run_started',
-      'text_delta',
-      'run_cancelled',
-    ])
-    const lateRuntimeBridge = runtimeBridge as RuntimeHostBridge | null
-    if (lateRuntimeBridge) {
-      lateRuntimeBridge.emit({
-        type: 'turn_end',
-        timestamp: '2026-04-26T00:00:03.000Z',
-        sessionId: 'session-1',
-        payload: {
-          stopReason: 'end_turn',
-          aborted: false,
-        },
+        lateRuntimeBridge.emit({
+          type: 'session_end',
+          timestamp: '2026-04-26T00:00:04.000Z',
+          sessionId: 'session-1',
+          payload: {
+            status: 'done',
+          },
+        })
+      }
+      expect(emittedEvents.map((event) => event.type)).toEqual([
+        'run_started',
+        'text_delta',
+        'run_cancelled',
+      ])
+      await expect(submitPromise).resolves.toMatchObject({
+        ok: false,
+        error: expect.stringContaining('已停止当前运行'),
       })
-      lateRuntimeBridge.emit({
-        type: 'session_end',
-        timestamp: '2026-04-26T00:00:04.000Z',
-        sessionId: 'session-1',
-        payload: {
-          status: 'done',
-        },
-      })
+    } finally {
+      vi.useRealTimers()
     }
-    expect(emittedEvents.map((event) => event.type)).toEqual([
-      'run_started',
-      'text_delta',
-      'run_cancelled',
-    ])
-    await expect(submitPromise).resolves.toMatchObject({
-      ok: false,
-      error: expect.stringContaining('已停止当前运行'),
-    })
   })
 
   it('runtime 发出 model_request_* 事件时，会透传给 renderer 并保留 runId', async () => {

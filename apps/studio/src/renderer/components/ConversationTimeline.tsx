@@ -1,4 +1,4 @@
-import { useEffect, useRef } from 'react'
+import { memo, useEffect, useRef } from 'react'
 import type {
   StudioActiveSessionDetail,
   StudioConversationMessage,
@@ -79,7 +79,10 @@ function renderConversationRow(
   }
 }
 
-function renderUserMessage(message: StudioConversationMessage) {
+const UserMessageView = memo(function UserMessageView(props: {
+  message: StudioConversationMessage
+}) {
+  const { message } = props
   const textContent = message.blocks
     .filter(
       (block): block is Extract<StudioConversationMessage['blocks'][number], { type: 'text' }> =>
@@ -89,24 +92,23 @@ function renderUserMessage(message: StudioConversationMessage) {
     .join('')
 
   return (
-    <article key={message.id} className="conversation-message conversation-message-user">
+    <article className="conversation-message conversation-message-user">
       <div className="conversation-message-label">你</div>
       <div className="conversation-message-body">
         <MarkdownContent text={textContent} />
       </div>
     </article>
   )
-}
+})
 
-function renderStructuredMessage(
-  message: StudioConversationMessage,
-  input: {
-    isRunActive: boolean
-    isLiveMessage: boolean
-  },
-) {
+const StructuredMessageView = memo(function StructuredMessageView(props: {
+  message: StudioConversationMessage
+  isRunActive: boolean
+  isLiveMessage: boolean
+}) {
+  const { message, isRunActive, isLiveMessage } = props
   const rows = buildConversationRenderRows(message.blocks, {
-    isRunActive: input.isRunActive,
+    isRunActive,
   })
   const className =
     message.role === 'assistant'
@@ -116,15 +118,14 @@ function renderStructuredMessage(
 
   return (
     <article
-      key={message.id}
-      className={`${className}${input.isLiveMessage ? ' conversation-message-live' : ''}`}
+      className={`${className}${isLiveMessage ? ' conversation-message-live' : ''}`}
     >
       <div className="conversation-message-label">{label}</div>
       <div className="conversation-message-body">
         {rows.map((row, index) =>
           renderConversationRow(row, {
             showTypingCursor:
-              input.isLiveMessage &&
+              isLiveMessage &&
               row.type === 'text' &&
               index === rows.length - 1,
           }),
@@ -132,7 +133,7 @@ function renderStructuredMessage(
       </div>
     </article>
   )
-}
+})
 
 // ============================================================
 // ConversationTimeline — 主时间线
@@ -175,14 +176,18 @@ export function ConversationTimeline(props: ConversationTimelineProps) {
   }
 
   return (
-    <section className="conversation-timeline" aria-label="项目会话聊天流">
+      <section className="conversation-timeline" aria-label="项目会话聊天流">
       {persistedMessages.map((message) =>
         message.role === 'user'
-          ? renderUserMessage(message)
-          : renderStructuredMessage(message, {
-              isRunActive: false,
-              isLiveMessage: false,
-            }),
+          ? <UserMessageView key={message.id} message={message} />
+          : (
+              <StructuredMessageView
+                key={message.id}
+                message={message}
+                isRunActive={false}
+                isLiveMessage={false}
+              />
+            ),
       )}
 
       {/* 实时用户消息 */}
@@ -197,17 +202,15 @@ export function ConversationTimeline(props: ConversationTimelineProps) {
 
       {/* 实时 Xnova turn：按 runtime event 到达顺序渲染文本、思考、工具与状态 */}
       {liveBlocks.length > 0 ? (
-        renderStructuredMessage(
-          {
+        <StructuredMessageView
+          message={{
             id: 'live-assistant-message',
             role: 'assistant',
             blocks: liveBlocks,
-          },
-          {
-            isRunActive: props.isRunActive,
-            isLiveMessage: true,
-          },
-        )
+          }}
+          isRunActive={props.isRunActive}
+          isLiveMessage={true}
+        />
       ) : null}
 
       {/* "正在思考" 占位：model_request_started → model_first_chunk 之间的空窗期 */}

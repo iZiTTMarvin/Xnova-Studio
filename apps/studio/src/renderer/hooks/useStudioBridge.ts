@@ -58,6 +58,11 @@ export interface LiveConversationState {
   blocks: LiveConversationBlock[]
 }
 
+interface PendingLiveDeltaChunk {
+  kind: 'text' | 'thinking'
+  content: string
+}
+
 const RUN_IDLE_WARNING_MS = 90_000
 const RUN_IDLE_WARNING_MESSAGE = '运行长时间没有新进展，可以停止后重试'
 const RUN_STEP_CALLING_MODEL = '正在调用模型'
@@ -309,6 +314,39 @@ function finalizeOpenThinkingBlocks(
   return changed ? replaceLiveBlocks(current, nextBlocks) : current
 }
 
+/**
+ * renderer 侧的最小止血缓冲：
+ * 1. 保留 text / thinking 的原始到达顺序；
+ * 2. 同类相邻 chunk 在同一帧内合并，减少 setState 频率；
+ * 3. flush 时仍复用现有 append/finalize 规则，不改 block 语义。
+ */
+function applyBufferedLiveDeltaChunks(
+  current: LiveConversationState,
+  chunks: PendingLiveDeltaChunk[],
+  createLiveBlockId: (kind: LiveConversationBlock['type']) => string,
+): LiveConversationState {
+  let next = current
+  for (const chunk of chunks) {
+    if (!chunk.content) {
+      continue
+    }
+    if (chunk.kind === 'text') {
+      next = appendLiveTextBlock(
+        finalizeOpenThinkingBlocks(next),
+        createLiveBlockId('text'),
+        chunk.content,
+      )
+      continue
+    }
+    next = appendLiveThinkingBlock(
+      next,
+      createLiveBlockId('thinking'),
+      chunk.content,
+    )
+  }
+  return next
+}
+
 function appendLiveStatusBlock(
   current: LiveConversationState,
   id: string,
@@ -493,6 +531,8 @@ export function useStudioBridge() {
     finished: false,
   })
   const liveBlockSequenceRef = useRef(0)
+  const pendingLiveDeltaChunksRef = useRef<PendingLiveDeltaChunk[]>([])
+  const pendingLiveDeltaRafRef = useRef<number | null>(null)
   const [liveConversation, setLiveConversation] = useState<LiveConversationState>(
     () => createEmptyLiveConversation(),
   )
@@ -537,6 +577,64 @@ export function useStudioBridge() {
   const createLiveBlockId = (kind: LiveConversationBlock['type']): string => {
     liveBlockSequenceRef.current += 1
     return `live-${kind}-${liveBlockSequenceRef.current}`
+  }
+
+  const cancelPendingLiveDeltaFlush = (): void => {
+    if (pendingLiveDeltaRafRef.current === null) {
+      return
+    }
+    cancelAnimationFrame(pendingLiveDeltaRafRef.current)
+    pendingLiveDeltaRafRef.current = null
+  }
+
+  const drainPendingLiveDeltaChunks = (): PendingLiveDeltaChunk[] => {
+    const next = pendingLiveDeltaChunksRef.current
+    pendingLiveDeltaChunksRef.current = []
+    return next
+  }
+
+  const clearPendingLiveDeltaChunks = (): void => {
+    cancelPendingLiveDeltaFlush()
+    pendingLiveDeltaChunksRef.current = []
+  }
+
+  const updateLiveConversationWithPending = (
+    updater: (current: LiveConversationState) => LiveConversationState,
+  ): void => {
+    cancelPendingLiveDeltaFlush()
+    const chunks = drainPendingLiveDeltaChunks()
+    setLiveConversation((current) =>
+      updater(applyBufferedLiveDeltaChunks(current, chunks, createLiveBlockId)),
+    )
+  }
+
+  const queuePendingLiveDeltaChunk = (
+    kind: PendingLiveDeltaChunk['kind'],
+    content: string,
+  ): void => {
+    if (!content) {
+      return
+    }
+    const chunks = pendingLiveDeltaChunksRef.current
+    const lastChunk = chunks.at(-1)
+    if (lastChunk?.kind === kind) {
+      lastChunk.content += content
+    } else {
+      chunks.push({ kind, content })
+    }
+    if (pendingLiveDeltaRafRef.current !== null) {
+      return
+    }
+    pendingLiveDeltaRafRef.current = requestAnimationFrame(() => {
+      pendingLiveDeltaRafRef.current = null
+      const pendingChunks = drainPendingLiveDeltaChunks()
+      if (pendingChunks.length === 0) {
+        return
+      }
+      setLiveConversation((current) =>
+        applyBufferedLiveDeltaChunks(current, pendingChunks, createLiveBlockId),
+      )
+    })
   }
 
   const resetRendererSubmitTiming = (): void => {
@@ -735,6 +833,7 @@ export function useStudioBridge() {
       setLastRuntimeEventAt(null)
       setRunIdleWarning(null)
       setCurrentRunStep(null)
+      clearPendingLiveDeltaChunks()
       activeRunIdRef.current = null
       finalizedRunIdsRef.current.clear()
       finalizedTerminalStatusRef.current = null
@@ -920,7 +1019,13 @@ export function useStudioBridge() {
         }
       }
 
-      setLastRuntimeEvent(event)
+      if (
+        event.type !== 'text_delta' &&
+        event.type !== 'thinking' &&
+        event.type !== 'context_update'
+      ) {
+        setLastRuntimeEvent(event)
+      }
       setLastRuntimeEventAt(Date.now())
       setRunIdleWarning(null)
       switch (event.type) {
@@ -1128,22 +1233,25 @@ export function useStudioBridge() {
         default:
           break
       }
-      setLiveConversation((current) => {
+      if (event.type === 'text_delta') {
+        queuePendingLiveDeltaChunk(
+          'text',
+          typeof event.payload?.text === 'string' ? event.payload.text : '',
+        )
+        return
+      }
+      if (event.type === 'thinking') {
+        queuePendingLiveDeltaChunk(
+          'thinking',
+          typeof event.payload?.text === 'string' ? event.payload.text : '',
+        )
+        return
+      }
+
+      updateLiveConversationWithPending((current) => {
         switch (event.type) {
           case 'run_started':
             return deriveLiveConversation(current.pendingUserText, [])
-          case 'text_delta':
-            return appendLiveTextBlock(
-              finalizeOpenThinkingBlocks(current),
-              createLiveBlockId('text'),
-              typeof event.payload?.text === 'string' ? event.payload.text : '',
-            )
-          case 'thinking':
-            return appendLiveThinkingBlock(
-              current,
-              createLiveBlockId('thinking'),
-              typeof event.payload?.text === 'string' ? event.payload.text : '',
-            )
           case 'tool_start': {
             const toolCallId =
               typeof event.payload?.toolCallId === 'string'
@@ -1300,6 +1408,7 @@ export function useStudioBridge() {
 
     return () => {
       disposed = true
+      clearPendingLiveDeltaChunks()
       unsubscribeHost()
       unsubscribeRuntime()
       unsubscribePermission()
@@ -1594,6 +1703,7 @@ export function useStudioBridge() {
     setLastRuntimeEventAt(Date.now())
     setRunIdleWarning(null)
     setCurrentRunStep('正在启动运行')
+    clearPendingLiveDeltaChunks()
     activeRunIdRef.current = null
     finalizedTerminalStatusRef.current = null
     cancelRequestedRef.current = false
@@ -1650,7 +1760,7 @@ export function useStudioBridge() {
         setRuntimeError(submitResult.error)
         setRunStatus('failed')
         setCurrentRunStep('运行失败')
-        setLiveConversation((current) =>
+        updateLiveConversationWithPending((current) =>
           appendLiveSystemBlock(
             finalizeOpenThinkingBlocks(current),
             createLiveBlockId('system'),
@@ -1738,6 +1848,7 @@ export function useStudioBridge() {
             inspectResult.status === 'ready' &&
             hasPersistedSubmittedSession
           ) {
+            clearPendingLiveDeltaChunks()
             setLiveConversation(createEmptyLiveConversation())
           }
         } catch (error) {
@@ -1765,7 +1876,7 @@ export function useStudioBridge() {
       setCurrentRunStep('运行失败')
       setShellStatus('error')
       setShellError(message)
-      setLiveConversation((current) =>
+      updateLiveConversationWithPending((current) =>
         appendLiveSystemBlock(
           finalizeOpenThinkingBlocks(current),
           createLiveBlockId('system'),
@@ -1800,7 +1911,7 @@ export function useStudioBridge() {
     setIsSubmitting(false)
     setRunIdleWarning(null)
     setCurrentRunStep(RUN_STEP_STOPPING)
-    setLiveConversation((current) => finalizeOpenThinkingBlocks(current))
+    updateLiveConversationWithPending((current) => finalizeOpenThinkingBlocks(current))
 
     try {
       const result = await bridge.runtime.cancel({
@@ -1811,7 +1922,7 @@ export function useStudioBridge() {
         setRunStatus('failed')
         setCurrentRunStep('运行失败')
         setRuntimeError(result.error)
-        setLiveConversation((current) =>
+        updateLiveConversationWithPending((current) =>
           appendLiveSystemBlock(
             finalizeOpenThinkingBlocks(current),
             createLiveBlockId('system'),
@@ -1834,7 +1945,7 @@ export function useStudioBridge() {
       setRunStatus('failed')
       setCurrentRunStep('运行失败')
       setRuntimeError(message)
-      setLiveConversation((current) =>
+      updateLiveConversationWithPending((current) =>
         appendLiveSystemBlock(
           finalizeOpenThinkingBlocks(current),
           createLiveBlockId('system'),
@@ -1869,7 +1980,7 @@ export function useStudioBridge() {
     } catch (error) {
       const message = getErrorMessage(error)
       setRuntimeError(message)
-      setLiveConversation((current) =>
+      updateLiveConversationWithPending((current) =>
         appendLiveSystemBlock(
           finalizeOpenThinkingBlocks(current),
           createLiveBlockId('system'),
@@ -1900,7 +2011,7 @@ export function useStudioBridge() {
     } catch (error) {
       const message = getErrorMessage(error)
       setRuntimeError(message)
-      setLiveConversation((current) =>
+      updateLiveConversationWithPending((current) =>
         appendLiveSystemBlock(
           finalizeOpenThinkingBlocks(current),
           createLiveBlockId('system'),
