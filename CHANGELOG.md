@@ -1,3 +1,8 @@
+## 2026-04-28
+- **审查文档**：新增 Studio 首次响应、Runtime Warmup 与工具可见性多 Phase 审查文档
+  - 新增 `docs/audits/studio-first-response-warmup-and-tool-visibility-audit.md`，覆盖：当前 submit timing 解读、`bootstrapAll` 6 条并行链拆解与阶段表、openWorkspace warmup 状态机与失效规则、prompt/toolDefs/context snapshot cache 设计、submit fast path 链路对比与 budget、工具可见性短期/中期改进（`MIN_RUNNING_VISIBLE_MS` + `tool_intent/tool_args_delta/tool_ready` 事件链）、first chunk guard 现状校验、Windows 工具策略观察、A→F 六个 Phase 修复路线（含验收标准、测试建议、风险点、依赖关系）
+  - 本轮仅写文档不改代码；后续按 Phase 推进
+
 ## 2026-04-27
 - **Studio Codex-like 界面重构**：重做主壳首页、侧边栏、会话排版与底部悬浮输入体验
   - 侧边栏改为固定的低装饰项目工作台形态；项目区按 workspace 抽屉管理会话，全局 `+` 仍只负责添加新项目
@@ -7,6 +12,7 @@
   - 时间线滚动区固定为 `ConversationTimeline` 本身，并新增“回到底部”入口：流式输出默认跟随底部，用户上滚后可显式恢复跟随
   - 修复点击会话刷新快照时，侧边栏项目/聊天块短暂闪成 loading 文案的问题
   - 修复悬浮 composer 遮住最后一段对话后无法继续下滑的问题，最后一条消息现在可以滚到输入框上方完整显示
+  - 修复项目抽屉展开后“在当前项目中开始新对话”入口不可见的问题，项目行右侧加号在展开和折叠状态都保持可用
   - 新增 `DESIGN.md` 和 Trellis research，固化本轮 Codex App 参考布局与后续 UI 决策边界
 - **Studio 交互现代化 Phase 3**：接入时间线虚拟化、窗口化历史与输出体量防线
   - `apps/studio` 引入 `react-virtuoso`，`ConversationTimeline` 改为动态高度虚拟列表；默认只展示最近 240 条持久化消息，并支持按 80 条批量加载更早历史

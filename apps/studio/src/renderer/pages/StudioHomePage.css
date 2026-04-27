@@ -2798,13 +2798,13 @@ body,
 }
 
 #app .project-drawer-new-session {
-  opacity: 0;
+  opacity: 0.72;
   transition: opacity 120ms ease, color 120ms ease, background 120ms ease;
 }
 
 #app .project-drawer-row:hover .project-drawer-new-session,
 #app .project-drawer-active .project-drawer-new-session {
-  opacity: 0.86;
+  opacity: 1;
 }
 
 #app .tree-project-main {

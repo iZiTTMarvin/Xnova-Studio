@@ -1,9 +1,16 @@
 // @vitest-environment jsdom
 
+import { readFileSync } from 'node:fs'
+import { join } from 'node:path'
 import { cleanup, fireEvent, render, screen, within } from '@testing-library/react'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { ProjectTreePanel } from '../src/renderer/components/ProjectTreePanel'
 import { ScratchpadList } from '../src/renderer/components/ScratchpadList'
+
+const studioHomeCss = readFileSync(
+  join(process.cwd(), 'src', 'renderer', 'pages', 'StudioHomePage.css'),
+  'utf-8',
+)
 
 afterEach(() => {
   cleanup()
@@ -102,6 +109,14 @@ describe('project session trees', () => {
     fireEvent.click(screen.getByRole('button', { name: '在 demo 中开始新对话' }))
 
     expect(handleStartProjectSession).toHaveBeenCalledWith('D:/workspace/demo')
+  })
+
+  it('项目行的新对话按钮在展开和折叠状态都保持可见', () => {
+    const hiddenByDefault =
+      /#app\s+\.project-drawer-new-session\s*\{[^}]*opacity:\s*0\s*;/.test(studioHomeCss)
+
+    expect(studioHomeCss).toContain('#app .project-drawer-new-session')
+    expect(hiddenByDefault).toBe(false)
   })
 
   it('子代理会话默认折叠，并可独立展开', () => {
