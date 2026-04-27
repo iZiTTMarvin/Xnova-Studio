@@ -19,10 +19,6 @@
   "pr_url": null,
   "subtasks": [],
   "children": [
-    "04-27-studio-interaction-phase0-stopgap",
-    "04-27-studio-interaction-phase1-batcher",
-    "04-27-studio-interaction-phase2-state-store",
-    "04-27-studio-interaction-phase3-virtualization",
     "04-27-studio-interaction-phase4-ux-upgrade",
     "04-27-studio-interaction-phase5-scroll-polish"
   ],
