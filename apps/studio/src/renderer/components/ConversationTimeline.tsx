@@ -1,6 +1,7 @@
 import {
   forwardRef,
   memo,
+  useCallback,
   useEffect,
   useMemo,
   useRef,
@@ -22,7 +23,9 @@ import {
   buildConversationRenderRows,
   type ConversationRenderRow,
 } from '../utils/conversation-render-rows'
+import { IconChevronDown } from './Icons'
 import { ReasoningRow } from './ReasoningRow'
+import { SubAgentCard } from './SubAgentCard'
 import { ToolActionRow } from './ToolActionRow'
 import { ToolActivityGroupRow } from './ToolActivityGroupRow'
 
@@ -36,6 +39,17 @@ export interface ConversationTimelineProps {
    */
   currentRunStep?: string | null
 }
+
+/**
+ * 三态滚动模式：
+ * - following：自动跟随底部（默认，流式输出时）
+ * - paused：用户主动上滚，暂停跟随，显示"回到底部"按钮
+ * - locked：用户正在查看历史，完全锁定（上滚超过 200px）
+ */
+type ScrollMode = 'following' | 'paused' | 'locked'
+
+/** 用户上滚超过此距离时进入 paused/locked 模式 */
+const SCROLL_PAUSE_THRESHOLD = 200
 
 type TimelineItem =
   | {
@@ -130,6 +144,19 @@ function renderConversationRow(
         <ToolActionRow
           key={row.id}
           tool={row.tool}
+          {...(row.id in input.expandedRows
+            ? { isExpanded: input.expandedRows[row.id] }
+            : {})}
+          onExpandedChange={(nextExpanded) => {
+            input.onExpandedChange(row.id, nextExpanded)
+          }}
+        />
+      )
+    case 'subagent':
+      return (
+        <SubAgentCard
+          key={row.id}
+          agent={row.agent}
           {...(row.id in input.expandedRows
             ? { isExpanded: input.expandedRows[row.id] }
             : {})}
@@ -291,19 +318,27 @@ const TimelineBottomSpacer = memo(function TimelineBottomSpacer() {
 
 const TimelineLoadMoreRow = memo(function TimelineLoadMoreRow(props: {
   hiddenCount: number
+  isLoading: boolean
   onLoadMore: () => void
 }) {
   return (
     <div className="conversation-load-more-row">
-      <button
-        type="button"
-        className="conversation-load-more-button"
-        onClick={props.onLoadMore}
-      >
-        加载更早消息
-        {' '}
-        <span className="mono">剩余 {props.hiddenCount} 条</span>
-      </button>
+      {props.isLoading ? (
+        <div className="conversation-load-more-skeleton">
+          <div className="conversation-skeleton-line" />
+          <div className="conversation-skeleton-line conversation-skeleton-line--short" />
+        </div>
+      ) : (
+        <button
+          type="button"
+          className="conversation-load-more-button"
+          onClick={props.onLoadMore}
+        >
+          加载更早消息
+          {' '}
+          <span className="mono">剩余 {props.hiddenCount} 条</span>
+        </button>
+      )}
     </div>
   )
 })
@@ -361,6 +396,33 @@ const LiveActivityIndicator = memo(function LiveActivityIndicator(props: {
   )
 })
 
+/**
+ * "回到底部"按钮：带未读消息计数 badge、向下箭头、入场/退场动画。
+ */
+const ScrollToBottomButton = memo(function ScrollToBottomButton(props: {
+  unreadCount: number
+  visible: boolean
+  onClick: () => void
+}) {
+  if (!props.visible) {
+    return null
+  }
+
+  return (
+    <button
+      type="button"
+      className="conversation-scroll-bottom conversation-scroll-bottom--animated"
+      onClick={props.onClick}
+    >
+      <IconChevronDown />
+      <span>回到底部</span>
+      {props.unreadCount > 0 ? (
+        <span className="conversation-scroll-bottom-badge">{props.unreadCount}</span>
+      ) : null}
+    </button>
+  )
+})
+
 function canUseVirtualizedTimeline(): boolean {
   return typeof window !== 'undefined' && typeof window.ResizeObserver === 'function'
 }
@@ -369,6 +431,7 @@ function renderTimelineItem(
   item: TimelineItem,
   input: {
     isRunActive: boolean
+    isLoadingMore: boolean
     onLoadMore: () => void
     expandedRows: Record<string, boolean>
     interactedRows: Record<string, boolean>
@@ -381,6 +444,7 @@ function renderTimelineItem(
       return (
         <TimelineLoadMoreRow
           hiddenCount={item.hiddenCount}
+          isLoading={input.isLoadingMore}
           onLoadMore={input.onLoadMore}
         />
       )
@@ -446,7 +510,13 @@ export function ConversationTimeline(props: ConversationTimelineProps) {
   )
   const [expandedRows, setExpandedRows] = useState<Record<string, boolean>>({})
   const [interactedRows, setInteractedRows] = useState<Record<string, boolean>>({})
-  const [isAtBottom, setIsAtBottom] = useState(true)
+  const [isLoadingMore, setIsLoadingMore] = useState(false)
+
+  // 三态滚动模式
+  const [scrollMode, setScrollMode] = useState<ScrollMode>('following')
+  // 未读消息计数：paused/locked 模式下新到达的消息数
+  const [unreadCount, setUnreadCount] = useState(0)
+  const previousItemCountRef = useRef(0)
 
   const hasLiveContent =
     props.liveConversation.pendingUserText !== null ||
@@ -461,7 +531,8 @@ export function ConversationTimeline(props: ConversationTimelineProps) {
     pendingPrependScrollIndexRef.current = null
     setExpandedRows({})
     setInteractedRows({})
-    setIsAtBottom(true)
+    setScrollMode('following')
+    setUnreadCount(0)
   }, [props.session?.sessionId])
 
   const hiddenPersistedCount = Math.max(
@@ -521,9 +592,6 @@ export function ConversationTimeline(props: ConversationTimelineProps) {
     }
 
     // 当模型正在运行且已有输出内容时，在 live message 末尾显示活动指示器。
-    // 这解决了"文本输出结束 → tool_start 到达"之间的空窗期无反馈问题。
-    // 例如模型输出"让我创建博客"后开始生成 HTML 内容作为 tool 参数，
-    // 这个过程可能持续 30-90 秒，期间没有任何事件推给 renderer。
     if (props.isRunActive && liveBlocks.length > 0 && !showThinkingPlaceholder) {
       items.push({
         id: 'live-activity-indicator',
@@ -543,12 +611,23 @@ export function ConversationTimeline(props: ConversationTimelineProps) {
     visiblePersistedMessages,
   ])
 
+  // 追踪新消息到达，更新未读计数
+  useEffect(() => {
+    const currentCount = timelineItems.length
+    const prevCount = previousItemCountRef.current
+    if (currentCount > prevCount && scrollMode !== 'following') {
+      setUnreadCount((c) => c + (currentCount - prevCount))
+    }
+    previousItemCountRef.current = currentCount
+  }, [timelineItems.length, scrollMode])
+
   useEffect(() => {
     const pendingIndex = pendingPrependScrollIndexRef.current
     if (pendingIndex === null || !canUseVirtualizedTimeline()) {
       return
     }
     pendingPrependScrollIndexRef.current = null
+    setIsLoadingMore(false)
     virtuosoRef.current?.scrollToIndex({
       index: pendingIndex,
       align: 'start',
@@ -560,7 +639,7 @@ export function ConversationTimeline(props: ConversationTimelineProps) {
     if (canUseVirtualizedTimeline()) {
       return
     }
-    if (!isAtBottom) {
+    if (scrollMode !== 'following') {
       return
     }
     const bottomElement = fallbackBottomRef.current
@@ -568,7 +647,7 @@ export function ConversationTimeline(props: ConversationTimelineProps) {
       return
     }
     bottomElement.scrollIntoView({ behavior: 'smooth' })
-  }, [isAtBottom, liveBlocks, timelineItems.length])
+  }, [scrollMode, liveBlocks, timelineItems.length])
 
   if (persistedMessages.length === 0 && !hasLiveContent) {
     return (
@@ -583,6 +662,7 @@ export function ConversationTimeline(props: ConversationTimelineProps) {
     if (hiddenPersistedCount <= 0) {
       return
     }
+    setIsLoadingMore(true)
     const nextAddedCount = Math.min(
       TIMELINE_LOAD_MORE_PAGE_SIZE,
       hiddenPersistedCount,
@@ -619,6 +699,20 @@ export function ConversationTimeline(props: ConversationTimelineProps) {
     })
   }
 
+  /**
+   * Virtuoso 的 atBottomStateChange 回调。
+   * 根据是否在底部来更新滚动模式。
+   */
+  const handleAtBottomChange = (atBottom: boolean) => {
+    if (atBottom) {
+      setScrollMode('following')
+      setUnreadCount(0)
+    } else if (scrollMode === 'following') {
+      // 用户离开底部，进入 paused
+      setScrollMode('paused')
+    }
+  }
+
   const handleFallbackScroll = () => {
     const scroller = fallbackScrollerRef.current
     if (!scroller) {
@@ -627,11 +721,20 @@ export function ConversationTimeline(props: ConversationTimelineProps) {
 
     const distanceToBottom =
       scroller.scrollHeight - scroller.scrollTop - scroller.clientHeight
-    setIsAtBottom(distanceToBottom < 56)
+
+    if (distanceToBottom < 56) {
+      setScrollMode('following')
+      setUnreadCount(0)
+    } else if (distanceToBottom > SCROLL_PAUSE_THRESHOLD) {
+      setScrollMode('locked')
+    } else if (scrollMode === 'following') {
+      setScrollMode('paused')
+    }
   }
 
   const handleScrollToBottom = () => {
-    setIsAtBottom(true)
+    setScrollMode('following')
+    setUnreadCount(0)
     if (canUseVirtualizedTimeline()) {
       virtuosoRef.current?.scrollTo({
         top: Number.MAX_SAFE_INTEGER,
@@ -642,6 +745,8 @@ export function ConversationTimeline(props: ConversationTimelineProps) {
 
     fallbackBottomRef.current?.scrollIntoView({ behavior: 'smooth' })
   }
+
+  const showScrollButton = scrollMode !== 'following'
 
   if (!canUseVirtualizedTimeline()) {
     return (
@@ -656,6 +761,7 @@ export function ConversationTimeline(props: ConversationTimelineProps) {
             <div key={item.id} className="conversation-timeline-item">
               {renderTimelineItem(item, {
                 isRunActive: props.isRunActive,
+                isLoadingMore,
                 onLoadMore: handleLoadMore,
                 expandedRows,
                 interactedRows,
@@ -667,15 +773,11 @@ export function ConversationTimeline(props: ConversationTimelineProps) {
           <TimelineBottomSpacer />
         </div>
         <div ref={fallbackBottomRef} />
-        {!isAtBottom ? (
-          <button
-            type="button"
-            className="conversation-scroll-bottom"
-            onClick={handleScrollToBottom}
-          >
-            回到底部
-          </button>
-        ) : null}
+        <ScrollToBottomButton
+          visible={showScrollButton}
+          unreadCount={unreadCount}
+          onClick={handleScrollToBottom}
+        />
       </section>
     )
   }
@@ -694,9 +796,10 @@ export function ConversationTimeline(props: ConversationTimelineProps) {
           List: TimelineList,
           Footer: TimelineBottomSpacer,
         }}
-        atBottomStateChange={setIsAtBottom}
+        atBottomStateChange={handleAtBottomChange}
+        atBottomThreshold={56}
         followOutput={() =>
-          (hasLiveContent || props.isRunActive) && isAtBottom ? 'smooth' : false
+          (hasLiveContent || props.isRunActive) && scrollMode === 'following' ? 'smooth' : false
         }
         increaseViewportBy={{ top: 320, bottom: 720 }}
         initialTopMostItemIndex={Math.max(0, timelineItems.length - 1)}
@@ -704,6 +807,7 @@ export function ConversationTimeline(props: ConversationTimelineProps) {
           <div className="conversation-timeline-item">
             {renderTimelineItem(item, {
               isRunActive: props.isRunActive,
+              isLoadingMore,
               onLoadMore: handleLoadMore,
               expandedRows,
               interactedRows,
@@ -713,15 +817,11 @@ export function ConversationTimeline(props: ConversationTimelineProps) {
           </div>
         )}
       />
-      {!isAtBottom ? (
-        <button
-          type="button"
-          className="conversation-scroll-bottom"
-          onClick={handleScrollToBottom}
-        >
-          回到底部
-        </button>
-      ) : null}
+      <ScrollToBottomButton
+        visible={showScrollButton}
+        unreadCount={unreadCount}
+        onClick={handleScrollToBottom}
+      />
     </>
   )
 }

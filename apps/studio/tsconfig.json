@@ -13,7 +13,6 @@
     "verbatimModuleSyntax": true,
     "jsx": "react-jsx",
     "baseUrl": ".",
-    "ignoreDeprecations": "6.0",
     "paths": {
       "@xnova/runtime": ["../../packages/runtime/src/index.ts"],
       "@xnova/runtime/*": ["../../packages/runtime/src/*"],

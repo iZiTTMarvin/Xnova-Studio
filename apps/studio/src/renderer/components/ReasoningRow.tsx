@@ -1,6 +1,7 @@
 import { memo, useEffect, useRef, useState } from 'react'
 import { IconChevronDown, IconChevronRight } from './Icons'
 import { formatDurationLabel } from '../utils/tool-event-summary'
+import { MarkdownContent } from '../utils/markdown-renderer'
 
 interface ReasoningRowProps {
   content: string
@@ -83,15 +84,22 @@ export const ReasoningRow = memo(function ReasoningRow(props: ReasoningRowProps)
   const hasContent = props.content.trim().length > 0
 
   return (
-    <div className={`reasoning-row ${isExpanded ? '' : 'reasoning-row--collapsed'}`}>
+    <div
+      className={[
+        'reasoning-row',
+        isExpanded ? '' : 'reasoning-row--collapsed',
+        props.isLive ? 'reasoning-row--live' : '',
+      ].filter(Boolean).join(' ')}
+    >
       <button
         type="button"
         className="reasoning-row-header"
         onClick={() => setExpanded(!isExpanded)}
         aria-expanded={isExpanded}
       >
-        <span className="reasoning-row-chevron">
-          {isExpanded ? <IconChevronDown /> : <IconChevronRight />}
+        {/* chevron 使用统一的容器 + CSS transform 过渡旋转 */}
+        <span className={`reasoning-row-chevron ${isExpanded ? 'reasoning-row-chevron--open' : ''}`}>
+          <IconChevronRight />
         </span>
         {props.isLive ? <span className="spinner" /> : null}
         <span className="reasoning-row-title">
@@ -101,10 +109,13 @@ export const ReasoningRow = memo(function ReasoningRow(props: ReasoningRowProps)
           <span className="reasoning-row-duration">⏱ {durationText}</span>
         ) : null}
       </button>
-      {isExpanded ? (
+      {/* 展开/折叠使用 max-height 过渡动画，内容始终渲染以保持 DOM 稳定 */}
+      <div className="reasoning-row-content-wrapper">
         <div className="reasoning-row-content">
           {hasContent ? (
-            <div className="reasoning-row-text">{props.content}</div>
+            <div className="reasoning-row-text">
+              <MarkdownContent text={props.content} />
+            </div>
           ) : (
             // 思考内容尚未到达时，显示三点等待动画
             <div className="conversation-thinking-placeholder">
@@ -115,8 +126,7 @@ export const ReasoningRow = memo(function ReasoningRow(props: ReasoningRowProps)
             </div>
           )}
         </div>
-      ) : null}
+      </div>
     </div>
   )
 })
-

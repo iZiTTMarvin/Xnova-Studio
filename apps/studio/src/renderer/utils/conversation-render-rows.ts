@@ -1,4 +1,5 @@
 import type { StudioConversationBlock } from '../../shared/studio-bridge-contract'
+import type { SubAgentInfo, SubAgentDetailEvent } from '../components/SubAgentCard'
 import {
   isExplorationTool,
   normalizeToolName,
@@ -32,6 +33,7 @@ export type ConversationRenderRow =
     }
   | { type: 'tool_activity_group'; id: string; title: string; running: boolean; tools: ToolRowModel[] }
   | { type: 'tool_action'; id: string; tool: ToolRowModel }
+  | { type: 'subagent'; id: string; agent: SubAgentInfo }
   | { type: 'status'; id: string; content: string }
   | { type: 'system'; id: string; content: string; level: 'info' | 'warning' | 'error' }
 

@@ -3069,3 +3069,566 @@ body,
 #app .conversation-scroll-bottom {
   bottom: calc(var(--conversation-floating-safe-area) - 84px);
 }
+
+
+/* ========================================
+   Phase 4 & 5：交互组件体验升级 + 自动滚动
+   ======================================== */
+
+/* --- 4.1 ReasoningRow 升级 --- */
+
+/* 进行中态：左边框高亮 */
+.reasoning-row--live {
+  border-left: 2px solid var(--primary);
+}
+
+/* chevron 旋转过渡：默认朝右，展开时旋转 90° */
+.reasoning-row-chevron {
+  transition: transform 200ms ease;
+}
+
+.reasoning-row-chevron--open {
+  transform: rotate(90deg);
+}
+
+/* 展开/折叠 max-height 过渡动画 */
+.reasoning-row-content-wrapper {
+  max-height: 600px;
+  overflow: hidden;
+  transition: max-height 300ms ease, opacity 200ms ease;
+  opacity: 1;
+}
+
+.reasoning-row--collapsed .reasoning-row-content-wrapper {
+  max-height: 0;
+  opacity: 0;
+}
+
+/* 思考内容使用 MarkdownContent 渲染后，移除旧的 white-space: pre-wrap */
+.reasoning-row-text {
+  color: var(--text-muted);
+  font-size: 12px;
+  line-height: 1.65;
+  font-style: italic;
+}
+
+/* --- 4.2 ToolActionRow 升级 --- */
+
+/* chevron 旋转过渡 */
+.tool-action-row-chevron {
+  transition: transform 200ms ease;
+}
+
+.tool-action-row-chevron--open {
+  transform: rotate(90deg);
+}
+
+/* 展开详情区域过渡动画 */
+.tool-action-row-details-wrapper {
+  max-height: 0;
+  overflow: hidden;
+  transition: max-height 300ms ease;
+}
+
+.tool-action-row-details-wrapper--open {
+  max-height: 800px;
+}
+
+/* 运行中进度条：CSS 渐变动画 */
+.tool-action-row-progress {
+  height: 2px;
+  background: linear-gradient(
+    90deg,
+    transparent 0%,
+    var(--primary) 50%,
+    transparent 100%
+  );
+  background-size: 200% 100%;
+  animation: tool-progress-slide 1.5s ease-in-out infinite;
+}
+
+@keyframes tool-progress-slide {
+  0% { background-position: 200% 0; }
+  100% { background-position: -200% 0; }
+}
+
+/* 完整结果代码块的 lang 标签 */
+.tool-action-row-detail-code-wrapper {
+  position: relative;
+}
+
+.tool-action-row-detail-code-lang {
+  position: absolute;
+  top: 4px;
+  right: 8px;
+  font-family: var(--font-mono);
+  font-size: 10px;
+  color: var(--text-faint);
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  pointer-events: none;
+  z-index: 1;
+}
+
+/* --- 4.3 ToolActivityGroupRow 升级 --- */
+
+/* chevron 旋转过渡 */
+.tool-activity-group-row-chevron {
+  transition: transform 200ms ease;
+}
+
+.tool-activity-group-row-chevron--open {
+  transform: rotate(90deg);
+}
+
+/* 展开子工具列表过渡 */
+.tool-activity-group-row-details-wrapper {
+  max-height: 0;
+  overflow: hidden;
+  transition: max-height 300ms ease;
+}
+
+.tool-activity-group-row-details-wrapper--open {
+  max-height: 1200px;
+}
+
+/* 进度条 */
+.tool-activity-group-progress {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 0 12px 8px 38px;
+}
+
+.tool-activity-group-progress-bar {
+  flex: 1;
+  height: 3px;
+  background: var(--border-subtle);
+  border-radius: 2px;
+  overflow: hidden;
+}
+
+.tool-activity-group-progress-fill {
+  height: 100%;
+  background: var(--primary);
+  border-radius: 2px;
+  transition: width 300ms ease;
+}
+
+.tool-activity-group-progress-text {
+  color: var(--text-faint);
+  font-family: var(--font-mono);
+  font-size: 11px;
+  white-space: nowrap;
+}
+
+/* stagger 入场动画 */
+@keyframes stagger-fade-in {
+  from {
+    opacity: 0;
+    transform: translateY(4px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.tool-activity-group-item--stagger {
+  animation: stagger-fade-in 200ms ease both;
+}
+
+/* 子工具可点击样式 */
+button.tool-activity-group-item {
+  width: 100%;
+  border: 0;
+  background: transparent;
+  cursor: pointer;
+  font-family: inherit;
+  text-align: left;
+  border-radius: var(--radius-sm);
+  padding: 4px 6px;
+  transition: background 120ms ease;
+}
+
+button.tool-activity-group-item:hover {
+  background: var(--bg-soft);
+}
+
+/* 嵌套展开的 ToolActionRow 容器 */
+.tool-activity-group-item-expanded {
+  animation: stagger-fade-in 200ms ease both;
+}
+
+/* --- 4.4 SubAgentCard --- */
+
+.subagent-card {
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-lg);
+  background: color-mix(in srgb, var(--bg-panel-strong) 90%, transparent);
+  overflow: hidden;
+}
+
+.subagent-card--running {
+  animation: breathe 2s ease-in-out infinite;
+}
+
+.subagent-card--error {
+  border-color: color-mix(in srgb, var(--error) 32%, var(--border-subtle));
+}
+
+.subagent-card-header {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  width: 100%;
+  padding: 10px 12px;
+  border: 0;
+  background: transparent;
+  color: inherit;
+  font-family: inherit;
+  text-align: left;
+  cursor: pointer;
+  transition: background 120ms ease;
+}
+
+.subagent-card-header:hover {
+  background: var(--bg-soft);
+}
+
+.subagent-card-status {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 16px;
+  min-width: 16px;
+  height: 16px;
+  color: var(--text-faint);
+}
+
+.subagent-card-icon-success {
+  color: var(--success);
+}
+
+.subagent-card-icon-error {
+  color: var(--error);
+}
+
+.subagent-card-icon-muted {
+  color: var(--text-faint);
+}
+
+.subagent-card-info {
+  display: grid;
+  gap: 3px;
+  min-width: 0;
+  flex: 1;
+}
+
+.subagent-card-name-line {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+}
+
+.subagent-card-type-tag {
+  display: inline-block;
+  padding: 1px 6px;
+  border-radius: var(--radius-sm);
+  background: var(--bg-soft);
+  color: var(--text-muted);
+  font-family: var(--font-mono);
+  font-size: 10px;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  flex-shrink: 0;
+}
+
+.subagent-card-name {
+  color: var(--text-primary);
+  font-size: 13px;
+  font-weight: 600;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.subagent-card-running-detail {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 12px;
+  color: var(--text-faint);
+}
+
+.subagent-card-stopping {
+  color: var(--warning);
+}
+
+.subagent-card-turn {
+  font-family: var(--font-mono);
+  font-size: 11px;
+}
+
+.subagent-card-current-tool {
+  color: var(--text-muted);
+  font-family: var(--font-mono);
+  font-size: 11px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.subagent-card-meta {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-left: auto;
+  min-width: fit-content;
+}
+
+.subagent-card-status-label {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  color: var(--text-faint);
+}
+
+.subagent-card-status-label--running {
+  color: var(--warning);
+}
+
+.subagent-card-status-label--done {
+  color: var(--success);
+}
+
+.subagent-card-status-label--error {
+  color: var(--error);
+}
+
+.subagent-card-chevron {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 12px;
+  color: var(--text-faint);
+  transition: transform 200ms ease;
+}
+
+.subagent-card-chevron--open {
+  transform: rotate(90deg);
+}
+
+/* 展开详情过渡 */
+.subagent-card-details-wrapper {
+  max-height: 0;
+  overflow: hidden;
+  transition: max-height 300ms ease;
+}
+
+.subagent-card-details-wrapper--open {
+  max-height: 400px;
+}
+
+.subagent-card-details {
+  padding: 0 12px 12px 38px;
+  display: grid;
+  gap: 4px;
+  max-height: 320px;
+  overflow-y: auto;
+}
+
+.subagent-card-empty {
+  color: var(--text-faint);
+  font-size: 12px;
+  font-style: italic;
+}
+
+.subagent-card-event {
+  font-size: 12px;
+}
+
+.subagent-card-event-tool {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  color: var(--text-secondary);
+}
+
+.subagent-card-event-tool-name {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  color: var(--text-primary);
+}
+
+.subagent-card-event-duration {
+  color: var(--text-faint);
+  font-family: var(--font-mono);
+  font-size: 11px;
+}
+
+.subagent-card-event-summary {
+  color: var(--text-faint);
+  font-size: 11px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  max-width: 300px;
+}
+
+.subagent-card-event-text {
+  padding: 4px 0 4px 20px;
+  border-left: 2px solid var(--border-hover);
+  color: var(--text-secondary);
+  font-size: 12px;
+  line-height: 1.55;
+  white-space: pre-wrap;
+}
+
+.subagent-card-event-error {
+  color: var(--error);
+  font-size: 12px;
+}
+
+/* --- 4.5 Markdown 渲染器增强 --- */
+
+/* 代码块包装器：包含顶栏和代码区域 */
+.md-code-block-wrapper {
+  margin: 8px 0;
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-md);
+  overflow: hidden;
+}
+
+.md-code-block-wrapper .md-code-block {
+  margin: 0;
+  border: 0;
+  border-radius: 0;
+}
+
+/* 代码块顶栏：语言标签 + 复制按钮 */
+.md-code-block-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 4px 10px;
+  background: rgba(9, 14, 26, 0.6);
+  border-bottom: 1px solid var(--border-subtle);
+  min-height: 28px;
+}
+
+.md-code-block-lang {
+  font-family: var(--font-mono);
+  font-size: 10px;
+  color: var(--text-faint);
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+}
+
+.md-code-copy-btn {
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-sm);
+  padding: 2px 8px;
+  background: transparent;
+  color: var(--text-faint);
+  font-family: inherit;
+  font-size: 11px;
+  cursor: pointer;
+  transition: color 140ms ease, border-color 140ms ease, background 140ms ease;
+}
+
+.md-code-copy-btn:hover {
+  color: var(--text-secondary);
+  border-color: var(--border-hover);
+  background: var(--bg-soft);
+}
+
+/* 斜体 */
+.md-content em {
+  font-style: italic;
+  color: var(--text-secondary);
+}
+
+/* 水平分割线 */
+.md-hr {
+  border: 0;
+  border-top: 1px solid var(--border-subtle);
+  margin: 12px 0;
+}
+
+/* 嵌套列表缩进 */
+.md-list--nested {
+  margin: 2px 0;
+  padding-left: 18px;
+}
+
+/* --- 5.1 & 5.2 "回到底部"按钮升级 --- */
+
+/* 入场/退场动画 */
+@keyframes scroll-bottom-slide-up {
+  from {
+    opacity: 0;
+    transform: translateX(-50%) translateY(12px);
+  }
+  to {
+    opacity: 1;
+    transform: translateX(-50%) translateY(0);
+  }
+}
+
+.conversation-scroll-bottom--animated {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  animation: scroll-bottom-slide-up 200ms ease both;
+}
+
+/* 未读消息 badge */
+.conversation-scroll-bottom-badge {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 18px;
+  height: 18px;
+  padding: 0 5px;
+  border-radius: 999px;
+  background: var(--primary);
+  color: #101010;
+  font-size: 10px;
+  font-weight: 700;
+  line-height: 1;
+}
+
+/* --- 5.3 顶部历史加载优化 --- */
+
+/* 加载中 skeleton 占位 */
+.conversation-load-more-skeleton {
+  display: grid;
+  gap: 8px;
+  padding: 12px 0;
+  width: 100%;
+  max-width: 320px;
+  margin: 0 auto;
+}
+
+.conversation-skeleton-line {
+  height: 10px;
+  border-radius: 4px;
+  background: linear-gradient(
+    90deg,
+    var(--bg-soft) 25%,
+    var(--bg-panel-strong) 50%,
+    var(--bg-soft) 75%
+  );
+  background-size: 200% 100%;
+  animation: skeleton-shimmer 1.5s ease-in-out infinite;
+}
+
+.conversation-skeleton-line--short {
+  width: 60%;
+}
+
+@keyframes skeleton-shimmer {
+  0% { background-position: 200% 0; }
+  100% { background-position: -200% 0; }
+}

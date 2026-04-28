@@ -3,15 +3,17 @@
  *
  * 支持:
  * - **bold** → <strong>
+ * - *italic* → <em>
  * - ~~strike~~ → <del>
  * - `inline code` → <code>
  * - [text](http(s)://url) → <a target="_blank" rel="noreferrer noopener"> （仅 http/https 白名单）
- * - ```lang ... ``` → <pre><code>
+ * - ```lang ... ``` → <pre><code>（带语言标签 + 复制按钮）
  * - # / ## / ### → h1/h2/h3
  * - > quote → <blockquote>
- * - - item / * item → <ul><li>
+ * - - item / * item → <ul><li>（支持嵌套）
  * - 1. item → <ol><li>
  * - | col1 | col2 | → <table>
+ * - --- → <hr>
  * - 普通行 → <span> (保持 inline 以兼容流式渲染)
  *
  * 不引入 react-markdown 等第三方库。安全策略：
@@ -19,7 +21,7 @@
  * - 全部走 React JSX 渲染，无 dangerouslySetInnerHTML，无 XSS 风险
  */
 
-import React, { Fragment } from 'react'
+import React, { Fragment, useCallback, useState } from 'react'
 
 const SAFE_LINK_PROTOCOL = /^https?:\/\//i
 
@@ -27,13 +29,13 @@ function isSafeLinkUrl(url: string): boolean {
   return SAFE_LINK_PROTOCOL.test(url.trim())
 }
 
-/** 渲染内联标记 (bold + strike + inline code + link) */
+/** 渲染内联标记 (bold + italic + strike + inline code + link) */
 function renderInlineTokens(text: string): (string | React.ReactElement)[] {
   const tokens: (string | React.ReactElement)[] = []
-  // 匹配顺序：**bold** | ~~strike~~ | [text](url) | `code`
-  // 每个分组内部用一个捕获放主体内容；link 用两个捕获存 text 和 url
+  // 匹配顺序：**bold** | *italic* | ~~strike~~ | [text](url) | `code`
+  // italic 使用单个 * 但不匹配 ** 开头的情况
   const pattern =
-    /(\*\*(.+?)\*\*|~~(.+?)~~|\[([^\]]+)\]\(([^)\s]+)\)|`([^`]+)`)/g
+    /(\*\*(.+?)\*\*|(?<!\*)\*(?!\*)(.+?)(?<!\*)\*(?!\*)|~~(.+?)~~|\[([^\]]+)\]\(([^)\s]+)\)|`([^`]+)`)/g
   let lastIndex = 0
   let match: RegExpExecArray | null
   let tokenKey = 0
@@ -48,12 +50,15 @@ function renderInlineTokens(text: string): (string | React.ReactElement)[] {
       // **bold**
       tokens.push(<strong key={`b-${tokenKey++}`}>{match[2]}</strong>)
     } else if (match[3] !== undefined) {
+      // *italic*
+      tokens.push(<em key={`i-${tokenKey++}`}>{match[3]}</em>)
+    } else if (match[4] !== undefined) {
       // ~~strike~~
-      tokens.push(<del key={`s-${tokenKey++}`}>{match[3]}</del>)
-    } else if (match[4] !== undefined && match[5] !== undefined) {
+      tokens.push(<del key={`s-${tokenKey++}`}>{match[4]}</del>)
+    } else if (match[5] !== undefined && match[6] !== undefined) {
       // [text](url) — 仅 http/https，否则降级为 [text](url) 字面量以避免 javascript: / data: 等危险协议
-      const linkText = match[4]
-      const linkUrl = match[5]
+      const linkText = match[5]
+      const linkUrl = match[6]
       if (isSafeLinkUrl(linkUrl)) {
         tokens.push(
           <a
@@ -69,9 +74,9 @@ function renderInlineTokens(text: string): (string | React.ReactElement)[] {
       } else {
         tokens.push(`[${linkText}](${linkUrl})`)
       }
-    } else if (match[6] !== undefined) {
+    } else if (match[7] !== undefined) {
       // `inline code`
-      tokens.push(<code key={`c-${tokenKey++}`} className="md-inline-code">{match[6]}</code>)
+      tokens.push(<code key={`c-${tokenKey++}`} className="md-inline-code">{match[7]}</code>)
     }
 
     lastIndex = match.index + match[0].length
@@ -85,11 +90,19 @@ function renderInlineTokens(text: string): (string | React.ReactElement)[] {
   return tokens.length > 0 ? tokens : [text]
 }
 
+/** 嵌套列表项数据结构 */
+interface NestedListItem {
+  content: string
+  children: NestedListItem[]
+}
+
 interface MarkdownBlock {
-  type: 'paragraph' | 'code' | 'ul' | 'ol' | 'heading' | 'quote' | 'table'
+  type: 'paragraph' | 'code' | 'ul' | 'ol' | 'heading' | 'quote' | 'table' | 'hr'
   content: string
   lang?: string | undefined
   items?: string[]
+  /** 嵌套列表项（支持多级缩进） */
+  nestedItems?: NestedListItem[]
   level?: 1 | 2 | 3
   /** table 行数据：第 0 行为 header，后续为 body */
   rows?: string[][]
@@ -98,11 +111,53 @@ interface MarkdownBlock {
 const HEADING_PATTERN = /^(#{1,3})\s+(.+)$/
 const TABLE_ROW_PATTERN = /^\s*\|.*\|\s*$/
 const TABLE_DELIMITER_PATTERN = /^\s*\|?\s*:?-+:?\s*(\|\s*:?-+:?\s*)+\|?\s*$/
+/** 水平分割线：独立一行的 --- 或 *** 或 ___ （至少三个） */
+const HR_PATTERN = /^(\s*[-*_]\s*){3,}$/
 
 function parseTableRow(line: string): string[] {
   // 去掉首尾的 | 然后按 | 切分
   const trimmed = line.trim().replace(/^\|/, '').replace(/\|$/, '')
   return trimmed.split('|').map((cell) => cell.trim())
+}
+
+/**
+ * 解析列表行的缩进深度。
+ * 返回 { depth, content }，depth 从 0 开始。
+ */
+function parseListItemDepth(line: string): { depth: number; content: string } {
+  const match = line.match(/^(\s*)([-*])\s+(.*)$/)
+  if (!match) {
+    return { depth: 0, content: line.replace(/^[\s]*[-*]\s+/, '') }
+  }
+  const indent = match[1]?.length ?? 0
+  // 每 2 个空格算一级缩进
+  const depth = Math.floor(indent / 2)
+  return { depth, content: match[3] ?? '' }
+}
+
+/**
+ * 将扁平的列表行解析为嵌套结构。
+ */
+function buildNestedList(lines: string[]): NestedListItem[] {
+  const root: NestedListItem[] = []
+  // 栈：每一级对应当前层级的 children 数组
+  const stack: { depth: number; items: NestedListItem[] }[] = [{ depth: -1, items: root }]
+
+  for (const line of lines) {
+    const { depth, content } = parseListItemDepth(line)
+    const item: NestedListItem = { content, children: [] }
+
+    // 找到合适的父级
+    while (stack.length > 1 && stack[stack.length - 1]!.depth >= depth) {
+      stack.pop()
+    }
+
+    const parent = stack[stack.length - 1]!
+    parent.items.push(item)
+    stack.push({ depth, items: item.children })
+  }
+
+  return root
 }
 
 /** 将原始 Markdown 文本解析为块列表 */
@@ -125,6 +180,13 @@ function parseBlocks(raw: string): MarkdownBlock[] {
       }
       blocks.push({ type: 'code', content: codeLines.join('\n'), lang: langStr || undefined })
       index++ // 跳过结束 ```
+      continue
+    }
+
+    // 水平分割线（必须在 heading 之前检测，避免 --- 被误判）
+    if (HR_PATTERN.test(line)) {
+      blocks.push({ type: 'hr', content: '' })
+      index++
       continue
     }
 
@@ -170,14 +232,17 @@ function parseBlocks(raw: string): MarkdownBlock[] {
       continue
     }
 
-    // 无序列表（- 或 *）
+    // 无序列表（- 或 *）— 支持嵌套缩进
     if (/^[\s]*[-*]\s+/.test(line)) {
-      const items: string[] = []
+      const rawLines: string[] = []
       while (index < lines.length && /^[\s]*[-*]\s+/.test(lines[index]!)) {
-        items.push((lines[index]!).replace(/^[\s]*[-*]\s+/, ''))
+        rawLines.push(lines[index]!)
         index++
       }
-      blocks.push({ type: 'ul', content: '', items })
+      const nestedItems = buildNestedList(rawLines)
+      // 同时保留扁平 items 以兼容旧逻辑
+      const items = rawLines.map((l) => l.replace(/^[\s]*[-*]\s+/, ''))
+      blocks.push({ type: 'ul', content: '', items, nestedItems })
       continue
     }
 
@@ -205,6 +270,7 @@ function parseBlocks(raw: string): MarkdownBlock[] {
       (lines[index]!).trim() !== '' &&
       !(lines[index]!).startsWith('```') &&
       !HEADING_PATTERN.test(lines[index]!) &&
+      !HR_PATTERN.test(lines[index]!) &&
       !/^>\s?/.test(lines[index]!) &&
       !TABLE_ROW_PATTERN.test(lines[index]!) &&
       !/^[\s]*[-*]\s+/.test(lines[index]!) &&
@@ -219,6 +285,45 @@ function parseBlocks(raw: string): MarkdownBlock[] {
   }
 
   return blocks
+}
+
+/** 代码块复制按钮 */
+function CodeCopyButton(props: { text: string }) {
+  const [copied, setCopied] = useState(false)
+
+  const handleCopy = useCallback(() => {
+    navigator.clipboard.writeText(props.text).then(() => {
+      setCopied(true)
+      setTimeout(() => setCopied(false), 1500)
+    }).catch(() => {
+      // 静默失败：某些环境不支持 clipboard API
+    })
+  }, [props.text])
+
+  return (
+    <button
+      type="button"
+      className="md-code-copy-btn"
+      onClick={handleCopy}
+      aria-label="复制代码"
+    >
+      {copied ? '已复制' : '复制'}
+    </button>
+  )
+}
+
+/** 递归渲染嵌套列表项 */
+function renderNestedListItems(items: NestedListItem[]): React.ReactElement[] {
+  return items.map((item, idx) => (
+    <li key={idx}>
+      {renderInlineTokens(item.content)}
+      {item.children.length > 0 ? (
+        <ul className="md-list md-list--nested">
+          {renderNestedListItems(item.children)}
+        </ul>
+      ) : null}
+    </li>
+  ))
 }
 
 export interface MarkdownContentProps {
@@ -238,10 +343,24 @@ export function MarkdownContent(props: MarkdownContentProps) {
         switch (block.type) {
           case 'code':
             return (
-              <pre key={blockIndex} className="md-code-block">
-                <code>{block.content}</code>
-              </pre>
+              <div key={blockIndex} className="md-code-block-wrapper">
+                {/* 代码块顶栏：语言标签 + 复制按钮 */}
+                <div className="md-code-block-header">
+                  {block.lang ? (
+                    <span className="md-code-block-lang">{block.lang}</span>
+                  ) : (
+                    <span />
+                  )}
+                  <CodeCopyButton text={block.content} />
+                </div>
+                <pre className="md-code-block">
+                  <code>{block.content}</code>
+                </pre>
+              </div>
             )
+
+          case 'hr':
+            return <hr key={blockIndex} className="md-hr" />
 
           case 'heading': {
             const level = block.level ?? 1
@@ -307,7 +426,15 @@ export function MarkdownContent(props: MarkdownContentProps) {
             )
           }
 
-          case 'ul':
+          case 'ul': {
+            // 优先使用嵌套结构渲染
+            if (block.nestedItems && block.nestedItems.length > 0) {
+              return (
+                <ul key={blockIndex} className="md-list">
+                  {renderNestedListItems(block.nestedItems)}
+                </ul>
+              )
+            }
             return (
               <ul key={blockIndex} className="md-list">
                 {(block.items ?? []).map((item, itemIndex) => (
@@ -315,6 +442,7 @@ export function MarkdownContent(props: MarkdownContentProps) {
                 ))}
               </ul>
             )
+          }
 
           case 'ol':
             return (

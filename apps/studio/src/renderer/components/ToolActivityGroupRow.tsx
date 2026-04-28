@@ -5,6 +5,7 @@ import {
   createToolEventSummary,
   formatDurationLabel,
 } from '../utils/tool-event-summary'
+import { ToolActionRow } from './ToolActionRow'
 
 interface ToolActivityGroupRowProps {
   title: string
@@ -28,6 +29,8 @@ export function ToolActivityGroupRow(props: ToolActivityGroupRowProps) {
   const hasInteractedControlled = typeof props.hasInteracted === 'boolean'
   const [internalExpanded, setInternalExpanded] = useState(props.running)
   const [internalHasInteracted, setInternalHasInteracted] = useState(false)
+  // 子工具展开状态：记录哪些工具被单独展开查看详情
+  const [expandedToolIds, setExpandedToolIds] = useState<Record<string, boolean>>({})
   const isExpanded = isExpandedControlled ? props.isExpanded : internalExpanded
   const hasInteracted = hasInteractedControlled
     ? props.hasInteracted
@@ -72,6 +75,18 @@ export function ToolActivityGroupRow(props: ToolActivityGroupRowProps) {
     : []
   const hiddenCount = Math.max(0, props.tools.length - visibleTools.length)
 
+  // 进度计算
+  const completedCount = props.tools.filter((t) => t.status !== 'running').length
+  const totalCount = props.tools.length
+  const progressPercent = totalCount > 0 ? (completedCount / totalCount) * 100 : 0
+
+  const handleToolExpandedChange = (toolId: string, nextExpanded: boolean) => {
+    setExpandedToolIds((current) => ({
+      ...current,
+      [toolId]: nextExpanded,
+    }))
+  }
+
   return (
     <div
       className={[
@@ -93,49 +108,93 @@ export function ToolActivityGroupRow(props: ToolActivityGroupRowProps) {
         </span>
         <span className="tool-activity-group-row-title">{props.title}</span>
         <span className="tool-activity-group-row-count">{props.tools.length} 项</span>
-        <span className="tool-activity-group-row-chevron">
-          {isExpanded ? <IconChevronDown /> : <IconChevronRight />}
+        <span className={`tool-activity-group-row-chevron ${isExpanded ? 'tool-activity-group-row-chevron--open' : ''}`}>
+          <IconChevronRight />
         </span>
       </button>
 
-      {isExpanded ? (
-        <div className="tool-activity-group-row-details">
-          {visibleTools.map((tool) => {
-            const summary = createToolEventSummary(
-              tool.toolName,
-              tool.args,
-              tool.resultSummary,
-            )
-            const durationText = formatDurationLabel(tool.durationMs)
-
-            return (
-              <div key={tool.id} className="tool-activity-group-item">
-                <span className="tool-activity-group-item-status">
-                  {isToolRunning(tool) ? <span className="spinner" /> : <IconCheck />}
-                </span>
-                <span className="tool-activity-group-item-copy">
-                  <span className="tool-activity-group-item-title">{summary.title}</span>
-                  {summary.target ? (
-                    <span className="tool-activity-group-item-target">{summary.target}</span>
-                  ) : null}
-                  {summary.detail ? (
-                    <span className="tool-activity-group-item-detail">{summary.detail}</span>
-                  ) : null}
-                </span>
-                {durationText ? (
-                  <span className="tool-activity-group-item-duration">{durationText}</span>
-                ) : null}
-              </div>
-            )
-          })}
-
-          {hiddenCount > 0 ? (
-            <div className="tool-activity-group-item tool-activity-group-item--more">
-              还有 {hiddenCount} 个操作
-            </div>
-          ) : null}
+      {/* 运行中时显示进度条 */}
+      {props.running ? (
+        <div className="tool-activity-group-progress">
+          <div className="tool-activity-group-progress-bar">
+            <div
+              className="tool-activity-group-progress-fill"
+              style={{ width: `${progressPercent}%` }}
+            />
+          </div>
+          <span className="tool-activity-group-progress-text">
+            {completedCount}/{totalCount} 已完成
+          </span>
         </div>
       ) : null}
+
+      {/* 展开的子工具列表：使用 max-height 过渡 + stagger 入场动画 */}
+      <div className={`tool-activity-group-row-details-wrapper ${isExpanded ? 'tool-activity-group-row-details-wrapper--open' : ''}`}>
+        {isExpanded ? (
+          <div className="tool-activity-group-row-details">
+            {visibleTools.map((tool, toolIndex) => {
+              const isToolExpanded = expandedToolIds[tool.id] === true
+
+              // 如果工具被单独展开，使用嵌套的 ToolActionRow 显示完整详情
+              if (isToolExpanded) {
+                return (
+                  <div
+                    key={tool.id}
+                    className="tool-activity-group-item-expanded"
+                    style={{ animationDelay: `${toolIndex * 40}ms` }}
+                  >
+                    <ToolActionRow
+                      tool={tool}
+                      isExpanded={true}
+                      onExpandedChange={(next) => handleToolExpandedChange(tool.id, next)}
+                    />
+                  </div>
+                )
+              }
+
+              const summary = createToolEventSummary(
+                tool.toolName,
+                tool.args,
+                tool.resultSummary,
+              )
+              const durationText = formatDurationLabel(tool.durationMs)
+
+              return (
+                <button
+                  key={tool.id}
+                  type="button"
+                  className="tool-activity-group-item tool-activity-group-item--stagger"
+                  style={{ animationDelay: `${toolIndex * 40}ms` }}
+                  onClick={() => handleToolExpandedChange(tool.id, true)}
+                  title="点击查看详情"
+                >
+                  <span className="tool-activity-group-item-status">
+                    {isToolRunning(tool) ? <span className="spinner" /> : <IconCheck />}
+                  </span>
+                  <span className="tool-activity-group-item-copy">
+                    <span className="tool-activity-group-item-title">{summary.title}</span>
+                    {summary.target ? (
+                      <span className="tool-activity-group-item-target">{summary.target}</span>
+                    ) : null}
+                    {summary.detail ? (
+                      <span className="tool-activity-group-item-detail">{summary.detail}</span>
+                    ) : null}
+                  </span>
+                  {durationText ? (
+                    <span className="tool-activity-group-item-duration">{durationText}</span>
+                  ) : null}
+                </button>
+              )
+            })}
+
+            {hiddenCount > 0 ? (
+              <div className="tool-activity-group-item tool-activity-group-item--more">
+                还有 {hiddenCount} 个操作
+              </div>
+            ) : null}
+          </div>
+        ) : null}
+      </div>
     </div>
   )
 }

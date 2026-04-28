@@ -7,6 +7,7 @@ import {
   formatDurationLabel,
   truncateText,
 } from '../utils/tool-event-summary'
+import { MarkdownContent } from '../utils/markdown-renderer'
 
 interface ToolActionRowProps {
   tool: ToolRowModel
@@ -36,6 +37,38 @@ function getVisibleFailureSummary(tool: ToolRowModel): string | null {
   }
 
   return truncateText(summary, 120)
+}
+
+/**
+ * 尝试从完整结果中推断代码语言。
+ * 用于在详情区域的代码块上显示 lang 标签。
+ */
+function inferResultLang(tool: ToolRowModel): string | null {
+  const name = tool.toolName.toLowerCase()
+  if (name.includes('bash') || name.includes('shell') || name.includes('exec')) {
+    return 'shell'
+  }
+  // 从 args 中推断文件类型
+  const path =
+    typeof tool.args['path'] === 'string'
+      ? tool.args['path']
+      : typeof tool.args['file'] === 'string'
+        ? tool.args['file']
+        : null
+  if (path) {
+    const ext = path.split('.').pop()?.toLowerCase()
+    if (ext) {
+      const langMap: Record<string, string> = {
+        ts: 'typescript', tsx: 'tsx', js: 'javascript', jsx: 'jsx',
+        py: 'python', rs: 'rust', go: 'go', java: 'java',
+        json: 'json', yaml: 'yaml', yml: 'yaml', toml: 'toml',
+        css: 'css', html: 'html', md: 'markdown', sql: 'sql',
+        sh: 'shell', bash: 'shell',
+      }
+      return langMap[ext] ?? ext
+    }
+  }
+  return null
 }
 
 export const ToolActionRow = memo(function ToolActionRow(props: ToolActionRowProps) {
@@ -71,6 +104,7 @@ export const ToolActionRow = memo(function ToolActionRow(props: ToolActionRowPro
   const isFailure = isToolFailure(props.tool)
   const hasExpandableDetails =
     argumentDetails.length > 0 || detailResultSummary !== null || hasResultFull
+  const resultLang = inferResultLang(props.tool)
 
   return (
     <div
@@ -121,13 +155,17 @@ export const ToolActionRow = memo(function ToolActionRow(props: ToolActionRowPro
             <span className="tool-action-row-duration">{durationText}</span>
           ) : null}
           {hasExpandableDetails ? (
-            <span className="tool-action-row-chevron">
-              {isExpanded ? <IconChevronDown /> : <IconChevronRight />}
+            <span className={`tool-action-row-chevron ${isExpanded ? 'tool-action-row-chevron--open' : ''}`}>
+              <IconChevronRight />
             </span>
           ) : null}
         </span>
       </button>
 
+      {/* 运行中进度条 */}
+      {isRunning ? <div className="tool-action-row-progress" /> : null}
+
+      {/* 展开详情区域：仅在展开时渲染内容，配合 CSS 过渡动画 */}
       {hasExpandableDetails && isExpanded ? (
         <div className="tool-action-row-details">
           {argumentDetails.length > 0 ? (
@@ -148,14 +186,21 @@ export const ToolActionRow = memo(function ToolActionRow(props: ToolActionRowPro
           {detailResultSummary ? (
             <div className="tool-action-row-detail-section">
               <span className="tool-action-row-detail-label">结果摘要</span>
-              <div className="tool-action-row-detail-result">{detailResultSummary}</div>
+              <div className="tool-action-row-detail-result">
+                <MarkdownContent text={detailResultSummary} />
+              </div>
             </div>
           ) : null}
 
           {hasResultFull ? (
             <details className="tool-action-row-detail-section">
               <summary className="tool-action-row-detail-label">完整结果</summary>
-              <pre className="tool-action-row-detail-code">{props.tool.resultFull}</pre>
+              <div className="tool-action-row-detail-code-wrapper">
+                {resultLang ? (
+                  <span className="tool-action-row-detail-code-lang">{resultLang}</span>
+                ) : null}
+                <pre className="tool-action-row-detail-code">{props.tool.resultFull}</pre>
+              </div>
             </details>
           ) : null}
         </div>
