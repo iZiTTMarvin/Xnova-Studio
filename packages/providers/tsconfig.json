@@ -2,9 +2,8 @@
   "extends": "../../tsconfig.base.json",
   "compilerOptions": {
     "types": ["node"],
-    "baseUrl": ".",
     "paths": {
-      "@providers/*": ["src/providers/*"],
+      "@providers/*": ["./src/providers/*"],
       "@config/*": ["../config/src/config/*"],
       "@core/*": ["../core/src/*"]
     }

@@ -2,9 +2,8 @@
   "extends": "../../tsconfig.base.json",
   "compilerOptions": {
     "types": ["node"],
-    "baseUrl": ".",
     "paths": {
-      "@platform/*": ["src/platform/*"]
+      "@platform/*": ["./src/platform/*"]
     }
   },
   "include": ["src/**/*.ts"]

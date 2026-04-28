@@ -12,7 +12,6 @@
     "noFallthroughCasesInSwitch": true,
     "verbatimModuleSyntax": true,
     "jsx": "react-jsx",
-    "baseUrl": ".",
     "paths": {
       "@xnova/runtime": ["../../packages/runtime/src/index.ts"],
       "@xnova/runtime/*": ["../../packages/runtime/src/*"],

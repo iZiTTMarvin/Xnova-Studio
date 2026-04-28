@@ -2,9 +2,8 @@
   "extends": "../../tsconfig.base.json",
   "compilerOptions": {
     "types": ["node"],
-    "baseUrl": ".",
     "paths": {
-      "@persistence/*": ["src/persistence/*"],
+      "@persistence/*": ["./src/persistence/*"],
       "@core/*": ["../core/src/*"]
     }
   },

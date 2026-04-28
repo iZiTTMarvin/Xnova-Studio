@@ -2,9 +2,8 @@
   "extends": "../../tsconfig.base.json",
   "compilerOptions": {
     "types": ["node"],
-    "baseUrl": ".",
     "paths": {
-      "@observability/*": ["src/observability/*"],
+      "@observability/*": ["./src/observability/*"],
       "@persistence/*": ["../persistence/src/persistence/*"],
       "@core": ["../core/src/index.ts"],
       "@core/*": ["../core/src/*"],
