@@ -461,6 +461,28 @@ export async function createRuntime(
               bridge.emit(makeEvent('thinking', { text: event.text }, lastSessionId ?? undefined))
               break
 
+            case 'tool_intent':
+              bridge.emit(makeEvent('tool_intent', {
+                toolName: event.toolName,
+                toolCallId: event.toolCallId,
+              }, lastSessionId ?? undefined))
+              break
+
+            case 'tool_args_delta':
+              bridge.emit(makeEvent('tool_args_delta', {
+                toolCallId: event.toolCallId,
+                argsSoFar: event.argsSoFar,
+              }, lastSessionId ?? undefined))
+              break
+
+            case 'tool_ready':
+              bridge.emit(makeEvent('tool_ready', {
+                toolName: event.toolName,
+                toolCallId: event.toolCallId,
+                args: event.args,
+              }, lastSessionId ?? undefined))
+              break
+
             case 'tool_start':
               assistantBlocks = startAssistantToolBlock(assistantBlocks, {
                 id: nextAssistantBlockId('tool'),

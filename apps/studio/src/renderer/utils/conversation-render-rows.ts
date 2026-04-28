@@ -12,7 +12,7 @@ export interface ToolRowModel {
   toolName: string
   normalizedToolName: string
   args: Record<string, unknown>
-  status: 'running' | 'done' | 'error'
+  status: 'pending' | 'running' | 'done' | 'error'
   success?: boolean
   durationMs?: number
   resultSummary?: string
@@ -113,7 +113,7 @@ function isAllExplorationTools(tools: ToolRowModel[]): boolean {
 }
 
 function countRunningTools(tools: ToolRowModel[]): number {
-  return tools.filter((tool) => tool.status === 'running').length
+  return tools.filter((tool) => tool.status === 'running' || tool.status === 'pending').length
 }
 
 function createGroupTitle(tools: ToolRowModel[], running: boolean): string {

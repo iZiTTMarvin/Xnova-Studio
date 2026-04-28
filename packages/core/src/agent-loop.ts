@@ -85,6 +85,9 @@ export type AgentEvent =
 // 业务事件
     | { type: 'text'; text: string }
     | { type: 'thinking'; text: string }
+    | { type: 'tool_intent'; toolName: string; toolCallId: string }
+    | { type: 'tool_args_delta'; toolCallId: string; argsSoFar: Record<string, unknown> }
+    | { type: 'tool_ready'; toolName: string; toolCallId: string; args: Record<string, unknown> }
     | { type: 'tool_start'; toolName: string; toolCallId: string; args: Record<string, unknown> }
     | {
     type: 'tool_done';
@@ -365,6 +368,19 @@ export class AgentLoop {
         // 从 done chunk 中取 stopReason，经 ProviderWrapper 标准化后直接使用
         let doneStopReason = 'end_turn'
 
+        /**
+         * 工具调用增量聚合器。
+         * Provider 发出 tool_call_delta 时，在此累积 toolName 和 JSON 参数片段。
+         * 流结束后（或收到最终 tool_call 时），将聚合结果转为完整 ToolCallContent。
+         */
+        const pendingDeltas = new Map<string, {
+            toolName: string
+            argsJson: string
+            lastArgsFingerprint: string
+        }>()
+        /** 已经 yield 过 tool_intent 的 toolCallId 集合 */
+        const intentEmitted = new Set<string>()
+
         // 性能层：计时变量
         const requestStart = Date.now()
         let firstContentChunk = false
@@ -383,15 +399,57 @@ export class AgentLoop {
 
                 // 性能层：首个有内容的 chunk 才算 TTFT
                 // 部分 Provider 第一个 chunk 可能是 message_start 或空 content_block_start，
-                // 只在 text / thinking / tool_call 类型时才记录
-                if (!firstContentChunk && (chunk.type === 'text' || chunk.type === 'thinking' || chunk.type === 'tool_call')) {
+                // 只在 text / thinking / tool_call / tool_call_delta 类型时才记录
+                if (!firstContentChunk && (chunk.type === 'text' || chunk.type === 'thinking' || chunk.type === 'tool_call' || chunk.type === 'tool_call_delta')) {
                     ttftMs = Date.now() - requestStart
                     firstContentChunk = true
                     yield {
                         type: 'llm_first_chunk',
-                        chunkType: chunk.type,
+                        chunkType: chunk.type === 'tool_call_delta' ? 'tool_call' : chunk.type,
                         elapsedMs: ttftMs,
                     }
+                }
+
+                // ── 工具调用增量处理 ──
+                if (chunk.type === 'tool_call_delta' && chunk.toolCallDelta) {
+                    const delta = chunk.toolCallDelta
+                    const existing = pendingDeltas.get(delta.toolCallId)
+
+                    if (!existing) {
+                        // 首个 delta：记录工具名，yield tool_intent
+                        const toolName = delta.toolName ?? 'unknown'
+                        pendingDeltas.set(delta.toolCallId, {
+                            toolName,
+                            argsJson: delta.argumentsDelta ?? '',
+                            lastArgsFingerprint: '',
+                        })
+                        if (!intentEmitted.has(delta.toolCallId)) {
+                            intentEmitted.add(delta.toolCallId)
+                            yield {type: 'tool_intent', toolName, toolCallId: delta.toolCallId}
+                        }
+                    } else {
+                        // 后续 delta：累积参数 JSON 片段
+                        if (delta.toolName && existing.toolName === 'unknown') {
+                            existing.toolName = delta.toolName
+                        }
+                        if (delta.argumentsDelta) {
+                            existing.argsJson += delta.argumentsDelta
+                        }
+                    }
+
+                    // 尝试安全解析已累积的 JSON 片段，yield tool_args_delta
+                    const current = pendingDeltas.get(delta.toolCallId)!
+                    const partialArgs = safeParsePartialJson(current.argsJson)
+                    const partialArgsFingerprint = partialArgs === null ? '' : JSON.stringify(partialArgs)
+                    if (partialArgs !== null && partialArgsFingerprint !== current.lastArgsFingerprint) {
+                        current.lastArgsFingerprint = partialArgsFingerprint
+                        yield {
+                            type: 'tool_args_delta',
+                            toolCallId: delta.toolCallId,
+                            argsSoFar: partialArgs,
+                        }
+                    }
+                    continue
                 }
 
                 const mapped = this.#mapChunk(chunk, pendingToolCalls)
@@ -411,6 +469,18 @@ export class AgentLoop {
                     }
                     yield mapped
                 }
+
+                // 最终 tool_call 到达时，yield tool_ready（无论是否有 delta 前驱）
+                if (chunk.type === 'tool_call' && chunk.toolCall) {
+                    const tc = chunk.toolCall
+                    // 如果没有经过 delta 路径（provider 不支持 delta），补发 tool_intent
+                    if (!intentEmitted.has(tc.toolCallId)) {
+                        intentEmitted.add(tc.toolCallId)
+                        yield {type: 'tool_intent', toolName: tc.toolName, toolCallId: tc.toolCallId}
+                    }
+                    yield {type: 'tool_ready', toolName: tc.toolName, toolCallId: tc.toolCallId, args: tc.args}
+                }
+
                 if (chunk.type === 'usage' && chunk.usage) {
                     inputTokens = chunk.usage.inputTokens
                     outputTokens = chunk.usage.outputTokens
@@ -498,6 +568,9 @@ export class AgentLoop {
                 if (chunk.toolCall) pendingToolCalls.push(chunk.toolCall);
                 return null
             }
+            case 'tool_call_delta':
+                // delta 在 #callLLM 中单独处理，此处不产生事件
+                return null
             case 'error':
                 return {type: 'error', error: chunk.error ?? 'unknown error'}
             default:
@@ -901,4 +974,164 @@ function simpleHash(str: string): string {
         hash = ((hash << 5) + hash + str.charCodeAt(i)) | 0
     }
     return (hash >>> 0).toString(36)
+}
+
+/**
+ * 安全解析可能不完整的工具参数 JSON。
+ *
+ * Provider 会逐块输出 `{"path":"a.txt","content":"...` 这样的片段。
+ * 完整 JSON 能直接解析；不完整时只提取已经闭合的顶层字段，避免为了等大段
+ * content 生成完才让 UI 看到 path/command。
+ */
+function safeParsePartialJson(json: string): Record<string, unknown> | null {
+    if (!json || json.trim().length === 0) return null
+    try {
+        const parsed = JSON.parse(json)
+        if (typeof parsed === 'object' && parsed !== null && !Array.isArray(parsed)) {
+            return parsed as Record<string, unknown>
+        }
+        return null
+    } catch {
+        return parseCompletedTopLevelJsonFields(json)
+    }
+}
+
+function parseCompletedTopLevelJsonFields(json: string): Record<string, unknown> | null {
+    const source = json.trim()
+    if (!source.startsWith('{')) return null
+
+    const result: Record<string, unknown> = {}
+    let cursor = 1
+
+    while (cursor < source.length) {
+        cursor = skipJsonWhitespaceAndCommas(source, cursor)
+        if (cursor >= source.length || source[cursor] === '}') break
+        if (source[cursor] !== '"') break
+
+        const key = readJsonStringLiteral(source, cursor)
+        if (!key) break
+        cursor = skipJsonWhitespace(source, key.end)
+        if (source[cursor] !== ':') break
+        cursor = skipJsonWhitespace(source, cursor + 1)
+
+        const value = readCompleteJsonValue(source, cursor)
+        if (!value) break
+        result[key.value] = value.value
+        cursor = skipJsonWhitespace(source, value.end)
+
+        if (source[cursor] === ',') {
+            cursor++
+            continue
+        }
+        if (source[cursor] === '}') break
+        // 输入可能刚好停在一个完整字段后，后续分隔符还没到达。
+        break
+    }
+
+    return Object.keys(result).length > 0 ? result : null
+}
+
+function skipJsonWhitespace(source: string, start: number): number {
+    let cursor = start
+    while (cursor < source.length && /\s/.test(source[cursor]!)) cursor++
+    return cursor
+}
+
+function skipJsonWhitespaceAndCommas(source: string, start: number): number {
+    let cursor = start
+    while (cursor < source.length && (/\s/.test(source[cursor]!) || source[cursor] === ',')) {
+        cursor++
+    }
+    return cursor
+}
+
+function readJsonStringLiteral(source: string, start: number): { value: string; end: number } | null {
+    let cursor = start + 1
+    let escaped = false
+    while (cursor < source.length) {
+        const char = source[cursor]!
+        if (escaped) {
+            escaped = false
+        } else if (char === '\\') {
+            escaped = true
+        } else if (char === '"') {
+            try {
+                return { value: JSON.parse(source.slice(start, cursor + 1)) as string, end: cursor + 1 }
+            } catch {
+                return null
+            }
+        }
+        cursor++
+    }
+    return null
+}
+
+function readCompleteJsonValue(source: string, start: number): { value: unknown; end: number } | null {
+    const first = source[start]
+    if (!first) return null
+
+    if (first === '"') {
+        return readJsonStringLiteral(source, start)
+    }
+
+    if (first === '{' || first === '[') {
+        const end = findJsonContainerEnd(source, start)
+        if (end === null) return null
+        try {
+            return { value: JSON.parse(source.slice(start, end)), end }
+        } catch {
+            return null
+        }
+    }
+
+    for (const literal of ['true', 'false', 'null'] as const) {
+        if (source.startsWith(literal, start)) {
+            return { value: JSON.parse(literal), end: start + literal.length }
+        }
+    }
+
+    const numberMatch = source.slice(start).match(/^-?(?:0|[1-9]\d*)(?:\.\d+)?(?:[eE][+-]?\d+)?/)
+    if (numberMatch?.[0]) {
+        return { value: Number(numberMatch[0]), end: start + numberMatch[0].length }
+    }
+
+    return null
+}
+
+function findJsonContainerEnd(source: string, start: number): number | null {
+    const opener = source[start]
+    const closer = opener === '{' ? '}' : ']'
+    const stack: string[] = [closer]
+    let cursor = start + 1
+    let inString = false
+    let escaped = false
+
+    while (cursor < source.length) {
+        const char = source[cursor]!
+        if (inString) {
+            if (escaped) {
+                escaped = false
+            } else if (char === '\\') {
+                escaped = true
+            } else if (char === '"') {
+                inString = false
+            }
+            cursor++
+            continue
+        }
+
+        if (char === '"') {
+            inString = true
+        } else if (char === '{') {
+            stack.push('}')
+        } else if (char === '[') {
+            stack.push(']')
+        } else if (char === stack[stack.length - 1]) {
+            stack.pop()
+            if (stack.length === 0) return cursor + 1
+        }
+        cursor++
+    }
+
+    return null
 }

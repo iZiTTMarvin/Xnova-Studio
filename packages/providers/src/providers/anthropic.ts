@@ -18,6 +18,73 @@ import { findOrphanToolCalls } from '@core/message-utils.js'
 import { dbg } from '../debug.js'
 import { withRetry, friendlyErrorMessage } from './retry.js'
 
+interface AnthropicToolDeltaEventLike {
+  type: string
+  index?: number
+  content_block?: {
+    type?: string
+    id?: string
+    name?: string
+  }
+  delta?: {
+    type?: string
+    partial_json?: string
+  }
+}
+
+/**
+ * 从 Anthropic 原生流事件中提取工具生命周期增量。
+ * content_block_start 提供工具名和 id，后续 input_json_delta 只带 block index，
+ * 所以必须用局部映射把 index 还原到 toolCallId。
+ */
+export function extractAnthropicToolCallDeltaEvent(
+  rawEvent: unknown,
+  contentBlockToolCallIds: Map<number, string>,
+): StreamChunk | null {
+  if (!rawEvent || typeof rawEvent !== 'object') {
+    return null
+  }
+  const event = rawEvent as AnthropicToolDeltaEventLike
+
+  if (event.type === 'content_block_start') {
+    const block = event.content_block
+    if (block?.type !== 'tool_use' || !block.id || !block.name) {
+      return null
+    }
+    if (typeof event.index === 'number') {
+      contentBlockToolCallIds.set(event.index, block.id)
+    }
+    return {
+      type: 'tool_call_delta',
+      toolCallDelta: {
+        toolCallId: block.id,
+        toolName: block.name,
+      },
+    }
+  }
+
+  if (event.type !== 'content_block_delta' || event.delta?.type !== 'input_json_delta') {
+    return null
+  }
+
+  const partialJson = event.delta.partial_json ?? ''
+  const toolCallId =
+    typeof event.index === 'number'
+      ? contentBlockToolCallIds.get(event.index)
+      : undefined
+  if (!partialJson || !toolCallId) {
+    return null
+  }
+
+  return {
+    type: 'tool_call_delta',
+    toolCallDelta: {
+      toolCallId,
+      argumentsDelta: partialJson,
+    },
+  }
+}
+
 /** 将内部 Message 转为 Anthropic SDK 的消息格式 */
 function toAnthropicMessages(messages: Message[]): Anthropic.MessageParam[] {
   // Debug 模式下检查 tool_call/tool_result 成对关系
@@ -251,6 +318,10 @@ export class AnthropicProvider implements LLMProvider {
 
     dbg(`[DEBUG][anthropic] stream opened, receiving events...\n`)
 
+    // 追踪 content block index → toolCallId 的映射，
+    // 用于将 input_json_delta 事件关联到正确的工具调用
+    const contentBlockToolCallIds = new Map<number, string>()
+
     let hasSeenRawChunk = false
     for await (const event of stream) {
       if (!hasSeenRawChunk) {
@@ -262,6 +333,11 @@ export class AnthropicProvider implements LLMProvider {
         }
       }
       dbg(`[DEBUG][anthropic] event: ${JSON.stringify(event)}\n`)
+
+      const toolDeltaChunk = extractAnthropicToolCallDeltaEvent(event, contentBlockToolCallIds)
+      if (toolDeltaChunk) {
+        yield toolDeltaChunk
+      }
 
       if (event.type === 'content_block_delta') {
         if (event.delta.type === 'text_delta') {

@@ -11,7 +11,7 @@ import { useEffect, useRef, useState } from 'react'
  * - cancel / error / unmount 时必须清理 timer，不留残留 spinner。
  * - enabled=false 时直接透传真实 status，不启用延迟逻辑。
  */
-export type ToolStatus = 'running' | 'done' | 'error'
+export type ToolStatus = 'pending' | 'running' | 'done' | 'error'
 
 /** 默认最小可见时间 600ms */
 export const MIN_VISIBLE_MS = 600

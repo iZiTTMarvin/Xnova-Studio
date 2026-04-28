@@ -168,6 +168,9 @@ export type StudioRunLifecycleEventType =
   | 'model_request_failed'
   | 'text_delta'
   | 'thinking'
+  | 'tool_intent'
+  | 'tool_args_delta'
+  | 'tool_ready'
   | 'tool_start'
   | 'tool_end'
   | 'context_update'
@@ -265,7 +268,7 @@ export type StudioConversationBlock =
       toolCallId: string
       toolName: string
       args: Record<string, unknown>
-      status: 'running' | 'done' | 'error'
+      status: 'pending' | 'running' | 'done' | 'error'
       durationMs?: number
       success?: boolean
       resultSummary?: string

@@ -45,11 +45,24 @@ export interface TokenUsage {
 }
 
 export interface StreamChunk {
-  type: 'text' | 'tool_call' | 'usage' | 'done' | 'error' | 'thinking' | 'timing'
+  type: 'text' | 'tool_call' | 'tool_call_delta' | 'usage' | 'done' | 'error' | 'thinking' | 'timing'
   text?: string
   /** 思考过程内容（thinking 类型时有值） */
   thinking?: string
   toolCall?: ToolCallContent
+  /**
+   * 工具调用增量（tool_call_delta 类型时有值）。
+   * Provider 流式输出工具名或参数片段时使用。
+   * - 首个 delta 必须包含 toolCallId 和 toolName。
+   * - 后续 delta 只需 toolCallId 和 argumentsDelta。
+   */
+  toolCallDelta?: {
+    toolCallId: string
+    /** 首个 delta 携带工具名，后续可省略 */
+    toolName?: string
+    /** JSON 参数增量片段（原始字符串，由 AgentLoop 聚合后解析） */
+    argumentsDelta?: string
+  }
   usage?: TokenUsage
   error?: string
   /** LLM 调用结束原因（done 类型时有值） */

@@ -223,6 +223,8 @@ type RuntimeToolLifecycleEvent =
   - `tool_start`：实际执行开始。
   - `tool_end`：执行完成。
 - provider 不支持 tool delta 时，可以只发 `tool_ready/tool_start/tool_end`，renderer 必须兼容降级路径。
+- OpenAI-compatible provider 解析 LangChain `tool_call_chunks` 时，必须用首个带 `id` 的 chunk 记录 `index -> toolCallId`，因为后续 arguments chunk 常只带 `index`。不得因后续 chunk 缺少 `id` 而丢失参数增量。
+- `AgentLoop` 聚合 arguments delta 时，可以从不完整 JSON 中保守提取已经闭合的顶层字段（例如 `path`、`command`），但不得猜测未闭合字段内容；相同参数快照应去重，避免 UI 重复刷新。
 - `write_file.content`、大段 shell output、prompt/messages 不得进入 timing summary 或默认工具参数预览。
 
 ### 4. Validation & Error Matrix

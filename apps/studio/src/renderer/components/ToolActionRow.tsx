@@ -21,7 +21,10 @@ function isToolFailure(tool: ToolRowModel): boolean {
   return tool.status === 'error' || tool.success === false
 }
 
-function getToolStatusLabel(tool: ToolRowModel, displayStatus: 'running' | 'done' | 'error'): string {
+function getToolStatusLabel(tool: ToolRowModel, displayStatus: 'pending' | 'running' | 'done' | 'error'): string {
+  if (displayStatus === 'pending') {
+    return '准备中'
+  }
   if (displayStatus === 'running') {
     return '进行中'
   }
@@ -100,7 +103,8 @@ export const ToolActionRow = memo(function ToolActionRow(props: ToolActionRowPro
   )
   // 视觉状态基于 displayStatus，而非直接读 tool.status
   // 当 displayStatus 仍为 running（min-visible 延迟中），不提前显示失败样式
-  const isRunning = displayStatus === 'running'
+  const isPending = displayStatus === 'pending'
+  const isRunning = displayStatus === 'running' || isPending
   const isFailure = !isRunning && (displayStatus === 'error' || isToolFailure(props.tool))
   const durationText = formatDurationLabel(props.tool.durationMs)
   const rawFailureSummary = getVisibleFailureSummary(props.tool)
@@ -122,7 +126,8 @@ export const ToolActionRow = memo(function ToolActionRow(props: ToolActionRowPro
     <div
       className={[
         'tool-action-row',
-        isRunning ? 'tool-action-row--running' : '',
+        isPending ? 'tool-action-row--pending' : '',
+        isRunning && !isPending ? 'tool-action-row--running' : '',
         isFailure ? 'tool-action-row--error' : '',
       ].filter(Boolean).join(' ')}
     >

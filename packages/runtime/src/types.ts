@@ -49,7 +49,10 @@ export type RuntimeEventType =
   | 'timing_mark'       // 非敏感性能阶段打点
   | 'text_delta'        // LLM 流式文本片段
   | 'thinking'          // 思考过程片段
-  | 'tool_start'        // 工具调用开始
+  | 'tool_intent'       // 模型决定调用工具（工具名已知，参数未完整）
+  | 'tool_args_delta'   // 工具参数增量更新
+  | 'tool_ready'        // 工具参数完整，准备执行
+  | 'tool_start'        // 工具调用开始执行
   | 'tool_end'          // 工具调用结束
   | 'subagent_spawn'    // 子 Agent 刚创建
   | 'subagent_progress' // 子 Agent 进度

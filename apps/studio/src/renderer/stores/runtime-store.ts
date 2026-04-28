@@ -59,6 +59,59 @@ const INITIAL_CONTEXT_STATE: ContextState = {
 export const RUN_STEP_CALLING_MODEL = '正在调用模型'
 export const RUN_STEP_STOPPING = '正在停止当前运行'
 
+/**
+ * 敏感字段名模式 — 匹配可能包含 token、密钥、密码等敏感信息的字段。
+ * 这些字段的值在 UI 展示时会被替换为占位符。
+ */
+const SENSITIVE_KEY_PATTERN = /token|secret|password|authorization|api_?key|credential/i
+
+/**
+ * 安全过滤工具参数，用于 UI 展示。
+ *
+ * 安全规则：
+ * - write_file.content 只显示长度和行数，不展示全文
+ * - edit_file.old_str / new_str 只显示长度
+ * - 任何包含 token / secret / password / authorization 的字段值被隐藏
+ * - shell/bash command 保留截断摘要
+ */
+function sanitizeToolArgsForDisplay(
+  toolName: string,
+  args: Record<string, unknown>,
+): Record<string, unknown> {
+  const result: Record<string, unknown> = {}
+  for (const [key, value] of Object.entries(args)) {
+    // 敏感字段：隐藏值
+    if (SENSITIVE_KEY_PATTERN.test(key)) {
+      result[key] = '(已隐藏)'
+      continue
+    }
+
+    // write_file.content：只显示长度和行数
+    if (toolName === 'write_file' && key === 'content' && typeof value === 'string') {
+      const lines = value.split(/\r\n|\r|\n/).length
+      result[key] = `(${value.length} 字符 / ${lines} 行)`
+      continue
+    }
+
+    // edit_file 的大段内容：只显示长度
+    if (toolName === 'edit_file' && (key === 'old_str' || key === 'new_str' || key === 'old_string' || key === 'new_string')) {
+      if (typeof value === 'string' && value.length > 200) {
+        result[key] = `(${value.length} 字符)`
+        continue
+      }
+    }
+
+    // 通用：大字符串截断
+    if (typeof value === 'string' && value.length > 500) {
+      result[key] = value.slice(0, 200) + `… (共 ${value.length} 字符)`
+      continue
+    }
+
+    result[key] = value
+  }
+  return result
+}
+
 interface PendingLiveDeltaChunk {
   kind: 'text' | 'thinking'
   content: string
@@ -629,6 +682,87 @@ export const useRuntimeStore = create<RuntimeStoreState & RuntimeStoreActions>()
                 ? 'running'
                 : state.runStatus
             break
+          case 'tool_intent': {
+            // 模型决定调用工具：创建 pending 工具壳
+            const toolCallId =
+              typeof event.payload?.toolCallId === 'string'
+                ? event.payload.toolCallId
+                : createLiveBlockId('tool')
+            const toolName =
+              typeof event.payload?.toolName === 'string'
+                ? event.payload.toolName
+                : 'unknown'
+            state.currentRunStep =
+              state.currentRunStep === RUN_STEP_STOPPING
+                ? state.currentRunStep
+                : `正在准备 ${toolName}`
+            const finalizedCurrent = finalizeOpenThinkingBlocks(state.liveConversation)
+            state.liveConversation = replaceLiveBlocks(finalizedCurrent, [
+              ...finalizedCurrent.blocks,
+              {
+                id: createLiveBlockId('tool'),
+                type: 'tool',
+                toolCallId,
+                toolName,
+                args: {},
+                status: 'pending',
+              },
+            ])
+            return
+          }
+          case 'tool_args_delta': {
+            // 工具参数增量：合并到已有的 pending 工具壳，更新安全摘要
+            const toolCallId =
+              typeof event.payload?.toolCallId === 'string'
+                ? event.payload.toolCallId
+                : ''
+            const argsSoFar =
+              event.payload?.argsSoFar && typeof event.payload.argsSoFar === 'object'
+                ? (event.payload.argsSoFar as Record<string, unknown>)
+                : {}
+            state.liveConversation = replaceLiveBlocks(
+              state.liveConversation,
+              state.liveConversation.blocks.map((block) => {
+                if (block.type !== 'tool' || block.toolCallId !== toolCallId) {
+                  return block
+                }
+                return {
+                  ...block,
+                  args: sanitizeToolArgsForDisplay(block.toolName, argsSoFar),
+                }
+              }),
+            )
+            return
+          }
+          case 'tool_ready': {
+            // 工具参数完整：更新 args 到完整值（仍保持 pending 状态，等 tool_start 切 running）
+            const toolCallId =
+              typeof event.payload?.toolCallId === 'string'
+                ? event.payload.toolCallId
+                : ''
+            const args =
+              event.payload?.args && typeof event.payload.args === 'object'
+                ? (event.payload.args as Record<string, unknown>)
+                : {}
+            const toolName =
+              typeof event.payload?.toolName === 'string'
+                ? event.payload.toolName
+                : undefined
+            state.liveConversation = replaceLiveBlocks(
+              state.liveConversation,
+              state.liveConversation.blocks.map((block) => {
+                if (block.type !== 'tool' || block.toolCallId !== toolCallId) {
+                  return block
+                }
+                return {
+                  ...block,
+                  ...(toolName !== undefined ? { toolName } : {}),
+                  args: sanitizeToolArgsForDisplay(toolName ?? block.toolName, args),
+                }
+              }),
+            )
+            return
+          }
           case 'tool_start': {
             state.runStatus =
               state.runStatus === 'cancelling' ? state.runStatus : 'tool_calling'
@@ -649,33 +783,58 @@ export const useRuntimeStore = create<RuntimeStoreState & RuntimeStoreActions>()
               event.payload?.args && typeof event.payload.args === 'object'
                 ? (event.payload.args as Record<string, unknown>)
                 : {}
-            const runningStep = createToolRunningStep(toolName, args)
-            const finalizedCurrent = finalizeOpenThinkingBlocks(state.liveConversation)
-            const lastBlock = finalizedCurrent.blocks.at(-1)
-            const shouldInsertStatus =
-              finalizedCurrent.blocks.length === 0 ||
-              (lastBlock?.type !== 'text' && lastBlock?.type !== 'status')
-            const blocks: LiveConversationBlock[] = shouldInsertStatus
-              ? [
-                  ...finalizedCurrent.blocks,
-                  {
-                    id: createLiveBlockId('status'),
-                    type: 'status',
-                    content: runningStep,
-                  },
-                ]
-              : finalizedCurrent.blocks
-            state.liveConversation = replaceLiveBlocks(finalizedCurrent, [
-              ...blocks,
-              {
-                id: createLiveBlockId('tool'),
-                type: 'tool',
-                toolCallId,
-                toolName,
-                args,
-                status: 'running',
-              },
-            ])
+
+            // 检查是否已有 pending 工具壳（来自 tool_intent）
+            const existingBlock = state.liveConversation.blocks.find(
+              (b) => b.type === 'tool' && b.toolCallId === toolCallId,
+            )
+
+            if (existingBlock) {
+              // 已有 pending 壳：切换到 running
+              state.liveConversation = replaceLiveBlocks(
+                state.liveConversation,
+                state.liveConversation.blocks.map((block) => {
+                  if (block.type !== 'tool' || block.toolCallId !== toolCallId) {
+                    return block
+                  }
+                  return {
+                    ...block,
+                    toolName,
+                    args: sanitizeToolArgsForDisplay(toolName, args),
+                    status: 'running' as const,
+                  }
+                }),
+              )
+            } else {
+              // 没有 pending 壳（旧 provider 路径）：直接创建 running 工具行
+              const runningStep = createToolRunningStep(toolName, args)
+              const finalizedCurrent = finalizeOpenThinkingBlocks(state.liveConversation)
+              const lastBlock = finalizedCurrent.blocks.at(-1)
+              const shouldInsertStatus =
+                finalizedCurrent.blocks.length === 0 ||
+                (lastBlock?.type !== 'text' && lastBlock?.type !== 'status')
+              const blocks: LiveConversationBlock[] = shouldInsertStatus
+                ? [
+                    ...finalizedCurrent.blocks,
+                    {
+                      id: createLiveBlockId('status'),
+                      type: 'status',
+                      content: runningStep,
+                    },
+                  ]
+                : finalizedCurrent.blocks
+              state.liveConversation = replaceLiveBlocks(finalizedCurrent, [
+                ...blocks,
+                {
+                  id: createLiveBlockId('tool'),
+                  type: 'tool',
+                  toolCallId,
+                  toolName,
+                  args: sanitizeToolArgsForDisplay(toolName, args),
+                  status: 'running',
+                },
+              ])
+            }
             return
           }
           case 'tool_end': {

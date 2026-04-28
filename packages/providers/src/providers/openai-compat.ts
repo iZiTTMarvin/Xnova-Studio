@@ -7,6 +7,60 @@ import type { ProviderConfig } from '@config/config-manager.js'
 import { dbg } from '../debug.js'
 import { withRetry, friendlyErrorMessage } from './retry.js'
 
+interface OpenAICompatToolCallChunk {
+  id?: string
+  name?: string
+  args?: string
+  index?: number
+}
+
+interface OpenAICompatToolDeltaState {
+  toolCallIdsByIndex: Map<number, string>
+}
+
+export function createOpenAICompatToolDeltaState(): OpenAICompatToolDeltaState {
+  return { toolCallIdsByIndex: new Map() }
+}
+
+/**
+ * LangChain 的 tool_call_chunks 只有首个片段稳定带 id，后续参数片段常只带 index。
+ * 这里把 index 映射回第一次看到的 toolCallId，避免真实流式参数被静默丢掉。
+ */
+export function extractOpenAICompatToolCallDeltaChunks(
+  toolCallChunks: OpenAICompatToolCallChunk[] | undefined,
+  state: OpenAICompatToolDeltaState,
+): StreamChunk[] {
+  if (!toolCallChunks || toolCallChunks.length === 0) {
+    return []
+  }
+
+  const chunks: StreamChunk[] = []
+  for (const tcc of toolCallChunks) {
+    if (!tcc.id && !tcc.name && !tcc.args) continue
+
+    if (tcc.id && typeof tcc.index === 'number') {
+      state.toolCallIdsByIndex.set(tcc.index, tcc.id)
+    }
+
+    const toolCallId =
+      tcc.id ?? (typeof tcc.index === 'number' ? state.toolCallIdsByIndex.get(tcc.index) : undefined)
+    if (!toolCallId) {
+      continue
+    }
+
+    chunks.push({
+      type: 'tool_call_delta',
+      toolCallDelta: {
+        toolCallId,
+        ...(tcc.name ? { toolName: tcc.name } : {}),
+        ...(tcc.args ? { argumentsDelta: tcc.args } : {}),
+      },
+    })
+  }
+
+  return chunks
+}
+
 export class OpenAICompatProvider implements LLMProvider {
   readonly name: string
   readonly protocol: ProviderProtocol = 'openai-compat'
@@ -117,6 +171,7 @@ export class OpenAICompatProvider implements LLMProvider {
     dbg(`[DEBUG][${this.name}] stream opened, receiving chunks...\n`)
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const allChunks: any[] = []
+    const toolDeltaState = createOpenAICompatToolDeltaState()
     let hasSeenRawChunk = false
     for await (const chunk of stream) {
       if (!hasSeenRawChunk) {
@@ -132,6 +187,16 @@ export class OpenAICompatProvider implements LLMProvider {
       if (text) {
         yield { type: 'text', text }
       }
+
+      // 工具调用增量：LangChain 的 AIMessageChunk 包含 tool_call_chunks
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const toolCallChunks = (chunk as any).tool_call_chunks as Array<{
+        id?: string; name?: string; args?: string; index?: number
+      }> | undefined
+      for (const deltaChunk of extractOpenAICompatToolCallDeltaChunks(toolCallChunks, toolDeltaState)) {
+        yield deltaChunk
+      }
+
       allChunks.push(chunk)
     }
 
