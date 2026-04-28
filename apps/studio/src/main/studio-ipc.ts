@@ -676,6 +676,8 @@ export interface RegisterStudioMainIpcHandlersOptions {
     state: StudioHostState,
   ) => Promise<StudioSkillsPluginsOverviewSnapshot>
   selectWorkspaceDirectory: () => Promise<WorkspaceSelectionResult>
+  /** workspace 变更后的回调（用于触发 warmup 等后续动作） */
+  onWorkspaceChanged?: (workspacePath: string) => void
   mainWindowManager: {
     getMainWindow(): HostStateWindowLike | null
   }
@@ -731,6 +733,11 @@ export function registerStudioMainIpcHandlers(
           selectionCode: selection.code,
         })
 
+        // workspace 变更后触发 warmup
+        if (selection.ok && selection.path) {
+          options.onWorkspaceChanged?.(selection.path)
+        }
+
         return {
           selection,
           state: hostState,
@@ -759,6 +766,9 @@ export function registerStudioMainIpcHandlers(
         options.logger.info('host workspace 已绑定', {
           workspacePath: hostState.workspacePath,
         })
+
+        // workspace 绑定后触发 warmup
+        options.onWorkspaceChanged?.(request.workspacePath)
 
         return hostState
       })

@@ -12,6 +12,7 @@ import { createStudioShellInspector } from './studio-shell-inspector'
 import { createStudioRuntimeInspector } from './studio-runtime-inspector'
 import { createStudioRuntimeManager } from './studio-runtime-manager'
 import { createStudioRuntimeService } from './studio-runtime-service'
+import { createRuntimeWarmupManager } from './studio-runtime-warmup'
 import { createMainWindowManager } from './window'
 import { selectWorkspaceDirectory } from './workspace'
 
@@ -24,6 +25,17 @@ function waitForLogFlush(): Promise<void> {
 const logger = createMainLogger()
 const smokeConfig = readSmokeConfig(process.env)
 const runtimeManager = createStudioRuntimeManager()
+const warmupManager = createRuntimeWarmupManager({
+  onStatusChanged(event) {
+    logger.info('[Warmup] 状态变更', {
+      status: event.status,
+      cwd: event.cwd,
+      cacheKey: event.cacheKey,
+      ...(event.durationMs !== undefined ? { durationMs: event.durationMs } : {}),
+      ...(event.error !== undefined ? { error: event.error } : {}),
+    })
+  },
+})
 const runtimeInspector = createStudioRuntimeInspector({
   getRuntimeSnapshot(hostState) {
     return runtimeManager.getRuntimeSnapshot(hostState)
@@ -39,6 +51,7 @@ const mainWindowManager = createMainWindowManager({
 })
 const runtimeService = createStudioRuntimeService({
   runtimeManager,
+  warmupManager,
   mainWindowManager,
   logger,
 })
@@ -74,6 +87,7 @@ const skillsPluginsService = createStudioSkillsPluginsService({
   },
 })
 app.on('before-quit', () => {
+  warmupManager.dispose()
   void runtimeService.dispose()
 })
 
@@ -119,6 +133,17 @@ registerStudioMainIpcHandlers({
   addMcpServer: (input, state) => mcpService.addServer(input, state),
   deleteMcpServer: (name, state) => mcpService.deleteServer(name, state),
   getSkillsPluginsOverview: (state) => skillsPluginsService.getOverview(state),
+  onWorkspaceChanged: (() => {
+    // 跟踪上一个 warmup workspace，切换时先 abort 旧路径再 start 新路径
+    let previousWarmupWorkspace: string | null = null
+    return (workspacePath: string) => {
+      if (previousWarmupWorkspace && previousWarmupWorkspace !== workspacePath) {
+        warmupManager.abortWarmup(previousWarmupWorkspace)
+      }
+      previousWarmupWorkspace = workspacePath
+      warmupManager.startWarmup({ cwd: workspacePath })
+    }
+  })(),
   logger,
 })
 

@@ -71,6 +71,8 @@ export interface CreateStudioRuntimeServiceOptions {
   engineServiceApi?: Pick<EngineServiceApi, 'runtime'> &
     Partial<Pick<EngineServiceApi, 'sessionService'>>
   runtimeManager?: StudioRuntimeManager
+  /** warmup manager 注入点（可选，不提供时 submit 始终走 slow path） */
+  warmupManager?: import('./studio-runtime-warmup').RuntimeWarmupManager
   createRuntimeFn?: (
     input: RuntimeConfigInput,
     bridge: RuntimeHostBridge,
@@ -1160,6 +1162,25 @@ export function createStudioRuntimeService(
         ...(request.timing === undefined ? {} : { clientMarks: request.timing }),
       })
       submitTiming.mark('runtime_service_submit_start')
+
+      // warmup snapshot validate：命中时记录预热耗时，未命中时走 slow path
+      const warmupValidation = options.warmupManager?.validateSnapshot({
+        cwd,
+        agentId: request.agentId ?? null,
+      })
+      if (warmupValidation) {
+        submitTiming.mark('warmup_snapshot_validate')
+        if (warmupValidation.hit) {
+          logger.info('[Warmup] snapshot 命中，bootstrap 已预热', {
+            cacheKey: warmupValidation.snapshot?.cacheKey,
+            bootstrapReady: warmupValidation.snapshot?.bootstrapReady,
+          })
+        } else {
+          logger.info('[Warmup] snapshot 未命中，走 slow path', {
+            missReason: warmupValidation.missReason,
+          })
+        }
+      }
 
       let runtimeEntry: StudioManagedRuntimeEntry | null = null
       let activeRun: ActiveStudioRun | null = null
