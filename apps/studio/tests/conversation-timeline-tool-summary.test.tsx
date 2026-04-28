@@ -263,7 +263,7 @@ describe('ConversationTimeline blocks-first', () => {
       />,
     )
 
-    const assistantText = document.querySelector('.conversation-message-assistant')?.textContent ?? ''
+    const assistantText = document.querySelector('.conversation-assistant-row')?.textContent ?? ''
     expect(assistantText.indexOf('先分析现状。')).toBeLessThan(
       assistantText.indexOf('思考过程'),
     )

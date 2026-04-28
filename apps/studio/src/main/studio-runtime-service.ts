@@ -376,7 +376,13 @@ function isPathInsideWorkspace(rawPath: unknown, workspacePath: string): boolean
   }
 
   const workspaceRoot = path.resolve(workspacePath)
-  const targetPath = path.resolve(workspaceRoot, rawPath)
+
+  // 相对路径：直接相对于 workspaceRoot 解析（与 resolvePath 工具函数对齐）
+  // 绝对路径：path.resolve 不改变，直接用原值
+  const targetPath = path.isAbsolute(rawPath)
+    ? path.resolve(rawPath)
+    : path.resolve(workspaceRoot, rawPath)
+
   const relativePath = path.relative(workspaceRoot, targetPath)
 
   return (

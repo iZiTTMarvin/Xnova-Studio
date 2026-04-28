@@ -19,7 +19,7 @@ export class EditFileTool implements Tool {
   readonly parameters = {
     type: 'object',
     properties: {
-      path: { type: 'string', description: '文件路径（绝对路径或相对路径）' },
+      path: { type: 'string', description: '相对于工作目录的文件路径（如 src/index.ts）。禁止使用绝对路径。' },
       old_str: { type: 'string', description: '要替换的原始字符串，必须在文件中唯一匹配' },
       new_str: { type: 'string', description: '替换后的新字符串' },
     },

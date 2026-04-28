@@ -260,8 +260,13 @@ export function formatDurationLabel(durationMs?: number): string | null {
   if (durationMs === undefined || durationMs <= 0) {
     return null
   }
-  if (durationMs < 50) {
-    return '<0.1s'
+  // durationMs < 100ms 通常是首包超时 abort 后重试导致的不合理值，
+  // 直接隐藏避免 "<0.1s" 这类令人困惑的显示
+  if (durationMs < 100) {
+    return null
+  }
+  if (durationMs < 1000) {
+    return `${(durationMs / 1000).toFixed(1)}s`
   }
   return `${(durationMs / 1000).toFixed(1)}s`
 }

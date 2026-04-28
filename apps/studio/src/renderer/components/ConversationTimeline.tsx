@@ -63,6 +63,11 @@ type TimelineItem =
       type: 'thinking-placeholder'
       label: string
     }
+  | {
+      id: 'live-activity-indicator'
+      type: 'activity-indicator'
+      label: string
+    }
 
 function renderConversationRow(
   row: ConversationRenderRow,
@@ -165,15 +170,15 @@ const UserMessageView = memo(function UserMessageView(props: {
     .join('')
 
   return (
+    // 用户消息：右对齐气泡布局（参考 OpenCowork UserMessage）
+    // 使用 flex items-end 让气泡靠右，不再显示"你"标签
     <article
       className={[
-        'conversation-message',
-        'conversation-message-user',
-        isLive ? 'conversation-message-live' : '',
+        'conversation-user-row',
+        isLive ? 'conversation-user-row--live' : '',
       ].filter(Boolean).join(' ')}
     >
-      <div className="conversation-message-label">你</div>
-      <div className="conversation-message-body">
+      <div className="conversation-user-bubble">
         <MarkdownContent text={textContent} />
       </div>
     </article>
@@ -201,18 +206,42 @@ const StructuredMessageView = memo(function StructuredMessageView(props: {
   const rows = buildConversationRenderRows(message.blocks, {
     isRunActive,
   })
-  const className =
-    message.role === 'assistant'
-      ? 'conversation-message conversation-message-assistant'
-      : 'conversation-message conversation-message-system'
-  const label = message.role === 'assistant' ? 'Xnova' : '系统'
+  // system 消息保留独立样式，assistant 消息改为全宽左对齐内容流，不用大卡片包裹
+  const isSystem = message.role !== 'assistant'
+
+  if (isSystem) {
+    return (
+      <article className="conversation-message conversation-message-system">
+        <div className="conversation-message-label">系统</div>
+        <div className="conversation-message-body">
+          {rows.map((row) =>
+            renderConversationRow(row, {
+              showTypingCursor: false,
+              expandedRows,
+              interactedRows,
+              onExpandedChange,
+              onInteractedChange,
+            }),
+          )}
+        </div>
+      </article>
+    )
+  }
 
   return (
+    // Agent 消息：全宽左对齐，"Xnova" 标签在顶部以小字行内形式显示
+    // 不再使用大卡片边框包裹，参考 OpenCowork AssistantMessage 的布局
     <article
-      className={`${className}${isLiveMessage ? ' conversation-message-live' : ''}`}
+      className={[
+        'conversation-assistant-row',
+        isLiveMessage ? 'conversation-assistant-row--live' : '',
+      ].filter(Boolean).join(' ')}
     >
-      <div className="conversation-message-label">{label}</div>
-      <div className="conversation-message-body">
+      <div className="conversation-assistant-header">
+        <span className="conversation-assistant-label">Xnova</span>
+        {isLiveMessage ? <span className="spinner conversation-assistant-spinner" aria-hidden /> : null}
+      </div>
+      <div className="conversation-assistant-body">
         {rows.map((row, index) =>
           renderConversationRow(row, {
             showTypingCursor:
@@ -283,21 +312,52 @@ const ThinkingPlaceholderRow = memo(function ThinkingPlaceholderRow(props: {
   label: string
 }) {
   return (
+    // 等待模型响应/思考中：与 Agent 消息同款结构，无大卡片边框
     <article
-      className="conversation-message conversation-message-assistant conversation-message-live conversation-message-thinking"
+      className="conversation-assistant-row conversation-assistant-row--live"
       aria-label="Xnova 正在思考"
       data-testid="conversation-thinking-placeholder"
     >
-      <div className="conversation-message-label">Xnova</div>
-      <div className="conversation-message-body">
+      <div className="conversation-assistant-header">
+        <span className="conversation-assistant-label">Xnova</span>
+        <span className="spinner conversation-assistant-spinner" aria-hidden />
+      </div>
+      <div className="conversation-assistant-body">
         <div className="conversation-thinking-placeholder">
-          <span className="spinner" aria-hidden />
+          <span className="conversation-thinking-placeholder-dots" aria-hidden>
+            <span /><span /><span />
+          </span>
           <span className="conversation-thinking-placeholder-label">
             {props.label}
           </span>
         </div>
       </div>
     </article>
+  )
+})
+
+/**
+ * 尾部活动指示器：当模型正在运行且已有输出内容时显示。
+ *
+ * 解决的场景：模型输出 "让我创建博客" 后开始生成 tool 参数
+ * （如整个 HTML 文件内容），这个过程可能持续 30-90 秒，
+ * 期间没有任何事件推给 renderer。这个指示器让用户知道模型仍在工作。
+ */
+const LiveActivityIndicator = memo(function LiveActivityIndicator(props: {
+  label: string
+}) {
+  return (
+    <div
+      className="conversation-activity-indicator"
+      data-testid="conversation-activity-indicator"
+    >
+      <span className="conversation-thinking-placeholder-dots" aria-hidden>
+        <span /><span /><span />
+      </span>
+      <span className="conversation-activity-indicator-label">
+        {props.label}
+      </span>
+    </div>
   )
 })
 
@@ -369,6 +429,8 @@ function renderTimelineItem(
       )
     case 'thinking-placeholder':
       return <ThinkingPlaceholderRow label={item.label} />
+    case 'activity-indicator':
+      return <LiveActivityIndicator label={item.label} />
   }
 }
 
@@ -458,11 +520,24 @@ export function ConversationTimeline(props: ConversationTimelineProps) {
       })
     }
 
+    // 当模型正在运行且已有输出内容时，在 live message 末尾显示活动指示器。
+    // 这解决了"文本输出结束 → tool_start 到达"之间的空窗期无反馈问题。
+    // 例如模型输出"让我创建博客"后开始生成 HTML 内容作为 tool 参数，
+    // 这个过程可能持续 30-90 秒，期间没有任何事件推给 renderer。
+    if (props.isRunActive && liveBlocks.length > 0 && !showThinkingPlaceholder) {
+      items.push({
+        id: 'live-activity-indicator',
+        type: 'activity-indicator',
+        label: props.currentRunStep ?? '模型正在处理…',
+      })
+    }
+
     return items
   }, [
     hiddenPersistedCount,
     liveBlocks,
     props.currentRunStep,
+    props.isRunActive,
     props.liveConversation.pendingUserText,
     showThinkingPlaceholder,
     visiblePersistedMessages,

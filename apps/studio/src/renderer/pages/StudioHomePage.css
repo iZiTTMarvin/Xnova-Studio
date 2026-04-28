@@ -167,8 +167,10 @@
 
 .conversation-timeline-list {
   display: grid;
-  gap: 12px;
+  /* 气泡+全宽混合布局，消息间距需要更宽松 */
+  gap: 20px;
 }
+
 
 .conversation-timeline-item {
   min-width: 0;
@@ -210,6 +212,7 @@
   background: color-mix(in srgb, var(--bg-panel-strong) 82%, transparent);
 }
 
+/* 旧版消息卡片基础样式（system 消息仍在使用） */
 .conversation-message {
   border: 1px solid var(--border-subtle);
   border-radius: var(--radius-xl);
@@ -219,25 +222,82 @@
   background: color-mix(in srgb, var(--bg-panel-strong) 92%, transparent);
 }
 
-.conversation-message-user {
-  background: color-mix(in srgb, var(--primary-soft) 56%, var(--bg-panel-strong));
-}
-
-.conversation-message-assistant {
-  background: color-mix(in srgb, var(--bg-panel-strong) 96%, black);
-}
-
 .conversation-message-system {
   background: color-mix(in srgb, var(--bg-panel-strong) 88%, transparent);
 }
 
-.conversation-message-live {
-  border-color: var(--border-hover);
+/* ========================================
+   用户消息：右对齐气泡（参考 OpenCowork UserMessage）
+   ======================================== */
+
+.conversation-user-row {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
 }
 
-.conversation-message-thinking {
-  background: color-mix(in srgb, var(--bg-panel-strong) 92%, transparent);
+.conversation-user-row--live .conversation-user-bubble {
+  opacity: 0.85;
 }
+
+.conversation-user-bubble {
+  max-width: min(82%, 42rem);
+  border: 1px solid var(--border-subtle);
+  border-radius: 18px;
+  border-bottom-right-radius: 4px;
+  padding: 10px 14px;
+  background: color-mix(in srgb, var(--primary-soft) 48%, var(--bg-panel-strong));
+  color: var(--text-primary);
+  font-size: 13px;
+  line-height: 1.65;
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
+/* ========================================
+   Agent 消息：全宽左对齐内容流（参考 OpenCowork AssistantMessage）
+   ======================================== */
+
+.conversation-assistant-row {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.conversation-assistant-row--live {
+  /* 预留：未来可加边框高亮 */
+}
+
+.conversation-assistant-header {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.conversation-assistant-label {
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--text-faint);
+}
+
+.conversation-assistant-spinner {
+  width: 10px;
+  height: 10px;
+  border-width: 1.5px;
+}
+
+.conversation-assistant-body {
+  display: grid;
+  gap: 8px;
+  color: var(--text-primary);
+  line-height: 1.68;
+}
+
+/* ========================================
+   ThinkingPlaceholder 三点跳动动画
+   ======================================== */
 
 .conversation-thinking-placeholder {
   display: inline-flex;
@@ -245,12 +305,74 @@
   gap: 8px;
   font-size: 13px;
   color: var(--text-secondary);
-  padding: 4px 0;
+  padding: 2px 0;
+}
+
+.conversation-thinking-placeholder-dots {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+}
+
+.conversation-thinking-placeholder-dots span {
+  display: inline-block;
+  width: 5px;
+  height: 5px;
+  border-radius: 50%;
+  background: var(--text-faint);
+  animation: thinking-bounce 1.2s ease-in-out infinite;
+}
+
+.conversation-thinking-placeholder-dots span:nth-child(1) {
+  animation-delay: 0s;
+}
+
+.conversation-thinking-placeholder-dots span:nth-child(2) {
+  animation-delay: 0.2s;
+}
+
+.conversation-thinking-placeholder-dots span:nth-child(3) {
+  animation-delay: 0.4s;
+}
+
+@keyframes thinking-bounce {
+  0%, 60%, 100% {
+    transform: translateY(0);
+    opacity: 0.4;
+  }
+  30% {
+    transform: translateY(-4px);
+    opacity: 1;
+  }
 }
 
 .conversation-thinking-placeholder-label {
   font-style: italic;
   letter-spacing: 0.2px;
+  color: var(--text-muted);
+}
+
+/* ========================================
+   尾部活动指示器：填补文本输出→tool_start 之间的空窗期
+   ======================================== */
+
+.conversation-activity-indicator {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 0;
+  font-size: 12px;
+  color: var(--text-faint);
+}
+
+.conversation-activity-indicator-label {
+  font-style: italic;
+  letter-spacing: 0.2px;
+}
+
+/* 旧版 live 边框（system 消息仍可能使用） */
+.conversation-message-live {
+  border-color: var(--border-hover);
 }
 
 .conversation-message-label {
@@ -265,6 +387,8 @@
   color: var(--text-primary);
   line-height: 1.68;
 }
+
+
 
 /* ========================================
    CSS Spinner — 通用旋转圈

@@ -14,12 +14,13 @@ export class WriteFileTool implements Tool {
     '• 此操作会覆盖文件全部内容，修改已有文件请优先使用 edit_file（只改需要改的部分）',
     '• 仅在创建新文件或需要完全重写时使用 write_file',
     '• 写入前确认路径正确，避免误覆盖重要文件',
-    '• 支持绝对路径或相对于 cwd 的相对路径',
+    '• 路径必须使用相对于工作目录的相对路径（如 blog.html、src/index.ts），禁止使用绝对路径',
+    '• 如不确定当前工作目录，直接用文件名即可（如 blog.html）',
   ].join('\n')
   readonly parameters = {
     type: 'object',
     properties: {
-      path: { type: 'string', description: '文件路径（绝对路径或相对路径）' },
+      path: { type: 'string', description: '相对于工作目录的文件路径（如 blog.html、src/index.ts）。禁止使用绝对路径。' },
       content: { type: 'string', description: '写入的完整文件内容' },
     },
     required: ['path', 'content'],
