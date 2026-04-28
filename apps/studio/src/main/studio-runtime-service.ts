@@ -13,6 +13,7 @@ import type {
   RuntimeEvent,
   RuntimeHostBridge,
   RuntimeInstance,
+  RuntimePreparedSnapshot,
   RuntimeSubmitInput,
   RuntimeTurnResult,
   UserQuestionRequest,
@@ -47,6 +48,11 @@ import {
   createStudioSubmitTiming,
   isStudioSubmitTimingEnabled,
 } from './studio-submit-timing'
+import {
+  buildConfigFingerprint,
+  buildProviderFingerprint,
+  type PreparedRuntimeSnapshot,
+} from './studio-runtime-warmup'
 
 export interface StudioRuntimeService {
   submit(
@@ -139,6 +145,27 @@ function toStudioRuntimeEvent(event: RuntimeEvent): StudioRuntimeEvent {
     ...(event.sessionId ? { sessionId: event.sessionId } : {}),
     ...(event.agentId ? { agentId: event.agentId } : {}),
     ...(event.payload ? { payload: event.payload } : {}),
+  }
+}
+
+function toRuntimePreparedSnapshot(
+  snapshot: PreparedRuntimeSnapshot,
+): RuntimePreparedSnapshot | undefined {
+  if (!snapshot.toolRegistry) {
+    return undefined
+  }
+
+  return {
+    ...(snapshot.systemPrompt === undefined ? {} : { systemPrompt: snapshot.systemPrompt }),
+    ...(snapshot.toolDefinitions === undefined ? {} : { toolDefinitions: snapshot.toolDefinitions }),
+    toolRegistry: snapshot.toolRegistry,
+    ...(snapshot.timings === undefined ? {} : { bootstrapTimings: snapshot.timings }),
+    agentConfigFingerprint: snapshot.agentConfigFingerprint,
+    skillsVersion: snapshot.skillsVersion,
+    hooksVersion: snapshot.hooksVersion,
+    mcpToolListVersion: snapshot.mcpToolListVersion,
+    memoryVersion: snapshot.memoryVersion,
+    gitContextVersion: snapshot.gitContextVersion,
   }
 }
 
@@ -1163,29 +1190,12 @@ export function createStudioRuntimeService(
       })
       submitTiming.mark('runtime_service_submit_start')
 
-      // warmup snapshot validate：命中时记录预热耗时，未命中时走 slow path
-      const warmupValidation = options.warmupManager?.validateSnapshot({
-        cwd,
-        agentId: request.agentId ?? null,
-      })
-      if (warmupValidation) {
-        submitTiming.mark('warmup_snapshot_validate')
-        if (warmupValidation.hit) {
-          logger.info('[Warmup] snapshot 命中，bootstrap 已预热', {
-            cacheKey: warmupValidation.snapshot?.cacheKey,
-            bootstrapReady: warmupValidation.snapshot?.bootstrapReady,
-          })
-        } else {
-          logger.info('[Warmup] snapshot 未命中，走 slow path', {
-            missReason: warmupValidation.missReason,
-          })
-        }
-      }
-
       let runtimeEntry: StudioManagedRuntimeEntry | null = null
       let activeRun: ActiveStudioRun | null = null
       const runId = createRuntimeRunId()
       let hasEmittedRunFailed = false
+      let isSnapshotHit = false
+      let preparedRuntimeSnapshot: RuntimePreparedSnapshot | undefined
 
       try {
         emitRunLifecycleEvent(emitStudioRuntimeEvent, {
@@ -1221,6 +1231,17 @@ export function createStudioRuntimeService(
               }
             : {}),
         }
+        const selectedProvider = request.providerId ?? runtimeConfig.defaultProvider
+        const selectedModel = request.modelId ?? runtimeConfig.defaultModel
+        const selectedProviderConfig = runtimeConfig.providers[selectedProvider]
+        const providerFingerprint = buildProviderFingerprint({
+          provider: selectedProvider,
+          model: selectedModel,
+          baseURL: selectedProviderConfig?.baseURL ?? null,
+        })
+        const configFingerprint = buildConfigFingerprint(
+          runtimeConfig as unknown as Record<string, unknown>,
+        )
 
         if (request.providerId && request.modelId) {
           engineServiceApi.runtime.setModel({
@@ -1234,6 +1255,35 @@ export function createStudioRuntimeService(
           workspaceRoot,
           sessionId: request.sessionId?.trim() || null,
           agentId: request.agentId?.trim() || null,
+        }
+        // warmup snapshot validate 必须在配置解析后执行，否则 provider/config 指纹无法生效。
+        const warmupValidation = options.warmupManager?.validateSnapshot({
+          cwd,
+          workspaceRoot,
+          agentId: selection.agentId,
+          mode: 'standard',
+          providerFingerprint,
+          configFingerprint,
+        })
+        isSnapshotHit = warmupValidation?.hit === true
+        preparedRuntimeSnapshot = warmupValidation?.snapshot
+          ? toRuntimePreparedSnapshot(warmupValidation.snapshot)
+          : undefined
+        if (warmupValidation) {
+          submitTiming.mark('warmup_snapshot_validate')
+          if (isSnapshotHit && preparedRuntimeSnapshot) {
+            // 安全：只记录 cacheKey 和 bootstrapReady，不记录 system prompt 或 tool definitions。
+            logger.info('[Warmup] snapshot 命中，走 fast path', {
+              cacheKey: warmupValidation.snapshot?.cacheKey,
+              bootstrapReady: warmupValidation.snapshot?.bootstrapReady,
+            })
+            submitTiming.mark('warmup_fast_path_hit')
+          } else {
+            isSnapshotHit = false
+            logger.info('[Warmup] snapshot 未命中，走 slow path', {
+              missReason: warmupValidation.missReason ?? 'not-ready',
+            })
+          }
         }
         submitTiming.mark('runtime_acquire_start')
         const runtimeHandle = await runtimeManager.acquireRuntime({
@@ -1291,6 +1341,9 @@ export function createStudioRuntimeService(
           loggedUserContent: text,
           ...(request.providerId ? { provider: request.providerId } : {}),
           ...(request.modelId ? { model: request.modelId } : {}),
+          ...(isSnapshotHit && preparedRuntimeSnapshot
+            ? { preparedSnapshot: preparedRuntimeSnapshot }
+            : {}),
         }
 
         // 防止 LLM 或启动链路无限挂起，避免 IPC 一直等待。
@@ -1417,6 +1470,60 @@ export function createStudioRuntimeService(
         }
 
         runtimeManager.commitSession(runtimeHandle.entry, turnResult.sessionId)
+
+        // slow path 成功后用 runtime 返回的真实装配结果刷新 snapshot。
+        // 不能写入空壳 snapshot，否则下一轮会命中但无法真正 fast path。
+        if (!isSnapshotHit && options.warmupManager && turnResult.preparedSnapshot?.toolRegistry) {
+          const nextSnapshot = turnResult.preparedSnapshot
+          try {
+            options.warmupManager.refreshSnapshot({
+              cwd,
+              workspaceRoot,
+              agentId: selection.agentId,
+              mode: 'standard',
+              providerFingerprint,
+              configFingerprint,
+              bootstrapResult: {
+                skillsReady: true,
+                fileIndexReady: true,
+                systemPromptReady: nextSnapshot.systemPrompt !== undefined,
+                warnings: nextSnapshot.bootstrapWarnings ?? [],
+                ...(nextSnapshot.bootstrapTimings === undefined
+                  ? {}
+                  : { timings: nextSnapshot.bootstrapTimings }),
+                ...(nextSnapshot.systemPrompt === undefined
+                  ? {}
+                  : { systemPrompt: nextSnapshot.systemPrompt }),
+                ...(nextSnapshot.toolDefinitions === undefined
+                  ? {}
+                  : { toolDefinitions: nextSnapshot.toolDefinitions }),
+                toolRegistry: nextSnapshot.toolRegistry,
+                ...(nextSnapshot.agentConfigFingerprint === undefined
+                  ? {}
+                  : { agentConfigFingerprint: nextSnapshot.agentConfigFingerprint }),
+                ...(nextSnapshot.skillsVersion === undefined
+                  ? {}
+                  : { skillsVersion: nextSnapshot.skillsVersion }),
+                ...(nextSnapshot.hooksVersion === undefined
+                  ? {}
+                  : { hooksVersion: nextSnapshot.hooksVersion }),
+                ...(nextSnapshot.mcpToolListVersion === undefined
+                  ? {}
+                  : { mcpToolListVersion: nextSnapshot.mcpToolListVersion }),
+                ...(nextSnapshot.memoryVersion === undefined
+                  ? {}
+                  : { memoryVersion: nextSnapshot.memoryVersion }),
+                ...(nextSnapshot.gitContextVersion === undefined
+                  ? {}
+                  : { gitContextVersion: nextSnapshot.gitContextVersion }),
+              },
+            })
+            submitTiming.mark('warmup_snapshot_refreshed')
+          } catch {
+            // snapshot 刷新失败不影响 submit 结果
+          }
+        }
+
         if (!activeRun?.settled) {
           emitRunLifecycleEvent(emitStudioRuntimeEvent, {
             type: 'run_completed',

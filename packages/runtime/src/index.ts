@@ -24,6 +24,7 @@ export type {
   UserQuestionRequest,
   UserQuestionResult,
   RuntimeSubmitInput,
+  RuntimePreparedSnapshot,
   RuntimeAttachment,
   RuntimeSnapshot,
   RuntimeTurnResult,

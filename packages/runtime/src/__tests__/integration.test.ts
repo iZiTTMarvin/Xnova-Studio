@@ -14,7 +14,17 @@ import type { RuntimeEvent, RuntimeHostBridge } from '../types.js'
 const mocks = vi.hoisted(() => {
   const bootstrapAll = vi.fn(async () => ({ warnings: [] }))
   const registerMcpTools = vi.fn()
-  const getRegistry = vi.fn(() => ({ name: 'registry' }))
+  const registry = {
+    name: 'registry',
+    toToolDefinitions: vi.fn(() => [
+      {
+        name: 'read_file',
+        description: 'Read a file',
+        parameters: {},
+      },
+    ]),
+  }
+  const getRegistry = vi.fn(() => registry)
   const getSystemPrompt = vi.fn(() => 'system prompt')
   const ensureMcpInitialized = vi.fn(async () => {})
   const ensureAgentCatalogInitialized = vi.fn()
@@ -75,6 +85,7 @@ const mocks = vi.hoisted(() => {
   return {
     bootstrapAll,
     registerMcpTools,
+    registry,
     getRegistry,
     getSystemPrompt,
     ensureMcpInitialized,
@@ -160,6 +171,13 @@ describe('createRuntime() — 集成门面', () => {
   beforeEach(() => {
     vi.clearAllMocks()
     mocks.historyStore.length = 0
+    mocks.registry.toToolDefinitions.mockReturnValue([
+      {
+        name: 'read_file',
+        description: 'Read a file',
+        parameters: {},
+      },
+    ])
     mocks.agentLoopRun.mockImplementation(async function* () {
       yield {
         type: 'llm_start',
@@ -219,7 +237,7 @@ describe('createRuntime() — 集成门面', () => {
       loggedUserContent: '你好',
     })
 
-    expect(mocks.bootstrapAll).toHaveBeenCalledWith('D:/workspace')
+    expect(mocks.bootstrapAll).toHaveBeenCalledWith('D:/workspace', expect.any(Function))
     expect(mocks.ensureSession).toHaveBeenCalledWith('openai', 'gpt-4o')
     expect(mocks.bindTokenMeter).toHaveBeenCalledWith('session-1', 'openai', 'gpt-4o')
     expect(mocks.logUserMessage).toHaveBeenCalledWith('你好')
@@ -292,6 +310,71 @@ describe('createRuntime() — 集成门面', () => {
       'context_update',
       'turn_end',
     ])
+  })
+
+  it('preparedSnapshot 命中时跳过 bootstrap 并复用预热的 system prompt 与工具注册表', async () => {
+    const emitted: RuntimeEvent[] = []
+    const bridge: RuntimeHostBridge = {
+      emit: (event) => emitted.push(event),
+      requestPermission: async () => ({ allow: true }),
+    }
+    const preparedRegistry = {
+      toToolDefinitions: vi.fn(() => [
+        {
+          name: 'bash',
+          description: 'Run shell command',
+          parameters: {},
+        },
+      ]),
+    }
+
+    const runtime = await createRuntime({
+      cwd: 'D:/workspace',
+      config: makeConfig(),
+      mode: 'standard',
+    }, bridge)
+
+    await runtime.submit({
+      text: '你好',
+      history: [{ role: 'user', content: '你好' }],
+      loggedUserContent: '你好',
+      preparedSnapshot: {
+        systemPrompt: 'prepared system prompt',
+        toolRegistry: preparedRegistry as never,
+        toolDefinitions: [
+          {
+            name: 'bash',
+            description: 'Run shell command',
+            parameters: {},
+          },
+        ],
+        bootstrapWarnings: [],
+      },
+    })
+
+    expect(mocks.bootstrapAll).not.toHaveBeenCalled()
+    expect(mocks.getSystemPrompt).not.toHaveBeenCalled()
+    expect(mocks.getRegistry).not.toHaveBeenCalled()
+    expect(mocks.registerMcpTools).not.toHaveBeenCalled()
+    expect(mocks.prepareHistory).toHaveBeenCalledWith(
+      [{ role: 'user', content: '你好' }],
+      expect.any(Object),
+      expect.objectContaining({
+        model: 'claude-sonnet-4-5',
+        systemPrompt: 'prepared system prompt\n\nprimary agent prompt',
+      }),
+    )
+    expect(mocks.AgentLoopMock).toHaveBeenCalledWith(
+      expect.any(Object),
+      preparedRegistry,
+      expect.objectContaining({
+        systemPrompt: 'prepared system prompt\n\nprimary agent prompt',
+      }),
+    )
+    expect(emitted.some((event) =>
+      event.type === 'timing_mark' &&
+      event.payload?.['stage'] === 'runtime_bootstrap_fast_path',
+    )).toBe(true)
   })
 
   it('pipe 模式可要求先等待 MCP 就绪', async () => {

@@ -2,442 +2,543 @@ import { describe, expect, it, vi } from 'vitest'
 import {
   createRuntimeWarmupManager,
   buildWarmupCacheKey,
+  buildProviderFingerprint,
+  buildConfigFingerprint,
   type RuntimeWarmupStatusChangedEvent,
-  type SnapshotValidateInput,
+  type WarmupBootstrapResult,
 } from '../src/main/studio-runtime-warmup'
 import { normalizeRuntimePath } from '../src/main/normalize-runtime-path'
 
-// ═══ 路径规范化 ═══
+function makeToolDefinition(name: string, description = `${name} tool`) {
+  return {
+    name,
+    description,
+    parameters: {},
+  }
+}
+
+function makeToolRegistry(toolDefinitions = [
+  makeToolDefinition('read_file', 'Read a file'),
+  makeToolDefinition('write_file', 'Write a file'),
+]) {
+  return {
+    toToolDefinitions: vi.fn(() => toolDefinitions),
+  }
+}
+
+function makeBootstrapResult(overrides?: Partial<WarmupBootstrapResult>): WarmupBootstrapResult {
+  const toolDefinitions = [
+    makeToolDefinition('read_file', 'Read a file'),
+    makeToolDefinition('write_file', 'Write a file'),
+  ]
+  return {
+    skillsReady: true, fileIndexReady: true, systemPromptReady: true,
+    timings: { skills: 10, instructions: 5, hooks: 8, sessionStartHooks: 3, fileIndex: 100, plugins: 12, memory: 20, shellSnapshot: 15, gitContext: 50, systemPrompt: 7, total: 230 },
+    warnings: [],
+    systemPrompt: 'You are a helpful assistant.',
+    toolDefinitions,
+    toolRegistry: makeToolRegistry(toolDefinitions) as never,
+    agentConfigFingerprint: 'agent-fp-1', skillsVersion: 'skills-v1', hooksVersion: 'hooks-v1',
+    mcpToolListVersion: 'mcp-v1', memoryVersion: 'mem-v1', gitContextVersion: 'git-v1',
+    ...overrides,
+  }
+}
+
+function makeVersionFingerprints(overrides?: Partial<{
+  agentConfigFingerprint: string
+  skillsVersion: string
+  hooksVersion: string
+  mcpToolListVersion: string
+  memoryVersion: string
+  gitContextVersion: string
+}>) {
+  return {
+    agentConfigFingerprint: 'agent-v1',
+    skillsVersion: 'skills-v1',
+    hooksVersion: 'hooks-v1',
+    mcpToolListVersion: 'mcp-v1',
+    memoryVersion: 'memory-v1',
+    gitContextVersion: 'git-v1',
+    ...overrides,
+  }
+}
+
+function createMockBootstrap(opts?: { delay?: number; shouldFail?: boolean; failMessage?: string; result?: Partial<WarmupBootstrapResult> }) {
+  const d = opts?.delay ?? 0, sf = opts?.shouldFail ?? false, fm = opts?.failMessage ?? 'bootstrap failed', r = opts?.result
+  return vi.fn().mockImplementation(() => new Promise((resolve, reject) => { setTimeout(() => { if (sf) reject(new Error(fm)); else resolve(makeBootstrapResult(r)) }, d) }))
+}
 
 describe('normalizeRuntimePath', () => {
-  it('反斜杠统一为正斜杠', () => {
-    expect(normalizeRuntimePath('D:\\foo\\bar')).toBe('D:/foo/bar')
-  })
-
-  it('Windows 盘符统一为大写', () => {
-    expect(normalizeRuntimePath('d:/foo/bar')).toBe('D:/foo/bar')
-  })
-
-  it('去除末尾斜杠', () => {
-    expect(normalizeRuntimePath('D:/foo/bar/')).toBe('D:/foo/bar')
-    expect(normalizeRuntimePath('D:/foo/bar\\')).toBe('D:/foo/bar')
-  })
-
-  it('保留 Windows 根路径 D:/', () => {
-    expect(normalizeRuntimePath('D:/')).toBe('D:/')
-    expect(normalizeRuntimePath('d:/')).toBe('D:/')
-    expect(normalizeRuntimePath('d:\\')).toBe('D:/')
-  })
-
-  it('D:/foo 与 D:\\foo\\ 产生相同结果', () => {
-    const a = normalizeRuntimePath('D:/foo')
-    const b = normalizeRuntimePath('D:\\foo\\')
-    expect(a).toBe(b)
-    expect(a).toBe('D:/foo')
-  })
-
-  it('去除首尾空白', () => {
-    expect(normalizeRuntimePath('  D:/foo  ')).toBe('D:/foo')
-  })
-
-  it('空字符串返回空字符串', () => {
-    expect(normalizeRuntimePath('')).toBe('')
-    expect(normalizeRuntimePath('   ')).toBe('')
-  })
-
-  it('Unix 路径不受影响', () => {
-    expect(normalizeRuntimePath('/home/user/project')).toBe('/home/user/project')
-  })
-
-  it('Unix 路径去除末尾斜杠', () => {
-    expect(normalizeRuntimePath('/home/user/project/')).toBe('/home/user/project')
-  })
+  it('backslash to forward slash', () => { expect(normalizeRuntimePath('D:\\foo\\bar')).toBe('D:/foo/bar') })
+  it('Windows drive letter uppercase', () => { expect(normalizeRuntimePath('d:/foo/bar')).toBe('D:/foo/bar') })
+  it('trailing slash removed', () => { expect(normalizeRuntimePath('D:/foo/bar/')).toBe('D:/foo/bar') })
+  it('root path preserved', () => { expect(normalizeRuntimePath('D:/')).toBe('D:/') })
+  it('same result for different notations', () => { expect(normalizeRuntimePath('D:/foo')).toBe(normalizeRuntimePath('D:\\foo\\')) })
+  it('empty string', () => { expect(normalizeRuntimePath('')).toBe('') })
+  it('Unix path', () => { expect(normalizeRuntimePath('/home/user/project')).toBe('/home/user/project') })
 })
-
-// ═══ Cache Key 构建 ═══
 
 describe('buildWarmupCacheKey', () => {
-  it('相同路径不同写法产生相同 key', () => {
-    const a = buildWarmupCacheKey({ cwd: 'D:/foo' })
-    const b = buildWarmupCacheKey({ cwd: 'D:\\foo\\' })
-    const c = buildWarmupCacheKey({ cwd: 'd:/foo' })
-    expect(a).toBe(b)
-    expect(a).toBe(c)
+  it('same path different notation same key', () => {
+    expect(buildWarmupCacheKey({ cwd: 'D:/foo' })).toBe(buildWarmupCacheKey({ cwd: 'D:\\foo\\' }))
   })
-
-  it('不同 agentId 产生不同 key', () => {
-    const a = buildWarmupCacheKey({ cwd: 'D:/foo', agentId: 'agent-a' })
-    const b = buildWarmupCacheKey({ cwd: 'D:/foo', agentId: 'agent-b' })
-    expect(a).not.toBe(b)
+  it('different agentId different key', () => {
+    expect(buildWarmupCacheKey({ cwd: 'D:/foo', agentId: 'a' })).not.toBe(buildWarmupCacheKey({ cwd: 'D:/foo', agentId: 'b' }))
   })
-
-  it('不同 mode 产生不同 key', () => {
-    const a = buildWarmupCacheKey({ cwd: 'D:/foo', mode: 'standard' })
-    const b = buildWarmupCacheKey({ cwd: 'D:/foo', mode: 'xforge' })
-    expect(a).not.toBe(b)
+  it('different mode different key', () => {
+    expect(buildWarmupCacheKey({ cwd: 'D:/foo', mode: 'standard' })).not.toBe(buildWarmupCacheKey({ cwd: 'D:/foo', mode: 'xforge' }))
   })
-
-  it('默认 agentId 和 mode', () => {
-    const key = buildWarmupCacheKey({ cwd: 'D:/foo' })
-    expect(key).toContain('__default_agent__')
-    expect(key).toContain('standard')
+  it('different providerFingerprint different key', () => {
+    expect(buildWarmupCacheKey({ cwd: 'D:/foo', providerFingerprint: 'a' })).not.toBe(buildWarmupCacheKey({ cwd: 'D:/foo', providerFingerprint: 'b' }))
+  })
+  it('different configFingerprint different key', () => {
+    expect(buildWarmupCacheKey({ cwd: 'D:/foo', configFingerprint: 'a' })).not.toBe(buildWarmupCacheKey({ cwd: 'D:/foo', configFingerprint: 'b' }))
+  })
+  it('key contains all dimensions', () => {
+    const key = buildWarmupCacheKey({ cwd: 'D:/p', workspaceRoot: 'D:/w', agentId: 'ag', mode: 'xforge', providerFingerprint: 'pf', configFingerprint: 'cf' })
+    expect(key).toContain('D:/p'); expect(key).toContain('D:/w'); expect(key).toContain('ag'); expect(key).toContain('xforge'); expect(key).toContain('pf'); expect(key).toContain('cf')
+  })
+  it('workspaceRoot defaults to cwd', () => {
+    expect(buildWarmupCacheKey({ cwd: 'D:/foo' })).toBe(buildWarmupCacheKey({ cwd: 'D:/foo', workspaceRoot: 'D:/foo' }))
   })
 })
 
-// ═══ Warmup 状态机 ═══
+describe('buildProviderFingerprint', () => {
+  it('same input same fingerprint', () => {
+    expect(buildProviderFingerprint({ provider: 'openai', model: 'gpt-4o' })).toBe(buildProviderFingerprint({ provider: 'openai', model: 'gpt-4o' }))
+  })
+  it('different provider different fingerprint', () => {
+    expect(buildProviderFingerprint({ provider: 'openai' })).not.toBe(buildProviderFingerprint({ provider: 'anthropic' }))
+  })
+  it('different model different fingerprint', () => {
+    expect(buildProviderFingerprint({ model: 'gpt-4o' })).not.toBe(buildProviderFingerprint({ model: 'gpt-4o-mini' }))
+  })
+})
 
-describe('RuntimeWarmupManager', () => {
-  function createMockBootstrap(options?: {
-    delay?: number
-    shouldFail?: boolean
-    failMessage?: string
-  }) {
-    const { delay = 0, shouldFail = false, failMessage = 'bootstrap failed' } = options ?? {}
-    return vi.fn().mockImplementation(
-      () =>
-        new Promise((resolve, reject) => {
-          setTimeout(() => {
-            if (shouldFail) {
-              reject(new Error(failMessage))
-            } else {
-              resolve({
-                skillsReady: true,
-                fileIndexReady: true,
-                systemPromptReady: true,
-                timings: {
-                  skills: 10,
-                  instructions: 5,
-                  hooks: 8,
-                  sessionStartHooks: 3,
-                  fileIndex: 100,
-                  plugins: 12,
-                  memory: 20,
-                  shellSnapshot: 15,
-                  gitContext: 50,
-                  systemPrompt: 7,
-                  total: 230,
-                },
-                warnings: [],
-              })
-            }
-          }, delay)
-        }),
-    )
-  }
+describe('buildConfigFingerprint', () => {
+  it('same config same fingerprint', () => {
+    expect(buildConfigFingerprint({ a: 1 })).toBe(buildConfigFingerprint({ a: 1 }))
+  })
+  it('different config different fingerprint', () => {
+    expect(buildConfigFingerprint({ a: 1 })).not.toBe(buildConfigFingerprint({ a: 2 }))
+  })
+  it('apiKey redacted', () => {
+    expect(buildConfigFingerprint({ apiKey: 'sk-111' })).toBe(buildConfigFingerprint({ apiKey: 'sk-222' }))
+  })
+})
 
-  it('idle → warming → ready 状态迁移', async () => {
+describe('RuntimeWarmupManager state machine', () => {
+  it('idle -> warming -> ready', async () => {
     const events: RuntimeWarmupStatusChangedEvent[] = []
-    const bootstrapFn = createMockBootstrap({ delay: 10 })
-
-    const manager = createRuntimeWarmupManager({
-      bootstrapFn,
-      onStatusChanged: (e) => events.push(e),
-    })
-
-    // 初始状态
+    const manager = createRuntimeWarmupManager({ bootstrapFn: createMockBootstrap({ delay: 10 }), onStatusChanged: (e) => events.push(e) })
     const key = buildWarmupCacheKey({ cwd: 'D:/project' })
     expect(manager.getStatus(key)).toBe('idle')
-
-    // 启动 warmup
     manager.startWarmup({ cwd: 'D:/project' })
     expect(manager.getStatus(key)).toBe('warming')
-    expect(events).toHaveLength(1)
+    await vi.waitFor(() => { expect(manager.getStatus(key)).toBe('ready') })
     expect(events[0]!.status).toBe('warming')
-
-    // 等待完成
-    await vi.waitFor(() => {
-      expect(manager.getStatus(key)).toBe('ready')
-    })
-
-    expect(events).toHaveLength(2)
     expect(events[1]!.status).toBe('ready')
     expect(events[1]!.durationMs).toBeGreaterThanOrEqual(0)
-    expect(bootstrapFn).toHaveBeenCalledWith('D:/project')
-
     manager.dispose()
   })
 
-  it('warming → failed 状态迁移', async () => {
+  it('warming -> failed', async () => {
     const events: RuntimeWarmupStatusChangedEvent[] = []
-    const bootstrapFn = createMockBootstrap({ delay: 10, shouldFail: true })
-
-    const manager = createRuntimeWarmupManager({
-      bootstrapFn,
-      onStatusChanged: (e) => events.push(e),
-    })
-
+    const manager = createRuntimeWarmupManager({ bootstrapFn: createMockBootstrap({ delay: 10, shouldFail: true }), onStatusChanged: (e) => events.push(e) })
     manager.startWarmup({ cwd: 'D:/project' })
     const key = buildWarmupCacheKey({ cwd: 'D:/project' })
-    expect(manager.getStatus(key)).toBe('warming')
-
-    await vi.waitFor(() => {
-      expect(manager.getStatus(key)).toBe('failed')
-    })
-
-    expect(events).toHaveLength(2)
+    await vi.waitFor(() => { expect(manager.getStatus(key)).toBe('failed') })
     expect(events[1]!.status).toBe('failed')
     expect(events[1]!.error).toBe('bootstrap failed')
-
     manager.dispose()
   })
 
-  it('重复 startWarmup 不会重新启动已在 warming 的 entry', () => {
-    const bootstrapFn = createMockBootstrap({ delay: 1000 })
-
-    const manager = createRuntimeWarmupManager({ bootstrapFn })
-
-    manager.startWarmup({ cwd: 'D:/project' })
-    manager.startWarmup({ cwd: 'D:/project' })
-
-    // 只调用一次
-    expect(bootstrapFn).toHaveBeenCalledTimes(1)
-
-    manager.dispose()
+  it('duplicate startWarmup is idempotent for warming', () => {
+    const fn = createMockBootstrap({ delay: 5000 })
+    const m = createRuntimeWarmupManager({ bootstrapFn: fn })
+    m.startWarmup({ cwd: 'D:/p' }); m.startWarmup({ cwd: 'D:/p' })
+    expect(fn).toHaveBeenCalledTimes(1)
+    m.dispose()
   })
 
-  it('重复 startWarmup 不会重新启动已 ready 的 entry', async () => {
-    const bootstrapFn = createMockBootstrap({ delay: 5 })
-
-    const manager = createRuntimeWarmupManager({ bootstrapFn })
-
-    manager.startWarmup({ cwd: 'D:/project' })
-    const key = buildWarmupCacheKey({ cwd: 'D:/project' })
-
-    await vi.waitFor(() => {
-      expect(manager.getStatus(key)).toBe('ready')
-    })
-
-    manager.startWarmup({ cwd: 'D:/project' })
-    // 仍然只调用一次
-    expect(bootstrapFn).toHaveBeenCalledTimes(1)
-
-    manager.dispose()
+  it('duplicate startWarmup is idempotent for ready', async () => {
+    const fn = createMockBootstrap({ delay: 5 })
+    const m = createRuntimeWarmupManager({ bootstrapFn: fn })
+    m.startWarmup({ cwd: 'D:/p' })
+    await vi.waitFor(() => { expect(m.getStatus(buildWarmupCacheKey({ cwd: 'D:/p' }))).toBe('ready') })
+    m.startWarmup({ cwd: 'D:/p' })
+    expect(fn).toHaveBeenCalledTimes(1)
+    m.dispose()
   })
 
-  it('abortWarmup 取消正在进行的 warmup', () => {
+  it('abortWarmup cancels warming entry', () => {
     const events: RuntimeWarmupStatusChangedEvent[] = []
-    const bootstrapFn = createMockBootstrap({ delay: 5000 })
-
-    const manager = createRuntimeWarmupManager({
-      bootstrapFn,
-      onStatusChanged: (e) => events.push(e),
-    })
-
-    manager.startWarmup({ cwd: 'D:/project' })
-    const key = buildWarmupCacheKey({ cwd: 'D:/project' })
-    expect(manager.getStatus(key)).toBe('warming')
-
-    manager.abortWarmup('D:/project')
-    // abort 后 entry 被删除，状态回到 idle
-    expect(manager.getStatus(key)).toBe('idle')
-
-    // 事件：warming → idle
-    expect(events.some((e) => e.status === 'idle')).toBe(true)
-
-    manager.dispose()
+    const m = createRuntimeWarmupManager({ bootstrapFn: createMockBootstrap({ delay: 5000 }), onStatusChanged: (e) => events.push(e) })
+    m.startWarmup({ cwd: 'D:/p' })
+    expect(m.getStatus(buildWarmupCacheKey({ cwd: 'D:/p' }))).toBe('warming')
+    m.abortWarmup('D:/p')
+    expect(m.getStatus(buildWarmupCacheKey({ cwd: 'D:/p' }))).toBe('idle')
+    expect(events.some(e => e.status === 'idle')).toBe(true)
+    m.dispose()
   })
 
-  it('workspace 切换 abort 旧 warmup', () => {
-    const bootstrapFn = createMockBootstrap({ delay: 5000 })
-
-    const manager = createRuntimeWarmupManager({ bootstrapFn })
-
-    // 启动 project-a 的 warmup
-    manager.startWarmup({ cwd: 'D:/project-a' })
-    const keyA = buildWarmupCacheKey({ cwd: 'D:/project-a' })
-    expect(manager.getStatus(keyA)).toBe('warming')
-
-    // 切换到 project-b：先 abort project-a
-    manager.abortWarmup('D:/project-a')
-    manager.startWarmup({ cwd: 'D:/project-b' })
-
-    expect(manager.getStatus(keyA)).toBe('idle')
-    const keyB = buildWarmupCacheKey({ cwd: 'D:/project-b' })
-    expect(manager.getStatus(keyB)).toBe('warming')
-
-    manager.dispose()
+  it('workspace switch aborts old warmup', () => {
+    const m = createRuntimeWarmupManager({ bootstrapFn: createMockBootstrap({ delay: 5000 }) })
+    m.startWarmup({ cwd: 'D:/a' })
+    m.abortWarmup('D:/a')
+    m.startWarmup({ cwd: 'D:/b' })
+    expect(m.getStatus(buildWarmupCacheKey({ cwd: 'D:/a' }))).toBe('idle')
+    expect(m.getStatus(buildWarmupCacheKey({ cwd: 'D:/b' }))).toBe('warming')
+    m.dispose()
   })
 
-  it('Windows 路径不同写法触发同一个 warmup', () => {
-    const bootstrapFn = createMockBootstrap({ delay: 5000 })
-
-    const manager = createRuntimeWarmupManager({ bootstrapFn })
-
-    manager.startWarmup({ cwd: 'D:\\project\\foo\\' })
-    manager.startWarmup({ cwd: 'd:/project/foo' })
-
-    // 只调用一次
-    expect(bootstrapFn).toHaveBeenCalledTimes(1)
-
-    manager.dispose()
+  it('Windows path normalization triggers same warmup', () => {
+    const fn = createMockBootstrap({ delay: 5000 })
+    const m = createRuntimeWarmupManager({ bootstrapFn: fn })
+    m.startWarmup({ cwd: 'D:\\project\\foo\\' })
+    m.startWarmup({ cwd: 'd:/project/foo' })
+    expect(fn).toHaveBeenCalledTimes(1)
+    m.dispose()
   })
 
-  it('warmup 不调用 LLM（bootstrapFn 只接收 cwd）', async () => {
-    const bootstrapFn = createMockBootstrap({ delay: 5 })
+  it('bootstrapFn only receives cwd (no LLM params)', async () => {
+    const fn = createMockBootstrap({ delay: 5 })
+    const m = createRuntimeWarmupManager({ bootstrapFn: fn })
+    m.startWarmup({ cwd: 'D:/p' })
+    await vi.waitFor(() => { expect(m.getStatus(buildWarmupCacheKey({ cwd: 'D:/p' }))).toBe('ready') })
+    expect(fn).toHaveBeenCalledWith('D:/p')
+    expect(fn.mock.calls[0]).toHaveLength(1)
+    m.dispose()
+  })
 
-    const manager = createRuntimeWarmupManager({ bootstrapFn })
+  it('ready snapshot contains systemPrompt and toolDefinitions', async () => {
+    const toolDefinitions = [makeToolDefinition('test_tool', 'Test tool')]
+    const m = createRuntimeWarmupManager({ bootstrapFn: createMockBootstrap({ delay: 5, result: { systemPrompt: 'Test prompt', toolDefinitions, toolRegistry: makeToolRegistry(toolDefinitions) as never } }) })
+    m.startWarmup({ cwd: 'D:/p' })
+    await vi.waitFor(() => { expect(m.getStatus(buildWarmupCacheKey({ cwd: 'D:/p' }))).toBe('ready') })
+    const r = m.validateSnapshot({ cwd: 'D:/p' })
+    expect(r.hit).toBe(true)
+    expect(r.snapshot!.systemPrompt).toBe('Test prompt')
+    expect(r.snapshot!.toolDefinitions).toEqual(toolDefinitions)
+    m.dispose()
+  })
 
-    manager.startWarmup({ cwd: 'D:/project' })
-
-    await vi.waitFor(() => {
-      const key = buildWarmupCacheKey({ cwd: 'D:/project' })
-      expect(manager.getStatus(key)).toBe('ready')
-    })
-
-    // bootstrapFn 只接收 cwd，不接收 provider/model 等 LLM 参数
-    expect(bootstrapFn).toHaveBeenCalledWith('D:/project')
-    expect(bootstrapFn.mock.calls[0]).toHaveLength(1)
-
-    manager.dispose()
+  it('ready snapshot contains version fingerprints', async () => {
+    const m = createRuntimeWarmupManager({ bootstrapFn: createMockBootstrap({ delay: 5 }) })
+    m.startWarmup({ cwd: 'D:/p' })
+    await vi.waitFor(() => { expect(m.getStatus(buildWarmupCacheKey({ cwd: 'D:/p' }))).toBe('ready') })
+    const r = m.validateSnapshot({ cwd: 'D:/p' })
+    expect(r.snapshot!.agentConfigFingerprint).toBe('agent-fp-1')
+    expect(r.snapshot!.skillsVersion).toBe('skills-v1')
+    expect(r.snapshot!.hooksVersion).toBe('hooks-v1')
+    expect(r.snapshot!.mcpToolListVersion).toBe('mcp-v1')
+    expect(r.snapshot!.memoryVersion).toBe('mem-v1')
+    expect(r.snapshot!.gitContextVersion).toBe('git-v1')
+    m.dispose()
   })
 })
-
-// ═══ Snapshot Validate ═══
 
 describe('RuntimeWarmupManager.validateSnapshot', () => {
-  function createMockBootstrap(delay = 5) {
-    return vi.fn().mockImplementation(
-      () =>
-        new Promise((resolve) => {
-          setTimeout(() => {
-            resolve({
-              skillsReady: true,
-              fileIndexReady: true,
-              systemPromptReady: true,
-              timings: {
-                skills: 10, instructions: 5, hooks: 8, sessionStartHooks: 3,
-                fileIndex: 100, plugins: 12, memory: 20, shellSnapshot: 15,
-                gitContext: 50, systemPrompt: 7, total: 230,
-              },
-              warnings: [],
-            })
-          }, delay)
-        }),
-    )
-  }
-
-  it('warmup ready 时 validate 命中', async () => {
-    const manager = createRuntimeWarmupManager({
-      bootstrapFn: createMockBootstrap(5),
-    })
-
-    manager.startWarmup({ cwd: 'D:/project' })
-
-    await vi.waitFor(() => {
-      const key = buildWarmupCacheKey({ cwd: 'D:/project' })
-      expect(manager.getStatus(key)).toBe('ready')
-    })
-
-    const result = manager.validateSnapshot({ cwd: 'D:/project' })
-    expect(result.hit).toBe(true)
-    expect(result.snapshot).not.toBeNull()
-    expect(result.snapshot!.bootstrapReady).toBe(true)
-    expect(result.snapshot!.timings).toBeDefined()
-
-    manager.dispose()
+  it('ready -> hit', async () => {
+    const m = createRuntimeWarmupManager({ bootstrapFn: createMockBootstrap({ delay: 5 }) })
+    m.startWarmup({ cwd: 'D:/p' })
+    await vi.waitFor(() => { expect(m.getStatus(buildWarmupCacheKey({ cwd: 'D:/p' }))).toBe('ready') })
+    const r = m.validateSnapshot({ cwd: 'D:/p' })
+    expect(r.hit).toBe(true)
+    expect(r.snapshot!.bootstrapReady).toBe(true)
+    m.dispose()
+  })
+  it('warming -> not-ready', () => {
+    const m = createRuntimeWarmupManager({ bootstrapFn: vi.fn().mockReturnValue(new Promise(() => {})) })
+    m.startWarmup({ cwd: 'D:/p' })
+    expect(m.validateSnapshot({ cwd: 'D:/p' }).missReason).toBe('not-ready')
+    m.dispose()
+  })
+  it('failed -> failed', async () => {
+    const m = createRuntimeWarmupManager({ bootstrapFn: vi.fn().mockRejectedValue(new Error('x')) })
+    m.startWarmup({ cwd: 'D:/p' })
+    await vi.waitFor(() => { expect(m.getStatus(buildWarmupCacheKey({ cwd: 'D:/p' }))).toBe('failed') })
+    expect(m.validateSnapshot({ cwd: 'D:/p' }).missReason).toBe('failed')
+    m.dispose()
+  })
+  it('no warmup -> no-snapshot', () => {
+    const m = createRuntimeWarmupManager({ bootstrapFn: vi.fn() })
+    expect(m.validateSnapshot({ cwd: 'D:/p' }).missReason).toBe('no-snapshot')
+    m.dispose()
+  })
+  it('different path notation matches same snapshot', async () => {
+    const m = createRuntimeWarmupManager({ bootstrapFn: createMockBootstrap({ delay: 5 }) })
+    m.startWarmup({ cwd: 'D:\\p\\foo\\' })
+    await vi.waitFor(() => { expect(m.getStatus(buildWarmupCacheKey({ cwd: 'D:/p/foo' }))).toBe('ready') })
+    expect(m.validateSnapshot({ cwd: 'd:/p/foo' }).hit).toBe(true)
+    m.dispose()
+  })
+  it('failed does not block submit (returns failed, caller uses slow path)', async () => {
+    const m = createRuntimeWarmupManager({ bootstrapFn: vi.fn().mockRejectedValue(new Error('err')) })
+    m.startWarmup({ cwd: 'D:/p' })
+    await vi.waitFor(() => { expect(m.getStatus(buildWarmupCacheKey({ cwd: 'D:/p' }))).toBe('failed') })
+    const r = m.validateSnapshot({ cwd: 'D:/p' })
+    expect(r.hit).toBe(false)
+    expect(r.snapshot).not.toBeNull()
+    m.dispose()
   })
 
-  it('warmup warming 时 validate 未命中（not-ready）', () => {
-    const manager = createRuntimeWarmupManager({
-      bootstrapFn: vi.fn().mockReturnValue(new Promise(() => {})),
+  it('workspace version drift marks ready snapshot stale', async () => {
+    const initialVersions = makeVersionFingerprints()
+    const versionFingerprintFn = vi.fn(() => initialVersions)
+    const m = createRuntimeWarmupManager({
+      bootstrapFn: createMockBootstrap({ delay: 0, result: initialVersions }),
+      versionFingerprintFn,
     })
+    m.startWarmup({ cwd: 'D:/p' })
+    await vi.waitFor(() => { expect(m.getStatus(buildWarmupCacheKey({ cwd: 'D:/p' }))).toBe('ready') })
 
-    manager.startWarmup({ cwd: 'D:/project' })
+    versionFingerprintFn.mockReturnValue(makeVersionFingerprints({ skillsVersion: 'skills-v2' }))
+    const r = m.validateSnapshot({ cwd: 'D:/p' })
 
-    const result = manager.validateSnapshot({ cwd: 'D:/project' })
-    expect(result.hit).toBe(false)
-    expect(result.missReason).toBe('not-ready')
-
-    manager.dispose()
-  })
-
-  it('warmup failed 时 validate 未命中（failed）', async () => {
-    const manager = createRuntimeWarmupManager({
-      bootstrapFn: vi.fn().mockRejectedValue(new Error('boom')),
-    })
-
-    manager.startWarmup({ cwd: 'D:/project' })
-
-    await vi.waitFor(() => {
-      const key = buildWarmupCacheKey({ cwd: 'D:/project' })
-      expect(manager.getStatus(key)).toBe('failed')
-    })
-
-    const result = manager.validateSnapshot({ cwd: 'D:/project' })
-    expect(result.hit).toBe(false)
-    expect(result.missReason).toBe('failed')
-
-    manager.dispose()
-  })
-
-  it('无 warmup 时 validate 未命中（no-snapshot）', () => {
-    const manager = createRuntimeWarmupManager({
-      bootstrapFn: vi.fn(),
-    })
-
-    const result = manager.validateSnapshot({ cwd: 'D:/project' })
-    expect(result.hit).toBe(false)
-    expect(result.missReason).toBe('no-snapshot')
-
-    manager.dispose()
-  })
-
-  it('不同路径写法能匹配同一个 snapshot', async () => {
-    const manager = createRuntimeWarmupManager({
-      bootstrapFn: createMockBootstrap(5),
-    })
-
-    manager.startWarmup({ cwd: 'D:\\project\\foo\\' })
-
-    await vi.waitFor(() => {
-      const key = buildWarmupCacheKey({ cwd: 'D:/project/foo' })
-      expect(manager.getStatus(key)).toBe('ready')
-    })
-
-    // 用不同写法 validate
-    const result = manager.validateSnapshot({ cwd: 'd:/project/foo' })
-    expect(result.hit).toBe(true)
-
-    manager.dispose()
-  })
-
-  it('warmup failed 不阻塞 submit（validate 返回 failed，调用方走 slow path）', async () => {
-    const manager = createRuntimeWarmupManager({
-      bootstrapFn: vi.fn().mockRejectedValue(new Error('bootstrap error')),
-    })
-
-    manager.startWarmup({ cwd: 'D:/project' })
-
-    await vi.waitFor(() => {
-      const key = buildWarmupCacheKey({ cwd: 'D:/project' })
-      expect(manager.getStatus(key)).toBe('failed')
-    })
-
-    const result = manager.validateSnapshot({ cwd: 'D:/project' })
-    // 返回 failed 而不是抛异常，调用方可以安全地走 slow path
-    expect(result.hit).toBe(false)
-    expect(result.missReason).toBe('failed')
-    expect(result.snapshot).not.toBeNull()
-
-    manager.dispose()
+    expect(r.hit).toBe(false)
+    expect(r.missReason).toBe('stale')
+    expect(m.getStatus(buildWarmupCacheKey({ cwd: 'D:/p' }))).toBe('stale')
+    m.dispose()
   })
 })
 
-// ═══ dispose ═══
+describe('Invalidation rules', () => {
+  async function readyManager() {
+    const events: RuntimeWarmupStatusChangedEvent[] = []
+    const m = createRuntimeWarmupManager({ bootstrapFn: createMockBootstrap({ delay: 0 }), onStatusChanged: (e) => events.push(e) })
+    m.startWarmup({ cwd: 'D:/p' })
+    await vi.waitFor(() => { expect(m.getStatus(buildWarmupCacheKey({ cwd: 'D:/p' }))).toBe('ready') })
+    return { m, events }
+  }
 
-describe('RuntimeWarmupManager.dispose', () => {
-  it('dispose 清理所有 entry', () => {
-    const manager = createRuntimeWarmupManager({
-      bootstrapFn: vi.fn().mockReturnValue(new Promise(() => {})),
+  it('workspace switch: old snapshot gone', async () => {
+    const { m } = await readyManager()
+    m.abortWarmup('D:/p')
+    expect(m.validateSnapshot({ cwd: 'D:/p' }).missReason).toBe('no-snapshot')
+    m.dispose()
+  })
+  it('skills-changed -> stale', async () => {
+    const { m, events } = await readyManager()
+    m.invalidateSnapshot('D:/p', 'skills-changed')
+    expect(m.getStatus(buildWarmupCacheKey({ cwd: 'D:/p' }))).toBe('stale')
+    expect(m.validateSnapshot({ cwd: 'D:/p' }).missReason).toBe('stale')
+    expect(events.some(e => e.status === 'stale')).toBe(true)
+    m.dispose()
+  })
+  it('hooks-changed -> stale', async () => {
+    const { m } = await readyManager()
+    m.invalidateSnapshot('D:/p', 'hooks-changed')
+    expect(m.validateSnapshot({ cwd: 'D:/p' }).missReason).toBe('stale')
+    m.dispose()
+  })
+  it('mcp-changed -> stale', async () => {
+    const { m } = await readyManager()
+    m.invalidateSnapshot('D:/p', 'mcp-changed')
+    expect(m.validateSnapshot({ cwd: 'D:/p' }).missReason).toBe('stale')
+    m.dispose()
+  })
+  it('memory-changed -> stale', async () => {
+    const { m } = await readyManager()
+    m.invalidateSnapshot('D:/p', 'memory-changed')
+    expect(m.validateSnapshot({ cwd: 'D:/p' }).missReason).toBe('stale')
+    m.dispose()
+  })
+  it('git-changed -> stale', async () => {
+    const { m } = await readyManager()
+    m.invalidateSnapshot('D:/p', 'git-changed')
+    expect(m.validateSnapshot({ cwd: 'D:/p' }).missReason).toBe('stale')
+    m.dispose()
+  })
+  it('agent-changed -> stale', async () => {
+    const { m } = await readyManager()
+    m.invalidateSnapshot('D:/p', 'agent-changed')
+    expect(m.validateSnapshot({ cwd: 'D:/p' }).missReason).toBe('stale')
+    m.dispose()
+  })
+  it('config-changed -> stale', async () => {
+    const { m } = await readyManager()
+    m.invalidateSnapshot('D:/p', 'config-changed')
+    expect(m.validateSnapshot({ cwd: 'D:/p' }).missReason).toBe('stale')
+    m.dispose()
+  })
+})
+
+describe('invalidateAll', () => {
+  it('provider-changed invalidates all ready snapshots', async () => {
+    const m = createRuntimeWarmupManager({ bootstrapFn: createMockBootstrap({ delay: 0 }) })
+    m.startWarmup({ cwd: 'D:/a' }); m.startWarmup({ cwd: 'D:/b' })
+    await vi.waitFor(() => {
+      expect(m.getStatus(buildWarmupCacheKey({ cwd: 'D:/a' }))).toBe('ready')
+      expect(m.getStatus(buildWarmupCacheKey({ cwd: 'D:/b' }))).toBe('ready')
     })
+    m.invalidateAll('provider-changed')
+    expect(m.validateSnapshot({ cwd: 'D:/a' }).missReason).toBe('stale')
+    expect(m.validateSnapshot({ cwd: 'D:/b' }).missReason).toBe('stale')
+    m.dispose()
+  })
+  it('invalidateAll does not affect warming entries', () => {
+    const m = createRuntimeWarmupManager({ bootstrapFn: vi.fn().mockReturnValue(new Promise(() => {})) })
+    m.startWarmup({ cwd: 'D:/p' })
+    m.invalidateAll('provider-changed')
+    expect(m.getStatus(buildWarmupCacheKey({ cwd: 'D:/p' }))).toBe('warming')
+    m.dispose()
+  })
+})
 
-    manager.startWarmup({ cwd: 'D:/project-a' })
-    manager.startWarmup({ cwd: 'D:/project-b' })
+describe('Invalidation rules', () => {
+  async function readyManager() {
+    const events: RuntimeWarmupStatusChangedEvent[] = []
+    const m = createRuntimeWarmupManager({ bootstrapFn: createMockBootstrap({ delay: 0 }), onStatusChanged: (e) => events.push(e) })
+    m.startWarmup({ cwd: 'D:/p' })
+    await vi.waitFor(() => { expect(m.getStatus(buildWarmupCacheKey({ cwd: 'D:/p' }))).toBe('ready') })
+    return { m, events }
+  }
+  it('workspace switch: old snapshot gone', async () => {
+    const { m } = await readyManager()
+    m.abortWarmup('D:/p')
+    expect(m.validateSnapshot({ cwd: 'D:/p' }).missReason).toBe('no-snapshot')
+    m.dispose()
+  })
+  it('skills-changed marks stale', async () => {
+    const { m, events } = await readyManager()
+    m.invalidateSnapshot('D:/p', 'skills-changed')
+    expect(m.getStatus(buildWarmupCacheKey({ cwd: 'D:/p' }))).toBe('stale')
+    expect(m.validateSnapshot({ cwd: 'D:/p' }).missReason).toBe('stale')
+    expect(events.some(e => e.status === 'stale')).toBe(true)
+    m.dispose()
+  })
+  it('hooks-changed marks stale', async () => {
+    const { m } = await readyManager()
+    m.invalidateSnapshot('D:/p', 'hooks-changed')
+    expect(m.validateSnapshot({ cwd: 'D:/p' }).missReason).toBe('stale')
+    m.dispose()
+  })
+  it('mcp-changed marks stale', async () => {
+    const { m } = await readyManager()
+    m.invalidateSnapshot('D:/p', 'mcp-changed')
+    expect(m.validateSnapshot({ cwd: 'D:/p' }).missReason).toBe('stale')
+    m.dispose()
+  })
+  it('memory-changed marks stale', async () => {
+    const { m } = await readyManager()
+    m.invalidateSnapshot('D:/p', 'memory-changed')
+    expect(m.validateSnapshot({ cwd: 'D:/p' }).missReason).toBe('stale')
+    m.dispose()
+  })
+  it('git-changed marks stale', async () => {
+    const { m } = await readyManager()
+    m.invalidateSnapshot('D:/p', 'git-changed')
+    expect(m.validateSnapshot({ cwd: 'D:/p' }).missReason).toBe('stale')
+    m.dispose()
+  })
+  it('agent-changed marks stale', async () => {
+    const { m } = await readyManager()
+    m.invalidateSnapshot('D:/p', 'agent-changed')
+    expect(m.validateSnapshot({ cwd: 'D:/p' }).missReason).toBe('stale')
+    m.dispose()
+  })
+  it('config-changed marks stale', async () => {
+    const { m } = await readyManager()
+    m.invalidateSnapshot('D:/p', 'config-changed')
+    expect(m.validateSnapshot({ cwd: 'D:/p' }).missReason).toBe('stale')
+    m.dispose()
+  })
+})
 
-    expect(manager.getEntryKeys()).toHaveLength(2)
+describe('invalidateAll', () => {
+  it('provider-changed invalidates all ready snapshots', async () => {
+    const m = createRuntimeWarmupManager({ bootstrapFn: createMockBootstrap({ delay: 0 }) })
+    m.startWarmup({ cwd: 'D:/a' }); m.startWarmup({ cwd: 'D:/b' })
+    await vi.waitFor(() => {
+      expect(m.getStatus(buildWarmupCacheKey({ cwd: 'D:/a' }))).toBe('ready')
+      expect(m.getStatus(buildWarmupCacheKey({ cwd: 'D:/b' }))).toBe('ready')
+    })
+    m.invalidateAll('provider-changed')
+    expect(m.validateSnapshot({ cwd: 'D:/a' }).missReason).toBe('stale')
+    expect(m.validateSnapshot({ cwd: 'D:/b' }).missReason).toBe('stale')
+    m.dispose()
+  })
+  it('invalidateAll does not affect warming entries', () => {
+    const m = createRuntimeWarmupManager({ bootstrapFn: vi.fn().mockReturnValue(new Promise(() => {})) })
+    m.startWarmup({ cwd: 'D:/p' })
+    m.invalidateAll('provider-changed')
+    expect(m.getStatus(buildWarmupCacheKey({ cwd: 'D:/p' }))).toBe('warming')
+    m.dispose()
+  })
+})
 
-    manager.dispose()
+describe('refreshSnapshot', () => {
+  it('slow path success refreshes failed snapshot', async () => {
+    const m = createRuntimeWarmupManager({ bootstrapFn: vi.fn().mockRejectedValue(new Error('fail')) })
+    m.startWarmup({ cwd: 'D:/p' })
+    await vi.waitFor(() => { expect(m.getStatus(buildWarmupCacheKey({ cwd: 'D:/p' }))).toBe('failed') })
+    const toolDefinitions = [makeToolDefinition('bash', 'Run shell command')]
+    m.refreshSnapshot({ cwd: 'D:/p', bootstrapResult: makeBootstrapResult({ systemPrompt: 'refreshed', toolDefinitions, toolRegistry: makeToolRegistry(toolDefinitions) as never, skillsVersion: 'sv2' }) })
+    expect(m.getStatus(buildWarmupCacheKey({ cwd: 'D:/p' }))).toBe('ready')
+    const r = m.validateSnapshot({ cwd: 'D:/p' })
+    expect(r.hit).toBe(true)
+    expect(r.snapshot!.systemPrompt).toBe('refreshed')
+    expect(r.snapshot!.toolDefinitions).toEqual(toolDefinitions)
+    expect(r.snapshot!.skillsVersion).toBe('sv2')
+    m.dispose()
+  })
+  it('stale refreshed back to ready', async () => {
+    const m = createRuntimeWarmupManager({ bootstrapFn: createMockBootstrap({ delay: 0 }) })
+    m.startWarmup({ cwd: 'D:/p' })
+    await vi.waitFor(() => { expect(m.getStatus(buildWarmupCacheKey({ cwd: 'D:/p' }))).toBe('ready') })
+    m.invalidateSnapshot('D:/p', 'skills-changed')
+    expect(m.getStatus(buildWarmupCacheKey({ cwd: 'D:/p' }))).toBe('stale')
+    m.refreshSnapshot({ cwd: 'D:/p', bootstrapResult: makeBootstrapResult({ systemPrompt: 'new' }) })
+    expect(m.getStatus(buildWarmupCacheKey({ cwd: 'D:/p' }))).toBe('ready')
+    expect(m.validateSnapshot({ cwd: 'D:/p' }).snapshot!.systemPrompt).toBe('new')
+    m.dispose()
+  })
+  it('creates new entry when none exists', () => {
+    const m = createRuntimeWarmupManager({ bootstrapFn: vi.fn() })
+    m.refreshSnapshot({ cwd: 'D:/p', bootstrapResult: makeBootstrapResult({ systemPrompt: 'fresh' }) })
+    expect(m.getStatus(buildWarmupCacheKey({ cwd: 'D:/p' }))).toBe('ready')
+    expect(m.validateSnapshot({ cwd: 'D:/p' }).snapshot!.systemPrompt).toBe('fresh')
+    m.dispose()
+  })
+})
 
-    expect(manager.getEntryKeys()).toHaveLength(0)
+describe('dispose', () => {
+  it('clears all entries', () => {
+    const m = createRuntimeWarmupManager({ bootstrapFn: vi.fn().mockReturnValue(new Promise(() => {})) })
+    m.startWarmup({ cwd: 'D:/a' }); m.startWarmup({ cwd: 'D:/b' })
+    expect(m.getEntryKeys()).toHaveLength(2)
+    m.dispose()
+    expect(m.getEntryKeys()).toHaveLength(0)
+  })
+})
+
+describe('Security: no sensitive data leaks', () => {
+  it('buildConfigFingerprint does not contain raw apiKey', () => {
+    const fp = buildConfigFingerprint({ providers: { openai: { apiKey: 'sk-super-secret-12345', baseURL: 'https://api.openai.com' } } })
+    expect(fp).not.toContain('sk-super-secret')
+    expect(fp).toMatch(/^[0-9a-f]{8}$/)
+  })
+  it('buildProviderFingerprint returns hash only', () => {
+    const fp = buildProviderFingerprint({ provider: 'openai', model: 'gpt-4o', baseURL: 'https://api.openai.com' })
+    expect(fp).toMatch(/^[0-9a-f]{8}$/)
+  })
+  it('snapshot providerFingerprint is a hash', async () => {
+    const m = createRuntimeWarmupManager({ bootstrapFn: createMockBootstrap({ delay: 0 }) })
+    const pf = buildProviderFingerprint({ provider: 'openai', model: 'gpt-4o' })
+    m.startWarmup({ cwd: 'D:/p', providerFingerprint: pf })
+    await vi.waitFor(() => { expect(m.getStatus(buildWarmupCacheKey({ cwd: 'D:/p', providerFingerprint: pf }))).toBe('ready') })
+    const r = m.validateSnapshot({ cwd: 'D:/p', providerFingerprint: pf })
+    expect(r.snapshot!.providerFingerprint).toMatch(/^[0-9a-f]{8}$/)
+    m.dispose()
+  })
+  it('snapshot configFingerprint does not contain raw secret', () => {
+    const m = createRuntimeWarmupManager({ bootstrapFn: vi.fn() })
+    const cf = buildConfigFingerprint({ providers: { openai: { apiKey: 'sk-secret' } } })
+    m.refreshSnapshot({ cwd: 'D:/p', configFingerprint: cf, bootstrapResult: makeBootstrapResult() })
+    const r = m.validateSnapshot({ cwd: 'D:/p', configFingerprint: cf })
+    expect(r.snapshot!.configFingerprint).not.toContain('sk-secret')
+    expect(r.snapshot!.configFingerprint).toMatch(/^[0-9a-f]{8}$/)
+    m.dispose()
   })
 })

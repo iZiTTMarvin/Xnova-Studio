@@ -15,7 +15,10 @@
  */
 
 import type { CCodeConfig } from '@config/config-manager.js'
+import type { ToolDefinition } from '@providers/provider.js'
+import type { ToolRegistry } from '@tools/core/registry.js'
 import type {
+  BootstrapTimings,
   Message,
   MessageContent,
   UserQuestion,
@@ -114,6 +117,32 @@ export type UserQuestionResult = AgentLoopUserQuestionResult
 // 5. RuntimeSubmitInput
 // ═══════════════════════════════════════════════
 
+/**
+ * Runtime 预备快照。
+ *
+ * 这个对象只在 main/runtime 内存中流转，不能通过 IPC 发给 renderer，
+ * 因为其中可能包含 system prompt 和不可序列化的工具注册表引用。
+ */
+export interface RuntimePreparedSnapshot {
+  /** bootstrap 构建出的基础 system prompt，不含本轮 primary agent prompt */
+  systemPrompt?: string | undefined
+  /** 完整工具定义，包含参数 schema；用于判断工具列表和模型工具声明是否完整 */
+  toolDefinitions?: ToolDefinition[] | undefined
+  /** 可执行工具注册表引用；fast path 命中时 AgentLoop 直接复用它 */
+  toolRegistry?: ToolRegistry | undefined
+  /** bootstrap 过程产生的 warning */
+  bootstrapWarnings?: string[] | undefined
+  /** bootstrap 各子阶段耗时 */
+  bootstrapTimings?: BootstrapTimings | undefined
+  /** 版本/配置指纹，host 用于刷新 warmup snapshot */
+  agentConfigFingerprint?: string | undefined
+  skillsVersion?: string | undefined
+  hooksVersion?: string | undefined
+  mcpToolListVersion?: string | undefined
+  memoryVersion?: string | undefined
+  gitContextVersion?: string | undefined
+}
+
 /** 向 Runtime 提交一次用户输入 */
 export interface RuntimeSubmitInput {
   /** 用户文本消息 */
@@ -134,6 +163,11 @@ export interface RuntimeSubmitInput {
   resumeLeafUuid?: string
   /** 可选：附加的上下文（如文件内容、选中代码） */
   attachments?: RuntimeAttachment[]
+  /**
+   * main 侧 warmup 准备好的本地装配结果。
+   * 命中时 runtime 可以跳过 bootstrapAll/getSystemPrompt/registerMcpTools。
+   */
+  preparedSnapshot?: RuntimePreparedSnapshot | undefined
 }
 
 export interface RuntimeAttachment {
@@ -192,6 +226,11 @@ export interface RuntimeTurnResult {
   sessionId: string | null
   /** 本轮错误（若有） */
   error?: string
+  /**
+   * 本轮执行后可供 main 刷新 warmup 的真实装配结果。
+   * 只允许 main/runtime 内部消费，不应出现在 renderer IPC 响应里。
+   */
+  preparedSnapshot?: RuntimePreparedSnapshot | undefined
 }
 
 // ═══════════════════════════════════════════════

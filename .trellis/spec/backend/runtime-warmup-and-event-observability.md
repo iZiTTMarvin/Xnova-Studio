@@ -60,7 +60,27 @@ interface PreparedRuntimeSnapshot {
   bootstrapReady: boolean
   systemPrompt?: string
   toolDefinitions?: unknown[]
+  /** 只允许 main/runtime 内存引用，不允许 IPC 发送 */
+  toolRegistry?: unknown
   createdAt: number
+}
+
+interface RuntimePreparedSnapshot {
+  systemPrompt?: string
+  toolDefinitions?: unknown[]
+  toolRegistry?: unknown
+  bootstrapWarnings?: string[]
+  bootstrapTimings?: BootstrapTimings
+}
+
+interface RuntimeSubmitInput {
+  text: string
+  preparedSnapshot?: RuntimePreparedSnapshot
+}
+
+interface RuntimeTurnResult {
+  sessionId: string | null
+  preparedSnapshot?: RuntimePreparedSnapshot
 }
 ```
 
@@ -69,13 +89,16 @@ interface PreparedRuntimeSnapshot {
 - Warmup 必须由 Studio main 调度，不允许 renderer 直接调用 `bootstrapAll()` 或访问 runtime internals。
 - Warmup 不得调用 LLM，不得创建 `AgentLoop`，不得消耗 token。
 - Warmup cache key 必须使用规范化 cwd / workspaceRoot；Windows 上不得只依赖 `trim()`。
-- `PreparedRuntimeSnapshot` 可以在内存保存 system prompt 与 tool definitions，但不得通过 IPC 发给 renderer，也不得写入日志。
-- 第一阶段可以只填充 `bootstrapReady`，但必须使用最终 `RuntimeWarmupStatus + PreparedRuntimeSnapshot + snapshot validate` 骨架，不能写成孤立的 `openWorkspace -> bootstrapAll()` 补丁。
+- `PreparedRuntimeSnapshot` 可以在内存保存 system prompt、tool definitions 与可执行 tool registry，但不得通过 IPC 发给 renderer，也不得写入日志。
+- `PreparedRuntimeSnapshot` 进入 `ready` 前必须具备真正可复用的装配产物：至少包含 `systemPrompt`、完整 `toolDefinitions`（含参数 schema）和可执行 `toolRegistry`。只填充 `bootstrapReady` 的空壳 snapshot 不允许命中 fast path。
+- Runtime fast path 必须实际消费 `RuntimeSubmitInput.preparedSnapshot`：命中时跳过已准备好的 `bootstrapAll()`、`getSystemPrompt()`、`getRegistry()`、`registerMcpTools()`，并把 snapshot 内的 `toolRegistry` 传给 `AgentLoop`。
+- Runtime slow path 成功后必须通过 `RuntimeTurnResult.preparedSnapshot` 返回真实装配结果，Studio main 用它刷新 warmup snapshot；不得用只有 `skillsReady/fileIndexReady/systemPromptReady` 的空对象伪装 ready。
 - Submit 入口必须统一执行 snapshot validate：
   - 命中且未过期：走 fast path，跳过已准备好的装配步骤。
   - 未命中、过期或 warmup failed：走 slow path，并在成功后刷新 snapshot。
 - Warmup 失败不得阻塞 submit；submit 必须回退到 slow path，并给 renderer 一个可见 warning。
 - Skills、hooks、MCP、memory、provider config、agent、git HEAD、workspace 切换任一变化，都必须让对应 snapshot 失效或进入 `stale`。
+- Provider/model/config/agent/mode/workspace 必须进入 cache key 或 submit validate 输入；skills/hooks/MCP/memory/git/agent 文件这类可能绕过 Studio UI 的变化，必须通过真实 mutation 入口或轻量版本指纹在 validate 时兜底发现。
 - `bootstrapAll` 内部子阶段耗时必须能通过 timing sink 发出 `bootstrap.<stage>`，同时保持 `BootstrapResult.timings` 兼容。
 - submit timing 不得记录 API key、Authorization、完整 prompt、完整 messages、工具内容全文。
 
@@ -89,6 +112,9 @@ interface PreparedRuntimeSnapshot {
 | warmup failed 后 submit 直接失败 | 视为可用性缺陷，必须回退 slow path |
 | snapshot 把 system prompt 或 API key 通过 IPC 发给 renderer | 视为敏感信息泄漏，必须删除字段并补脱敏测试 |
 | skills/hooks/mcp/memory/git 变化后仍复用旧 snapshot | 视为上下文污染，必须补失效规则 |
+| fast path 只打 timing/log，但 runtime submit 仍完整 bootstrap | 视为假快路径，必须把 prepared snapshot 传入 runtime 并实际复用 |
+| slow path 成功后刷新空壳 snapshot | 视为高风险缓存污染，必须用 runtime 返回的真实装配结果刷新 |
+| warmup snapshot 的工具定义缺少参数 schema 或 MCP 注册结果 | 视为工具能力不完整，必须保存完整 tool definitions 并复用可执行 registry |
 | timing summary 只有 `runtime_bootstrap` 总耗时 | 视为观测不足，必须补 `bootstrap.*` 子阶段 |
 
 ### 5. Good / Base / Bad Cases
@@ -113,10 +139,16 @@ interface PreparedRuntimeSnapshot {
   - `warming -> failed`
   - workspace 切换 abort 旧 warmup
   - snapshot stale 后 submit 走 slow path
+  - ready snapshot 必须包含 system prompt、完整 tool definitions、可执行 tool registry
+  - workspace 版本指纹变化会让 ready snapshot 进入 stale
 - `studio-runtime-service.test.ts`：
   - warmup ready 时 submit 使用 fast path
   - warmup failed 时 submit 不失败，回退旧路径
+  - fast path 命中时向 runtime submit 传入 `preparedSnapshot`
+  - slow path 成功后用 `RuntimeTurnResult.preparedSnapshot` 刷新 snapshot
   - timing 不泄露敏感字段
+- `packages/runtime` 测试：
+  - `RuntimeSubmitInput.preparedSnapshot` 命中时跳过 bootstrap/systemPrompt/registry 注册，并复用 snapshot tool registry
 - `studio-ipc.test.ts` / preload 测试：
   - warmup status channel 参数校验
 - Windows 路径回归：

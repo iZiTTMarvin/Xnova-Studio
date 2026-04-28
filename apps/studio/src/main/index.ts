@@ -1,4 +1,5 @@
 import { stat } from 'node:fs/promises'
+import { loadResolvedConfig } from '@config/resolver.js'
 import { app, BrowserWindow, dialog, ipcMain } from 'electron'
 import { registerStudioMainIpcHandlers } from './studio-ipc'
 import { startMainProcess } from './lifecycle'
@@ -12,7 +13,11 @@ import { createStudioShellInspector } from './studio-shell-inspector'
 import { createStudioRuntimeInspector } from './studio-runtime-inspector'
 import { createStudioRuntimeManager } from './studio-runtime-manager'
 import { createStudioRuntimeService } from './studio-runtime-service'
-import { createRuntimeWarmupManager } from './studio-runtime-warmup'
+import {
+  buildConfigFingerprint,
+  buildProviderFingerprint,
+  createRuntimeWarmupManager,
+} from './studio-runtime-warmup'
 import { createMainWindowManager } from './window'
 import { selectWorkspaceDirectory } from './workspace'
 
@@ -86,6 +91,42 @@ const skillsPluginsService = createStudioSkillsPluginsService({
       : undefined
   },
 })
+
+function startWorkspaceWarmup(workspacePath: string): void {
+  try {
+    const config = loadResolvedConfig(workspacePath).effective
+    const provider = config.defaultProvider
+    const model = config.defaultModel
+    warmupManager.startWarmup({
+      cwd: workspacePath,
+      workspaceRoot: workspacePath,
+      providerFingerprint: buildProviderFingerprint({
+        provider,
+        model,
+        baseURL: config.providers[provider]?.baseURL ?? null,
+      }),
+      configFingerprint: buildConfigFingerprint(
+        config as unknown as Record<string, unknown>,
+      ),
+    })
+  } catch (error) {
+    logger.warn('[Warmup] workspace 预热启动失败，submit 将回退 slow path', {
+      workspacePath,
+      error: error instanceof Error ? error.message : String(error),
+    })
+  }
+}
+
+function invalidateWorkspaceWarmup(
+  workspacePath: string | null | undefined,
+  reason: Parameters<typeof warmupManager.invalidateSnapshot>[1],
+): void {
+  const normalizedWorkspace = workspacePath?.trim()
+  if (normalizedWorkspace) {
+    warmupManager.invalidateSnapshot(normalizedWorkspace, reason)
+  }
+}
+
 app.on('before-quit', () => {
   warmupManager.dispose()
   void runtimeService.dispose()
@@ -124,14 +165,38 @@ registerStudioMainIpcHandlers({
     runtimeService.respondToUserInputRequest(response),
   inspectShell: (request, state) => shellInspector.inspect(request, state),
   getProviderSettings: (state) => providerSettingsService.getSnapshot(state),
-  saveProviderSettings: (input, state) => providerSettingsService.save(input, state),
+  saveProviderSettings: async (input, state) => {
+    const result = await providerSettingsService.save(input, state)
+    if (result.success) {
+      warmupManager.invalidateAll('provider-changed')
+    }
+    return result
+  },
   testProviderConnection: (input, state) =>
     providerSettingsService.testConnection(input, state),
   getMemoryOverview: (state) => memoryService.getOverview(state),
-  rebuildMemory: (state) => memoryService.rebuild(state),
+  rebuildMemory: async (state) => {
+    const result = await memoryService.rebuild(state)
+    if (result.success) {
+      invalidateWorkspaceWarmup(state.workspacePath, 'memory-changed')
+    }
+    return result
+  },
   getMcpOverview: (state) => mcpService.getOverview(state),
-  addMcpServer: (input, state) => mcpService.addServer(input, state),
-  deleteMcpServer: (name, state) => mcpService.deleteServer(name, state),
+  addMcpServer: async (input, state) => {
+    const result = await mcpService.addServer(input, state)
+    if (result.success) {
+      warmupManager.invalidateAll('mcp-changed')
+    }
+    return result
+  },
+  deleteMcpServer: async (name, state) => {
+    const result = await mcpService.deleteServer(name, state)
+    if (result.success) {
+      warmupManager.invalidateAll('mcp-changed')
+    }
+    return result
+  },
   getSkillsPluginsOverview: (state) => skillsPluginsService.getOverview(state),
   onWorkspaceChanged: (() => {
     // 跟踪上一个 warmup workspace，切换时先 abort 旧路径再 start 新路径
@@ -141,7 +206,7 @@ registerStudioMainIpcHandlers({
         warmupManager.abortWarmup(previousWarmupWorkspace)
       }
       previousWarmupWorkspace = workspacePath
-      warmupManager.startWarmup({ cwd: workspacePath })
+      startWorkspaceWarmup(workspacePath)
     }
   })(),
   logger,

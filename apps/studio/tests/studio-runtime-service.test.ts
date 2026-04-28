@@ -2206,4 +2206,256 @@ describe('studio runtime service', () => {
       }),
     )
   })
+
+  it('warmup 命中时会把 preparedSnapshot 传给 shared runtime submit', async () => {
+    const toolDefinitions = [
+      {
+        name: 'read_file',
+        description: 'Read a file',
+        parameters: {},
+      },
+    ]
+    const toolRegistry = {
+      toToolDefinitions: vi.fn(() => toolDefinitions),
+    }
+    const warmupManager = {
+      startWarmup: vi.fn(),
+      abortWarmup: vi.fn(),
+      getStatus: vi.fn(() => 'ready' as const),
+      validateSnapshot: vi.fn(() => ({
+        hit: true,
+        snapshot: {
+          cacheKey: 'warmup-key',
+          cwd: 'D:/workspace/demo',
+          workspaceRoot: 'D:/workspace/demo',
+          agentId: null,
+          mode: 'standard' as const,
+          configFingerprint: 'config-fp',
+          providerFingerprint: 'provider-fp',
+          bootstrapReady: true,
+          createdAt: Date.now(),
+          systemPrompt: 'prepared system prompt',
+          toolDefinitions,
+          toolRegistry: toolRegistry as never,
+          agentConfigFingerprint: '',
+          skillsVersion: '',
+          hooksVersion: '',
+          mcpToolListVersion: '',
+          memoryVersion: '',
+          gitContextVersion: '',
+        },
+      })),
+      invalidateSnapshot: vi.fn(),
+      invalidateAll: vi.fn(),
+      refreshSnapshot: vi.fn(),
+      getEntryKeys: vi.fn(() => []),
+      dispose: vi.fn(),
+    }
+    const runtimeInstance: RuntimeInstance = {
+      submit: vi.fn(async () => ({
+        text: 'done',
+        thinking: '',
+        stopReason: 'end_turn',
+        llmCallCount: 1,
+        toolCallCount: 0,
+        usage: {
+          inputTokens: 1,
+          outputTokens: 1,
+          cacheReadTokens: 0,
+          cacheWriteTokens: 0,
+        },
+        aborted: false,
+        historyCompacted: false,
+        sessionId: 'session-1',
+      })),
+      abort: vi.fn(),
+      dispose: vi.fn(async () => undefined),
+      getSnapshot: vi.fn(() => ({
+        sessionId: 'session-1',
+        isRunning: false,
+        provider: 'openai',
+        model: 'gpt-4o',
+        warnings: [],
+      })),
+    }
+
+    const service = createStudioRuntimeService({
+      warmupManager,
+      createRuntimeFn: vi.fn(async () => runtimeInstance),
+      loadResolvedConfigFn: vi.fn(() => ({
+        effective: {
+          defaultProvider: 'openai',
+          defaultModel: 'gpt-4o',
+          providers: {
+            openai: {
+              apiKey: 'sk-test',
+              models: ['gpt-4o'],
+            },
+          },
+        },
+        source: {},
+        warnings: [],
+      })),
+    })
+
+    await expect(
+      service.submit(
+        {
+          text: '继续',
+          projectPath: 'D:/workspace/demo',
+        },
+        {
+          workspacePath: 'D:/workspace/demo',
+          lastSelection: null,
+        },
+        vi.fn(),
+      ),
+    ).resolves.toEqual({
+      ok: true,
+      sessionId: 'session-1',
+    })
+
+    expect(warmupManager.validateSnapshot).toHaveBeenCalledWith(
+      expect.objectContaining({
+        cwd: 'D:/workspace/demo',
+        workspaceRoot: 'D:/workspace/demo',
+        providerFingerprint: expect.stringMatching(/^[0-9a-f]{8}$/),
+        configFingerprint: expect.stringMatching(/^[0-9a-f]{8}$/),
+      }),
+    )
+    expect(runtimeInstance.submit).toHaveBeenCalledWith(
+      expect.objectContaining({
+        preparedSnapshot: expect.objectContaining({
+          systemPrompt: 'prepared system prompt',
+          toolDefinitions,
+          toolRegistry,
+        }),
+      }),
+    )
+    expect(warmupManager.refreshSnapshot).not.toHaveBeenCalled()
+  })
+
+  it('warmup 未命中时用 runtime 返回的真实 preparedSnapshot 刷新，而不是写入空壳 snapshot', async () => {
+    const toolDefinitions = [
+      {
+        name: 'bash',
+        description: 'Run shell command',
+        parameters: {},
+      },
+    ]
+    const toolRegistry = {
+      toToolDefinitions: vi.fn(() => toolDefinitions),
+    }
+    const timings = {
+      skills: 1,
+      instructions: 2,
+      hooks: 3,
+      sessionStartHooks: 4,
+      fileIndex: 5,
+      plugins: 6,
+      memory: 7,
+      shellSnapshot: 8,
+      gitContext: 9,
+      systemPrompt: 10,
+      total: 55,
+    }
+    const warmupManager = {
+      startWarmup: vi.fn(),
+      abortWarmup: vi.fn(),
+      getStatus: vi.fn(() => 'idle' as const),
+      validateSnapshot: vi.fn(() => ({
+        hit: false,
+        snapshot: null,
+        missReason: 'no-snapshot' as const,
+      })),
+      invalidateSnapshot: vi.fn(),
+      invalidateAll: vi.fn(),
+      refreshSnapshot: vi.fn(),
+      getEntryKeys: vi.fn(() => []),
+      dispose: vi.fn(),
+    }
+    const runtimeInstance: RuntimeInstance = {
+      submit: vi.fn(async () => ({
+        text: 'done',
+        thinking: '',
+        stopReason: 'end_turn',
+        llmCallCount: 1,
+        toolCallCount: 0,
+        usage: {
+          inputTokens: 1,
+          outputTokens: 1,
+          cacheReadTokens: 0,
+          cacheWriteTokens: 0,
+        },
+        aborted: false,
+        historyCompacted: false,
+        sessionId: 'session-1',
+        preparedSnapshot: {
+          systemPrompt: 'slow path system prompt',
+          toolDefinitions,
+          toolRegistry: toolRegistry as never,
+          bootstrapWarnings: ['embedding disabled'],
+          bootstrapTimings: timings,
+          skillsVersion: 'skills-v2',
+        },
+      })),
+      abort: vi.fn(),
+      dispose: vi.fn(async () => undefined),
+      getSnapshot: vi.fn(() => ({
+        sessionId: 'session-1',
+        isRunning: false,
+        provider: 'openai',
+        model: 'gpt-4o',
+        warnings: [],
+      })),
+    }
+
+    const service = createStudioRuntimeService({
+      warmupManager,
+      createRuntimeFn: vi.fn(async () => runtimeInstance),
+      loadResolvedConfigFn: vi.fn(() => ({
+        effective: {
+          defaultProvider: 'openai',
+          defaultModel: 'gpt-4o',
+          providers: {
+            openai: {
+              apiKey: 'sk-test',
+              models: ['gpt-4o'],
+            },
+          },
+        },
+        source: {},
+        warnings: [],
+      })),
+    })
+
+    await service.submit(
+      {
+        text: '继续',
+        projectPath: 'D:/workspace/demo',
+      },
+      {
+        workspacePath: 'D:/workspace/demo',
+        lastSelection: null,
+      },
+      vi.fn(),
+    )
+
+    expect(warmupManager.refreshSnapshot).toHaveBeenCalledWith(
+      expect.objectContaining({
+        cwd: 'D:/workspace/demo',
+        workspaceRoot: 'D:/workspace/demo',
+        providerFingerprint: expect.stringMatching(/^[0-9a-f]{8}$/),
+        configFingerprint: expect.stringMatching(/^[0-9a-f]{8}$/),
+        bootstrapResult: expect.objectContaining({
+          systemPrompt: 'slow path system prompt',
+          toolDefinitions,
+          toolRegistry,
+          warnings: ['embedding disabled'],
+          timings,
+          skillsVersion: 'skills-v2',
+        }),
+      }),
+    )
+  })
 })

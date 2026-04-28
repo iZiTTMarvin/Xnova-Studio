@@ -37,6 +37,7 @@ import type {
   RuntimeConfigInput,
   RuntimeHostBridge,
   RuntimeInstance,
+  RuntimePreparedSnapshot,
   RuntimeSubmitInput,
   RuntimeSnapshot,
   RuntimeTurnResult,
@@ -207,6 +208,23 @@ function syncContextHistoryForSubmit(
   return contextManager.getHistoryRef()
 }
 
+function getUsablePreparedSnapshot(
+  submitInput: RuntimeSubmitInput,
+): RuntimePreparedSnapshot | null {
+  const snapshot = submitInput.preparedSnapshot
+  if (!snapshot?.toolRegistry) {
+    return null
+  }
+
+  // waitForMcp 是 pipe/一次性运行的强一致语义：调用方要求 submit 前等待 MCP。
+  // 预热快照可能是在 MCP 后台连接完成前生成的，因此这里保守回退 slow path。
+  if (submitInput.waitForMcp) {
+    return null
+  }
+
+  return snapshot
+}
+
 /**
  * 创建一个 RuntimeInstance。
  *
@@ -284,21 +302,38 @@ export async function createRuntime(
 
       try {
         emitTimingMark('createRuntime.submit_start')
-        emitTimingMark('runtime_bootstrap_start')
-        const bootstrapResult = await bootstrapAll(input.cwd, (stage, durationMs) => {
-          // 将 bootstrap 子阶段耗时逐项转发为 timing_mark 事件
-          emitTimingMark(stage, { elapsedMs: Math.round(durationMs) })
-        })
-        emitTimingMark('runtime_bootstrap_done')
-        warnings = [...bootstrapResult.warnings]
-        agentCatalog.ensureInitialized()
+        const preparedSnapshot = getUsablePreparedSnapshot(submitInput)
+        let bootstrapSystemPrompt: string | undefined
+        let bootstrapWarnings: string[] = []
+        let bootstrapTimings = preparedSnapshot?.bootstrapTimings
+        let registry = preparedSnapshot?.toolRegistry
 
-        if (submitInput.waitForMcp) {
-          await ensureMcpInitialized()
+        if (preparedSnapshot && registry) {
+          emitTimingMark('runtime_bootstrap_fast_path')
+          bootstrapSystemPrompt = preparedSnapshot.systemPrompt
+          bootstrapWarnings = [...(preparedSnapshot.bootstrapWarnings ?? [])]
+          warnings = [...bootstrapWarnings]
+          agentCatalog.ensureInitialized()
+        } else {
+          emitTimingMark('runtime_bootstrap_start')
+          const bootstrapResult = await bootstrapAll(input.cwd, (stage, durationMs) => {
+            // 将 bootstrap 子阶段耗时逐项转发为 timing_mark 事件
+            emitTimingMark(stage, { elapsedMs: Math.round(durationMs) })
+          })
+          emitTimingMark('runtime_bootstrap_done')
+          bootstrapTimings = bootstrapResult.timings
+          bootstrapWarnings = [...bootstrapResult.warnings]
+          warnings = [...bootstrapWarnings]
+          agentCatalog.ensureInitialized()
+
+          if (submitInput.waitForMcp) {
+            await ensureMcpInitialized()
+          }
+
+          registry = getRegistry()
+          registerMcpTools(registry)
+          bootstrapSystemPrompt = getSystemPrompt()
         }
-
-        const registry = getRegistry()
-        registerMcpTools(registry)
         emitTimingMark('tool_registry_ready')
 
         const globalProvider = getOrCreateProvider(providerName, config)
@@ -317,9 +352,34 @@ export async function createRuntime(
         const primaryAgent = agentCatalog.resolvePrimaryAgent(config.agent?.default)
         warnings = [...warnings, ...primaryAgent.warnings]
         const systemPrompt = [
-          getSystemPrompt(),
+          bootstrapSystemPrompt,
           primaryAgent.agent.getSystemPrompt(),
         ].filter(Boolean).join('\n\n') || undefined
+        result.preparedSnapshot = {
+          ...(bootstrapSystemPrompt === undefined ? {} : { systemPrompt: bootstrapSystemPrompt }),
+          toolRegistry: registry,
+          toolDefinitions: registry.toToolDefinitions(),
+          bootstrapWarnings,
+          ...(bootstrapTimings === undefined ? {} : { bootstrapTimings }),
+          ...(preparedSnapshot?.agentConfigFingerprint === undefined
+            ? {}
+            : { agentConfigFingerprint: preparedSnapshot.agentConfigFingerprint }),
+          ...(preparedSnapshot?.skillsVersion === undefined
+            ? {}
+            : { skillsVersion: preparedSnapshot.skillsVersion }),
+          ...(preparedSnapshot?.hooksVersion === undefined
+            ? {}
+            : { hooksVersion: preparedSnapshot.hooksVersion }),
+          ...(preparedSnapshot?.mcpToolListVersion === undefined
+            ? {}
+            : { mcpToolListVersion: preparedSnapshot.mcpToolListVersion }),
+          ...(preparedSnapshot?.memoryVersion === undefined
+            ? {}
+            : { memoryVersion: preparedSnapshot.memoryVersion }),
+          ...(preparedSnapshot?.gitContextVersion === undefined
+            ? {}
+            : { gitContextVersion: preparedSnapshot.gitContextVersion }),
+        }
         emitTimingMark('history_hydration_start')
         const rawHistory = syncContextHistoryForSubmit(submitInput)
         emitTimingMark('history_hydration_done')
