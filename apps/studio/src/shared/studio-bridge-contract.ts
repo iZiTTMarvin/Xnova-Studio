@@ -563,11 +563,63 @@ export interface StudioBridgeApi {
   runtime: StudioRuntimeApi
   permission: StudioPermissionApi
   userInput: StudioUserInputApi
+  warmup: StudioWarmupApi
   shell: StudioShellApi
   settings: StudioSettingsApi
   memory: StudioMemoryApi
   mcp: StudioMcpApi
   skillsPlugins: StudioSkillsPluginsApi
+}
+
+// ═══ Runtime Warmup 状态 ═══
+
+/**
+ * Runtime warmup 状态枚举。
+ * warmup 是后台预热过程，不阻塞 submit；submit 可以走 slow path 兜底。
+ */
+export type RuntimeWarmupStatus =
+  | 'idle'
+  | 'warming'
+  | 'ready'
+  | 'stale'
+  | 'failed'
+
+/**
+ * Warmup 状态变更事件 — 从 main 广播到 renderer。
+ *
+ * 安全约束：
+ * - cwd / cacheKey 只作为内部标识，renderer 不应直接展示
+ * - error 只允许字符串摘要，不透出堆栈或敏感配置
+ * - 不包含 system prompt、tool definitions、API key 等敏感信息
+ */
+export interface RuntimeWarmupStatusChangedEvent {
+  status: RuntimeWarmupStatus
+  durationMs?: number | undefined
+  error?: string | undefined
+}
+
+/** warmup 状态对应的 UI 展示文案 */
+export const WARMUP_STATUS_LABELS: Record<RuntimeWarmupStatus, string> = {
+  idle: '',
+  warming: '正在准备运行时...',
+  ready: '运行时已就绪',
+  stale: '运行时配置变化，正在重新准备...',
+  failed: '运行时准备失败，将在提交时重试',
+}
+
+/** warmup 状态的合法值集合，用于 preload 校验 */
+export const VALID_WARMUP_STATUSES: ReadonlySet<string> = new Set<RuntimeWarmupStatus>([
+  'idle',
+  'warming',
+  'ready',
+  'stale',
+  'failed',
+])
+
+export interface StudioWarmupApi {
+  onStatusChanged(
+    listener: (event: RuntimeWarmupStatusChangedEvent) => void,
+  ): () => void
 }
 
 export const STUDIO_BRIDGE_GLOBAL_KEY = 'xnovaStudio'
@@ -595,4 +647,5 @@ export const STUDIO_BRIDGE_CHANNELS = {
   mcpAddServer: 'studio:mcp:add-server',
   mcpDeleteServer: 'studio:mcp:delete-server',
   skillsPluginsGetOverview: 'studio:skills-plugins:get-overview',
+  runtimeWarmupStatusChanged: 'studio:runtime:warmup-status-changed',
 } as const

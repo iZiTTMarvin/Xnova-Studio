@@ -13,6 +13,7 @@ import type {
   StudioRuntimeEvent,
   UserQuestionDialogRequest,
   UserQuestionDialogResponse,
+  RuntimeWarmupStatusChangedEvent,
 } from '../../shared/studio-bridge-contract'
 import {
   clearProjectWorkPreference,
@@ -260,6 +261,7 @@ export function useStudioBridge() {
     setCurrentRunStep,
     setLiveConversation,
     setContextState,
+    setWarmupStatus,
     handleRuntimeEvent,
     resetRuntimeState,
   } = useRuntimeStore(
@@ -283,6 +285,7 @@ export function useStudioBridge() {
       setCurrentRunStep: state.setCurrentRunStep,
       setLiveConversation: state.setLiveConversation,
       setContextState: state.setContextState,
+      setWarmupStatus: state.setWarmupStatus,
       handleRuntimeEvent: state.handleRuntimeEvent,
       resetRuntimeState: state.resetRuntimeState,
     })),
@@ -590,6 +593,8 @@ export function useStudioBridge() {
 
       setHostState(state)
       setHostStatus('ready')
+      // workspace 切换时重置 warmup 状态，避免旧 workspace 的状态残留
+      setWarmupStatus('idle')
       const storedPreference = readProjectWorkPreference(state.workspacePath)
       void loadShellSnapshot(state.workspacePath, storedPreference?.sessionId ?? undefined)
       void inspectRuntime(bridge, true)
@@ -727,6 +732,15 @@ export function useStudioBridge() {
         setCurrentRunStep('等待用户输入')
       }) ?? (() => undefined)
 
+    // 订阅 warmup 状态变更 — 辅助提示，不影响 composer 可用性
+    const unsubscribeWarmup =
+      bridge.warmup?.onStatusChanged((event) => {
+        if (disposed) {
+          return
+        }
+        setWarmupStatus(event.status)
+      }) ?? (() => undefined)
+
     return () => {
       disposed = true
       clearPendingLiveDeltaChunks()
@@ -734,6 +748,7 @@ export function useStudioBridge() {
       unsubscribeRuntime()
       unsubscribePermission()
       unsubscribeUserInput()
+      unsubscribeWarmup()
     }
   }, [bridge])
 

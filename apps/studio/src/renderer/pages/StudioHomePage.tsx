@@ -15,6 +15,7 @@ import { StudioSettingsDialog } from '../components/StudioSettingsDialog'
 import { PermissionDialog } from '../components/PermissionDialog'
 import { UserQuestionDialog } from '../components/UserQuestionDialog'
 import { IconSend, IconFolder, IconSuggestionExplore, IconCross } from '../components/Icons'
+import { WarmupStatusIndicator } from '../components/WarmupStatusIndicator'
 import { useStudioBridge } from '../hooks/useStudioBridge'
 import { useSessionStore } from '../stores/session-store'
 import { useRuntimeStore } from '../stores/runtime-store'
@@ -199,6 +200,7 @@ export function StudioHomePage() {
     lastRuntimeEventAt,
     liveConversation,
     contextState,
+    warmupStatus,
   } = useRuntimeStore(
     useShallow((state) => ({
       runtimeStatus: state.runtimeStatus,
@@ -214,6 +216,7 @@ export function StudioHomePage() {
       lastRuntimeEventAt: state.lastRuntimeEventAt,
       liveConversation: state.liveConversation,
       contextState: state.contextState,
+      warmupStatus: state.warmupStatus,
     })),
   )
   const [activeNavId, setActiveNavId] = useState<PrimaryNavId>('quick-chat')
@@ -581,76 +584,79 @@ export function StudioHomePage() {
     liveConversation.blocks.length > 0
 
   const composerArea = (
-    <div className="composer-shell composer-shell-codex">
-      <textarea
-        className="composer-input"
-        rows={3}
-        value={composerInput}
-        aria-label="项目级新对话输入"
-        placeholder="描述你要在当前项目完成的目标"
-        disabled={isRunActive}
-        onChange={(event) => {
-          setComposerInput(event.currentTarget.value)
-        }}
-        onKeyDown={(event) => {
-          if ((event.ctrlKey || event.metaKey) && event.key === 'Enter') {
-            event.preventDefault()
-            void handleSubmitPrompt()
-          }
-        }}
-      />
-      <div className="composer-footer composer-footer-stacked">
-        <div className="composer-tools composer-tools-extended">
-          <button type="button" className="ghost-icon-button" aria-label="添加上下文">
-            +
-          </button>
-          <span className="mini-pill mini-pill-warning">
-            {activeSession ? '继续会话' : '项目入口'}
-          </span>
-          <SessionModelPicker
-            settingsApi={settingsApi}
-            currentProviderId={currentProviderId}
-            currentModelId={currentModelId}
-            disabled={isSubmitting || isRunActive}
-            onChange={(providerId, modelId) => {
-              setCurrentProviderModel(providerId, modelId)
-              setComposerFeedback(null)
-            }}
-          />
-        </div>
-        <button
-          className="composer-send"
-          aria-label={isRunActive ? '停止当前运行' : '发送提示词'}
-          disabled={
-            isRunActive
-              ? !canCancelRun
-              : !canSubmitPrompt || composerInput.trim().length === 0
-          }
-          onClick={() => {
-            if (isRunActive) {
-              void handleCancelRun()
-              return
-            }
-            void handleSubmitPrompt()
+    <div className="composer-stack">
+      <WarmupStatusIndicator status={warmupStatus} />
+      <div className="composer-shell composer-shell-codex">
+        <textarea
+          className="composer-input"
+          rows={3}
+          value={composerInput}
+          aria-label="项目级新对话输入"
+          placeholder="描述你要在当前项目完成的目标"
+          disabled={isRunActive}
+          onChange={(event) => {
+            setComposerInput(event.currentTarget.value)
           }}
-        >
-          {isRunActive ? <IconCross /> : <IconSend />}
-        </button>
-      </div>
-      {isRunActive ? (
-        <div className="composer-feedback" role="status">
-          <strong>当前正在运行</strong>
-          {' '}
-          <span>{currentRunStep ?? '正在运行'}</span>
-          {' · '}
-          <span>{formatLastProgressTime(lastRuntimeEventAt)}</span>
+          onKeyDown={(event) => {
+            if ((event.ctrlKey || event.metaKey) && event.key === 'Enter') {
+              event.preventDefault()
+              void handleSubmitPrompt()
+            }
+          }}
+        />
+        <div className="composer-footer composer-footer-stacked">
+          <div className="composer-tools composer-tools-extended">
+            <button type="button" className="ghost-icon-button" aria-label="添加上下文">
+              +
+            </button>
+            <span className="mini-pill mini-pill-warning">
+              {activeSession ? '继续会话' : '项目入口'}
+            </span>
+            <SessionModelPicker
+              settingsApi={settingsApi}
+              currentProviderId={currentProviderId}
+              currentModelId={currentModelId}
+              disabled={isSubmitting || isRunActive}
+              onChange={(providerId, modelId) => {
+                setCurrentProviderModel(providerId, modelId)
+                setComposerFeedback(null)
+              }}
+            />
+          </div>
+          <button
+            className="composer-send"
+            aria-label={isRunActive ? '停止当前运行' : '发送提示词'}
+            disabled={
+              isRunActive
+                ? !canCancelRun
+                : !canSubmitPrompt || composerInput.trim().length === 0
+            }
+            onClick={() => {
+              if (isRunActive) {
+                void handleCancelRun()
+                return
+              }
+              void handleSubmitPrompt()
+            }}
+          >
+            {isRunActive ? <IconCross /> : <IconSend />}
+          </button>
         </div>
-      ) : null}
-      {composerFeedback ? (
-        <p className="composer-feedback">{composerFeedback}</p>
-      ) : runIdleWarning ? (
-        <p className="composer-feedback">{runIdleWarning}</p>
-      ) : null}
+        {isRunActive ? (
+          <div className="composer-feedback" role="status">
+            <strong>当前正在运行</strong>
+            {' '}
+            <span>{currentRunStep ?? '正在运行'}</span>
+            {' · '}
+            <span>{formatLastProgressTime(lastRuntimeEventAt)}</span>
+          </div>
+        ) : null}
+        {composerFeedback ? (
+          <p className="composer-feedback">{composerFeedback}</p>
+        ) : runIdleWarning ? (
+          <p className="composer-feedback">{runIdleWarning}</p>
+        ) : null}
+      </div>
     </div>
   )
 

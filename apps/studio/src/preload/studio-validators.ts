@@ -38,7 +38,9 @@ import type {
   UserQuestionDialogRequest,
   UserQuestionDialogResponse,
   WorkspaceSelectionResult,
+  RuntimeWarmupStatusChangedEvent,
 } from '../shared/studio-bridge-contract'
+import { VALID_WARMUP_STATUSES } from '../shared/studio-bridge-contract'
 
 export class StudioBridgeValidationError extends Error {
   constructor(message: string) {
@@ -2025,5 +2027,68 @@ export function parseStudioShellSnapshot(
       value.warnings === undefined
         ? []
         : parseStringArray(value.warnings, 'shell.warnings'),
+  }
+}
+
+// ═══ Warmup 状态事件校验 ═══
+
+/**
+ * 校验 warmup status changed 事件。
+ *
+ * 安全约束：
+ * - status 必须是合法枚举值
+ * - error 只允许字符串摘要（截断到 500 字符），不透出堆栈或敏感配置
+ * - 不允许 cwd、cacheKey、systemPrompt、toolDefinitions、apiKey 等敏感字段穿透
+ */
+export function parseStudioWarmupStatusChangedEvent(
+  payload: unknown,
+): RuntimeWarmupStatusChangedEvent {
+  const value = assertPlainObject(payload, 'warmup.statusChanged')
+
+  // status 枚举校验
+  if (typeof value.status !== 'string' || !VALID_WARMUP_STATUSES.has(value.status)) {
+    throw new StudioBridgeValidationError(
+      `warmup.statusChanged.status 非法: ${String(value.status)}`,
+    )
+  }
+
+  // durationMs 可选正数
+  if (
+    value.durationMs !== undefined &&
+    (typeof value.durationMs !== 'number' || !Number.isFinite(value.durationMs) || value.durationMs < 0)
+  ) {
+    throw new StudioBridgeValidationError(
+      'warmup.statusChanged.durationMs 必须是非负数。',
+    )
+  }
+
+  // error 只允许字符串摘要，截断到 500 字符
+  let error: string | undefined
+  if (value.error !== undefined) {
+    if (typeof value.error !== 'string') {
+      throw new StudioBridgeValidationError(
+        'warmup.statusChanged.error 必须是字符串。',
+      )
+    }
+    error = value.error.length > 500 ? value.error.slice(0, 500) : value.error
+  }
+
+  // 拒绝敏感字段穿透
+  const sensitiveFields = [
+    'cwd', 'cacheKey', 'systemPrompt', 'toolDefinitions',
+    'toolRegistry', 'apiKey', 'config', 'workspaceRoot',
+  ]
+  for (const field of sensitiveFields) {
+    if (field in value) {
+      throw new StudioBridgeValidationError(
+        `warmup.statusChanged 不允许包含 ${field} 字段。`,
+      )
+    }
+  }
+
+  return {
+    status: value.status as RuntimeWarmupStatusChangedEvent['status'],
+    ...(value.durationMs !== undefined ? { durationMs: value.durationMs as number } : {}),
+    ...(error !== undefined ? { error } : {}),
   }
 }

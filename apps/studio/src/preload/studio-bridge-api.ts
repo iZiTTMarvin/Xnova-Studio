@@ -23,6 +23,7 @@ import type {
   StudioShellSnapshot,
   StudioShellSnapshotRequest,
   StudioRuntimeEvent,
+  RuntimeWarmupStatusChangedEvent,
 } from '../shared/studio-bridge-contract'
 import { STUDIO_BRIDGE_CHANNELS, type StudioIpcRendererLike } from './studio-ipc-contract'
 import {
@@ -48,6 +49,7 @@ import {
   parseStudioShellSnapshot,
   parseStudioShellSnapshotRequest,
   parseStudioRuntimeInspectRequest,
+  parseStudioWarmupStatusChangedEvent,
 } from './studio-validators'
 import {
   createStudioRuntimeGateway,
@@ -70,6 +72,7 @@ export function createStudioBridgeApi(
   const hostListeners = new Set<(state: StudioHostState) => void>()
   const permissionListeners = new Set<(request: PermissionDialogRequest) => void>()
   const userInputListeners = new Set<(request: UserQuestionDialogRequest) => void>()
+  const warmupListeners = new Set<(event: RuntimeWarmupStatusChangedEvent) => void>()
   const runtimeGateway =
     options.runtimeGateway ?? createStudioRuntimeGateway({
       ipcRenderer: options.ipcRenderer,
@@ -102,6 +105,20 @@ export function createStudioBridgeApi(
       const request = parseStudioUserQuestionDialogRequest(payload)
       for (const listener of userInputListeners) {
         listener(request)
+      }
+    },
+  )
+
+  options.ipcRenderer.on(
+    STUDIO_BRIDGE_CHANNELS.runtimeWarmupStatusChanged,
+    (_event, payload) => {
+      try {
+        const event = parseStudioWarmupStatusChangedEvent(payload)
+        for (const listener of warmupListeners) {
+          listener(event)
+        }
+      } catch {
+        // 校验失败的 warmup 事件静默丢弃，不影响主链路
       }
     },
   )
@@ -308,6 +325,14 @@ export function createStudioBridgeApi(
       },
       async respond(input: UserQuestionDialogResponse) {
         return respondUserInput(input)
+      },
+    },
+    warmup: {
+      onStatusChanged(listener: (event: RuntimeWarmupStatusChangedEvent) => void) {
+        warmupListeners.add(listener)
+        return () => {
+          warmupListeners.delete(listener)
+        }
       },
     },
     shell: {

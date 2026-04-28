@@ -1,0 +1,146 @@
+/**
+ * WarmupStatusIndicator — 运行时预热状态的轻量提示。
+ *
+ * 设计原则：
+ * - 安静、专业、不打断聊天主流程
+ * - 放在 composer 上方，作为辅助上下文条
+ * - warming/stale 有轻微呼吸动效
+ * - ready 短暂显示后自然淡出
+ * - failed 清晰但不吓人
+ */
+
+.warmup-indicator {
+  display: inline-flex;
+  align-items: center;
+  align-self: flex-start;
+  gap: 8px;
+  min-height: 28px;
+  max-width: min(100%, 520px);
+  padding: 0 12px;
+  font-size: 12px;
+  line-height: 1.4;
+  border: 1px solid rgba(170, 183, 200, 0.14);
+  border-radius: 999px;
+  background:
+    linear-gradient(180deg, rgba(255, 255, 255, 0.07), rgba(255, 255, 255, 0.025)),
+    rgba(12, 16, 22, 0.72);
+  box-shadow:
+    0 8px 24px rgba(0, 0, 0, 0.18),
+    0 0 0 1px rgba(255, 255, 255, 0.025) inset;
+  backdrop-filter: blur(10px);
+  transition:
+    opacity 280ms ease,
+    transform 200ms ease;
+  user-select: none;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+  max-width: 100%;
+}
+
+/* ── 状态色 ── */
+
+.warmup-indicator-warming,
+.warmup-indicator-stale {
+  color: var(--text-muted);
+}
+
+.warmup-indicator-ready {
+  color: var(--success);
+}
+
+.warmup-indicator-failed {
+  color: var(--warning);
+  border-color: rgba(255, 189, 105, 0.22);
+  background:
+    linear-gradient(180deg, rgba(255, 189, 105, 0.11), rgba(255, 189, 105, 0.035)),
+    rgba(12, 16, 22, 0.78);
+}
+
+/* ── 状态圆点 ── */
+
+.warmup-dot {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  flex-shrink: 0;
+  box-shadow: 0 0 0 3px rgba(255, 255, 255, 0.035);
+}
+
+.warmup-dot-warming,
+.warmup-dot-stale {
+  background: var(--text-muted);
+  animation: warmup-breathe 1.6s ease-in-out infinite;
+}
+
+.warmup-dot-ready {
+  background: var(--success);
+  box-shadow:
+    0 0 0 3px rgba(73, 222, 128, 0.08),
+    0 0 14px rgba(73, 222, 128, 0.22);
+}
+
+.warmup-dot-failed {
+  background: var(--warning);
+  box-shadow:
+    0 0 0 3px rgba(255, 189, 105, 0.1),
+    0 0 14px rgba(255, 189, 105, 0.18);
+}
+
+.warmup-label {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+/* ── 呼吸动效 ── */
+
+@keyframes warmup-breathe {
+  0%, 100% {
+    opacity: 0.4;
+    transform: scale(0.85);
+  }
+  50% {
+    opacity: 1;
+    transform: scale(1.1);
+  }
+}
+
+/* ── 进入/退出过渡 ── */
+
+.warmup-indicator-enter {
+  opacity: 0;
+  transform: translateY(4px);
+}
+
+.warmup-indicator-visible {
+  opacity: 1;
+  transform: translateY(0);
+}
+
+.warmup-indicator-exit {
+  opacity: 0;
+  transform: translateY(-2px);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .warmup-indicator {
+    transition: none;
+  }
+
+  .warmup-dot-warming,
+  .warmup-dot-stale {
+    animation: none;
+  }
+}
+
+/* ── 窄宽度适配 ── */
+
+@media (max-width: 480px) {
+  .warmup-indicator {
+    font-size: 11px;
+    padding: 4px 8px;
+    white-space: normal;
+    word-break: break-word;
+  }
+}

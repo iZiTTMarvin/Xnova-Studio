@@ -3,6 +3,7 @@ import { immer } from 'zustand/middleware/immer'
 import type {
   PermissionDialogRequest,
   RuntimeInspectResult,
+  RuntimeWarmupStatus,
   StudioConversationBlock,
   StudioRunStatus,
   StudioRuntimeEvent,
@@ -370,6 +371,8 @@ function createInitialRuntimeState() {
     currentRunStep: null as string | null,
     liveConversation: createEmptyLiveConversation(),
     contextState: INITIAL_CONTEXT_STATE,
+    /** warmup 状态 — 辅助提示，不影响 composer 可用性 */
+    warmupStatus: 'idle' as RuntimeWarmupStatus,
   }
 }
 
@@ -388,6 +391,8 @@ export interface RuntimeStoreState {
   currentRunStep: string | null
   liveConversation: LiveConversationState
   contextState: ContextState
+  /** warmup 状态 — 辅助提示，不影响 composer 可用性 */
+  warmupStatus: RuntimeWarmupStatus
 }
 
 export interface RuntimeStoreActions {
@@ -407,6 +412,7 @@ export interface RuntimeStoreActions {
   setCurrentRunStep(input: NullableStringInput): void
   setLiveConversation(input: LiveConversationInput): void
   setContextState(state: ContextState): void
+  setWarmupStatus(status: RuntimeWarmupStatus): void
   handleRuntimeEvent(event: StudioRuntimeEvent): void
   resetRuntimeState(): void
 }
@@ -497,6 +503,11 @@ export const useRuntimeStore = create<RuntimeStoreState & RuntimeStoreActions>()
     setContextState(nextState) {
       set((state) => {
         state.contextState = nextState
+      })
+    },
+    setWarmupStatus(status) {
+      set((state) => {
+        state.warmupStatus = status
       })
     },
     handleRuntimeEvent(event) {

@@ -20,6 +20,7 @@ import {
 } from './studio-runtime-warmup'
 import { createMainWindowManager } from './window'
 import { selectWorkspaceDirectory } from './workspace'
+import { STUDIO_BRIDGE_CHANNELS } from '../shared/studio-bridge-contract'
 
 function waitForLogFlush(): Promise<void> {
   return new Promise((resolve) => {
@@ -39,6 +40,22 @@ const warmupManager = createRuntimeWarmupManager({
       ...(event.durationMs !== undefined ? { durationMs: event.durationMs } : {}),
       ...(event.error !== undefined ? { error: event.error } : {}),
     })
+
+    // 广播安全的 warmup 状态到 renderer（不含 cwd、cacheKey 等内部标识）
+    const safeEvent: import('../shared/studio-bridge-contract').RuntimeWarmupStatusChangedEvent = {
+      status: event.status,
+      ...(event.durationMs !== undefined ? { durationMs: event.durationMs } : {}),
+      // error 只保留摘要，截断到 200 字符，不透出堆栈或敏感配置
+      ...(event.error !== undefined
+        ? { error: event.error.length > 200 ? event.error.slice(0, 200) : event.error }
+        : {}),
+    }
+    mainWindowManager
+      .getMainWindow()
+      ?.webContents?.send(
+        STUDIO_BRIDGE_CHANNELS.runtimeWarmupStatusChanged,
+        safeEvent,
+      )
   },
 })
 const runtimeInspector = createStudioRuntimeInspector({
