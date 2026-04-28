@@ -1,0 +1,8 @@
+{"file": ".trellis/workflow.md", "reason": "Project workflow and conventions"}
+{"file": ".trellis/spec/backend/index.md", "reason": "Backend development guide"}
+{"file": ".trellis/spec/backend/runtime-warmup-and-event-observability.md", "reason": "warmup 状态机与 snapshot 骨架契约"}
+{"file": ".trellis/spec/backend/runtime-boundary.md", "reason": "main/runtime 边界约束"}
+{"file": "apps/studio/src/main/studio-runtime-manager.ts", "reason": "runtime 生命周期与缓存位置"}
+{"file": "apps/studio/src/main/studio-runtime-service.ts", "reason": "submit validate 与 slow path 回退"}
+{"file": "apps/studio/src/main/studio-ipc.ts", "reason": "openWorkspace/bindWorkspace 触发点"}
+{"file": "packages/core/src/bootstrap.ts", "reason": "warmup 第一阶段预热对象"}

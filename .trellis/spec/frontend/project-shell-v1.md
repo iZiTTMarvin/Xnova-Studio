@@ -16,6 +16,7 @@
   - `RuntimeSubmitRequest` 已包含 `sessionId / agentId / providerId / modelId`
   - `StudioShellSnapshot` 已包含 `activeSession.messages`
   - `StudioRuntimeEvent` 已承载 `text_delta / tool_start / tool_end / warning / error` 等流式事件
+- agent 思考、工具生命周期、warmup 状态等过程可见性专项规则见 [agent-process-visibility.md](./agent-process-visibility.md)。
 - `XForge` 当前不是可用模式；点击时必须弹出明确提示，而不是静默切换或继续假装可用。
 
 ## 场景：建立 Studio project-aware 主壳的交互契约

@@ -22,6 +22,7 @@
 | [type-safety.md](./type-safety.md) | TS 严格模式、事件联合、外部数据校验 | 基础版 |
 | [quality-guidelines.md](./quality-guidelines.md) | 页面状态、TDD、验证命令、设计回归点 | 基础版 |
 | [project-shell-v1.md](./project-shell-v1.md) | Studio 主壳：冷启动、项目侧栏、上下文条、模式切换、聊天主链路 | 当前主线 |
+| [agent-process-visibility.md](./agent-process-visibility.md) | agent 思考、工具生命周期、warmup 状态、过程可见性 | 专项 spec |
 
 ## Pre-Development Checklist
 
@@ -39,6 +40,7 @@
    - 自定义 Hook / runtime 事件订阅：读 [hook-guidelines.md](./hook-guidelines.md)
    - 跨层状态同步、启动恢复、会话偏好恢复：读 [state-management.md](./state-management.md) 与 [type-safety.md](./type-safety.md)
    - Studio 主壳、输入区、模式切换、项目/聊天块、会话时间线、模型选择器：加读 [project-shell-v1.md](./project-shell-v1.md)
+   - agent 思考、工具行、工具组、runtime warmup 状态、过程可见性：加读 [agent-process-visibility.md](./agent-process-visibility.md)
 4. 任何 renderer 改动都先确认：
    - loading / empty / error / disabled 是否都真实可见
    - 是否需要同步更新 `apps/studio/src/shared/studio-bridge-contract.ts`
@@ -68,3 +70,8 @@
   - 改动 `useStudioBridge`、`startup-route.ts`、`work-context.ts`
   - 改动冷启动恢复、项目/会话恢复、submit 主链路、runtime-not-ready 门禁
   - 改动 `apps/studio/src/shared/studio-bridge-contract.ts` 中与壳层相关的 contract
+- `agent-process-visibility.md`
+  - 改动 `ConversationTimeline`、`ReasoningRow`、`ToolActionRow`、`ToolActivityGroupRow`
+  - 改动 `runtime-store` 的 runtime event 映射
+  - 新增或修改 `tool_intent / tool_args_delta / tool_ready`
+  - 新增或修改 warmup status 在 renderer 中的展示

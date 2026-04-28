@@ -26,6 +26,7 @@
 | [logging-guidelines.md](./logging-guidelines.md) | 调试日志、会话观测、脱敏要求 | 基础版 |
 | [quality-guidelines.md](./quality-guidelines.md) | TDD、类型检查、测试门禁、反模式 | 基础版 |
 | [runtime-boundary.md](./runtime-boundary.md) | runtime / host / preload / renderer 的共享契约与 engine service API 约束 | 当前主线 |
+| [runtime-warmup-and-event-observability.md](./runtime-warmup-and-event-observability.md) | runtime warmup、snapshot fast path、submit timing、模型/工具事件可观测性 | 专项 spec |
 | [config-toml-migration.md](./config-toml-migration.md) | `config.json -> config.toml` 与 `project.toml` 迁移契约 | 专项 spec |
 | [agent-schema-v1.md](./agent-schema-v1.md) | Agent frontmatter v1、来源与校验规则 | 专项 spec |
 
@@ -41,6 +42,7 @@
 2. 必读 [directory-structure.md](./directory-structure.md)。
 3. 如果改动涉及以下主题，追加阅读：
    - runtime / host / preload / renderer 边界、engine service API、submit 契约、打包边界：读 [runtime-boundary.md](./runtime-boundary.md)
+   - runtime warmup、snapshot fast path、submit timing、模型/工具事件观测：读 [runtime-warmup-and-event-observability.md](./runtime-warmup-and-event-observability.md)
    - 配置、迁移、持久化：读 [database-guidelines.md](./database-guidelines.md) 和 [error-handling.md](./error-handling.md)
    - 启动编排、Hook、MCP、Memory：读 [error-handling.md](./error-handling.md) 和 [logging-guidelines.md](./logging-guidelines.md)
    - 新增 service、工具、Agent、API 契约：读 [quality-guidelines.md](./quality-guidelines.md)
@@ -77,6 +79,11 @@
   - 新增或修改 `apps/studio/src/main/**`、`apps/studio/src/preload/**`
   - 迁移旧 `cli/src/commands/**` 到 engine service API
   - 改动 renderer -> preload -> main -> runtime 的 submit / inspect / event 契约
+- `runtime-warmup-and-event-observability.md`
+  - 新增或修改 runtime warmup / snapshot cache / fast path
+  - 新增或修改 submit timing summary
+  - 新增或修改 `timing_mark`、`model_request_*`、`tool_*` 事件
+  - 修改 provider stream chunk、AgentLoop 事件或 runtime 事件转发
 - `config-toml-migration.md`
   - 读写 `config.toml` / `project.toml`
   - 迁移或兼容旧 `config.json`

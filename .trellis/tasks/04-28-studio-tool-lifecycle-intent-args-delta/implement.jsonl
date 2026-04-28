@@ -1,0 +1,12 @@
+{"file": ".trellis/workflow.md", "reason": "Project workflow and conventions"}
+{"file": ".trellis/spec/backend/index.md", "reason": "Backend development guide"}
+{"file": ".trellis/spec/frontend/index.md", "reason": "Frontend development guide"}
+{"file": ".trellis/spec/backend/runtime-warmup-and-event-observability.md", "reason": "工具生命周期事件后端契约"}
+{"file": ".trellis/spec/frontend/agent-process-visibility.md", "reason": "工具生命周期 UI 状态机"}
+{"file": "packages/core/src/types.ts", "reason": "StreamChunk 类型扩展"}
+{"file": "packages/providers/src/providers/openai-compat.ts", "reason": "OpenAI-compatible tool delta 来源"}
+{"file": "packages/providers/src/providers/anthropic.ts", "reason": "Anthropic tool use delta 来源"}
+{"file": "packages/core/src/agent-loop.ts", "reason": "AgentLoop 生命周期事件"}
+{"file": "packages/runtime/src/create-runtime.ts", "reason": "runtime 事件转发"}
+{"file": "apps/studio/src/shared/studio-bridge-contract.ts", "reason": "Studio RuntimeEvent contract"}
+{"file": "apps/studio/src/renderer/stores/runtime-store.ts", "reason": "renderer 工具状态机"}

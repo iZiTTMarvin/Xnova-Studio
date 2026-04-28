@@ -1,0 +1,6 @@
+{"file": ".agents/skills/trellis-check/SKILL.md", "reason": "Code quality check spec"}
+{"file": "docs/audits/studio-first-response-warmup-and-tool-visibility-audit.md", "reason": "父任务来源审计文档"}
+{"file": ".trellis/spec/backend/runtime-warmup-and-event-observability.md", "reason": "完整 warmup 与事件观测规范"}
+{"file": ".trellis/spec/frontend/agent-process-visibility.md", "reason": "agent 过程可见性规范"}
+{"file": ".trellis/tasks/04-28-studio-response-warmup-tool-visibility/research/xnova-audit-crosscheck.md", "reason": "Xnova 现状核对记录"}
+{"file": ".trellis/tasks/04-28-studio-response-warmup-tool-visibility/research/opencowork-agent-interaction-study.md", "reason": "OpenCowork 参考项目调研"}

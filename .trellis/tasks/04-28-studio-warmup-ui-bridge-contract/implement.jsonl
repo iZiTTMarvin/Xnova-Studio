@@ -1,0 +1,11 @@
+{"file": ".trellis/workflow.md", "reason": "Project workflow and conventions"}
+{"file": ".trellis/spec/backend/index.md", "reason": "Backend development guide"}
+{"file": ".trellis/spec/frontend/index.md", "reason": "Frontend development guide"}
+{"file": ".trellis/spec/backend/runtime-warmup-and-event-observability.md", "reason": "warmup shared contract 后端约束"}
+{"file": ".trellis/spec/frontend/agent-process-visibility.md", "reason": "warmup UI 展示约束"}
+{"file": ".trellis/spec/frontend/project-shell-v1.md", "reason": "Studio 主壳与 composer 门禁"}
+{"file": ".trellis/spec/frontend/state-management.md", "reason": "Zustand store 与 bridge 状态管理"}
+{"file": "apps/studio/src/shared/studio-bridge-contract.ts", "reason": "shared contract 定义位置"}
+{"file": "apps/studio/src/main/studio-ipc.ts", "reason": "main 广播 warmup status"}
+{"file": "apps/studio/src/renderer/hooks/useStudioBridge.ts", "reason": "renderer 订阅与状态落地"}
+{"file": "apps/studio/src/renderer/pages/StudioHomePage.tsx", "reason": "warmup 文案展示位置"}

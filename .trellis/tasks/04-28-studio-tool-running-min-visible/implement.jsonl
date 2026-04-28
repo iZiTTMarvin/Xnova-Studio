@@ -1,0 +1,8 @@
+{"file": ".trellis/workflow.md", "reason": "Project workflow and conventions"}
+{"file": ".trellis/spec/frontend/index.md", "reason": "Frontend development guide"}
+{"file": ".trellis/spec/frontend/agent-process-visibility.md", "reason": "工具 running 可见性规范"}
+{"file": ".trellis/spec/frontend/component-guidelines.md", "reason": "组件拆分与展示层约束"}
+{"file": "apps/studio/src/renderer/components/ToolActionRow.tsx", "reason": "单工具行展示层修改点"}
+{"file": "apps/studio/src/renderer/components/ToolActivityGroupRow.tsx", "reason": "工具组折叠逻辑，避免误改"}
+{"file": "apps/studio/src/renderer/utils/tool-event-summary.ts", "reason": "工具摘要与参数展示"}
+{"file": "apps/studio/src/renderer/utils/conversation-render-rows.ts", "reason": "工具行/组渲染模型"}

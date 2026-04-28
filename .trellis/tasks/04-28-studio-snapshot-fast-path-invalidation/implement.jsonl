@@ -1,0 +1,9 @@
+{"file": ".trellis/workflow.md", "reason": "Project workflow and conventions"}
+{"file": ".trellis/spec/backend/index.md", "reason": "Backend development guide"}
+{"file": ".trellis/spec/backend/runtime-warmup-and-event-observability.md", "reason": "snapshot fast path 与失效规则契约"}
+{"file": ".trellis/spec/backend/runtime-boundary.md", "reason": "runtime/host 共享边界"}
+{"file": "packages/core/src/bootstrap.ts", "reason": "system prompt 与 bootstrap 产物"}
+{"file": "packages/runtime/src/create-runtime.ts", "reason": "submit fast path 接入点"}
+{"file": "packages/runtime/src/engine-service-api.ts", "reason": "engine service 复用边界"}
+{"file": "packages/providers/src/providers/registry.ts", "reason": "provider cache 与 fingerprint 相关逻辑"}
+{"file": "apps/studio/src/main/studio-runtime-service.ts", "reason": "submit 分支与 timing 接入"}

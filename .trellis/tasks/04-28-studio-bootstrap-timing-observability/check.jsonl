@@ -1,0 +1,7 @@
+{"file": ".agents/skills/trellis-check/SKILL.md", "reason": "Code quality check spec"}
+{"file": ".trellis/spec/backend/runtime-warmup-and-event-observability.md", "reason": "timing 与 bootstrap 观测契约"}
+{"file": ".trellis/spec/backend/logging-guidelines.md", "reason": "脱敏日志与 timing 字段约束"}
+{"file": "packages/core/src/bootstrap.ts", "reason": "bootstrap 子阶段 timing 来源"}
+{"file": "packages/runtime/src/create-runtime.ts", "reason": "runtime timing_mark 转发点"}
+{"file": "apps/studio/src/main/studio-submit-timing.ts", "reason": "Studio submit timing summary"}
+{"file": "apps/studio/src/renderer/stores/runtime-store.ts", "reason": "renderer timing stage 文案映射"}

@@ -6,7 +6,7 @@
 
 ### 1. 会话事件日志
 
-- 入口：`cli/src/observability/session-logger.ts`
+- 入口：`packages/observability/src/observability/session-logger.ts`
 - 目标：把 Agent 事件映射为 session JSONL，供恢复、审计、可视化使用
 - 特征：
   - 结构化
@@ -15,15 +15,20 @@
 
 ### 2. 项目级调试日志
 
-- 入口：`cli/src/debug.ts`
+- 入口：
+  - `packages/core/src/debug.ts`
+  - `packages/providers/src/debug.ts`
+  - `packages/persistence/src/debug.ts`
+  - `packages/config/src/debug.ts`
 - 输出文件：`<project>/.xnovacode/debug.log`
 - 目标：记录不会被 Ink UI 覆盖的底层调试信息
 
-### 3. 前端/开发态控制台日志
+### 3. Studio submit timing 与开发态控制台日志
 
-- 现有示例：`cli/web/src/hooks/useApi.ts`
-- 用于本地调试请求与页面状态
-- 这是当前事实，不代表未来可以无限制扩张
+- 入口：`apps/studio/src/main/studio-submit-timing.ts`
+- 用于开发态拆解 submit 耗时，例如 runtime bootstrap、provider first chunk、first visible progress。
+- timing 事件只能记录安全字段；不得记录完整 prompt、messages、headers、API key、Authorization 或工具内容全文。
+- renderer 控制台日志只用于本地调试，量变大时必须收敛到结构化事件或 debug log。
 
 ## 记录什么
 
@@ -31,6 +36,7 @@
 
 - 启动耗时、阶段状态、降级 warning
 - LLM 调用起止、token 统计、tool 调用、MCP 连接
+- runtime warmup 状态、bootstrap 子阶段耗时、provider 首包耗时
 - 会影响用户排障的关键上下文：
   - provider
   - model
@@ -91,6 +97,7 @@ dbg(`[HookManager] hook 配置加载失败 source=${source}: ${message}\n`)
 | API 调试日志 | 只能打印必要字段，不能打印密钥 |
 | 新增观测字段 | 优先结构化存储，保持前端可消费 |
 | 高频循环日志 | 必须评估噪声与性能，避免刷屏 |
+| submit timing / warmup timing | 只允许安全字段，禁止 prompt / content / headers / secret |
 
 ## Good / Base / Bad Cases
 
@@ -130,9 +137,11 @@ console.log('[Settings] provider updated', {
 ## 参考文件
 
 - `cli/src/observability/session-logger.ts`
-- `cli/src/debug.ts`
-- `cli/src/core/bootstrap.ts`
-- `cli/web/src/hooks/useApi.ts`
+- `packages/observability/src/observability/session-logger.ts`
+- `packages/core/src/debug.ts`
+- `packages/providers/src/debug.ts`
+- `packages/core/src/bootstrap.ts`
+- `apps/studio/src/main/studio-submit-timing.ts`
 
 ## 反模式
 
