@@ -43,6 +43,20 @@ const ACTION_TOOL_NAMES = new Set([
   'move_file',
 ])
 
+/**
+ * 需要 running 最小可见时间的动作类工具。
+ * 这些工具执行速度可能极快（< 100ms），但用户需要感知到"正在执行"的过程。
+ * 探索类工具不在此列，避免影响工具组折叠等已有展示行为。
+ */
+const MIN_VISIBLE_ACTION_TOOL_NAMES = new Set([
+  'write_file',
+  'edit_file',
+  'bash',
+  'git',
+  'todo_write',
+  'dispatch_agent',
+])
+
 export function normalizeToolName(toolName: string): string {
   const trimmed = toolName.trim()
   if (!trimmed) {
@@ -67,4 +81,12 @@ export function isActionTool(toolName: string): boolean {
     return false
   }
   return ACTION_TOOL_NAMES.has(normalizedToolName) || normalizedToolName.length > 0
+}
+
+/**
+ * 判断工具是否需要 running 最小可见时间。
+ * 仅限明确的动作类工具，探索类工具不启用，避免影响工具组聚合逻辑。
+ */
+export function isMinVisibleActionTool(toolName: string): boolean {
+  return MIN_VISIBLE_ACTION_TOOL_NAMES.has(normalizeToolName(toolName))
 }

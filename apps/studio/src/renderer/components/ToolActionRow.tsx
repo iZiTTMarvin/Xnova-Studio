@@ -8,6 +8,8 @@ import {
   truncateText,
 } from '../utils/tool-event-summary'
 import { MarkdownContent } from '../utils/markdown-renderer'
+import { isMinVisibleActionTool } from '../utils/tool-classification'
+import { useMinVisibleStatus } from '../hooks/useMinVisibleStatus'
 
 interface ToolActionRowProps {
   tool: ToolRowModel
@@ -19,8 +21,8 @@ function isToolFailure(tool: ToolRowModel): boolean {
   return tool.status === 'error' || tool.success === false
 }
 
-function getToolStatusLabel(tool: ToolRowModel): string {
-  if (tool.status === 'running') {
+function getToolStatusLabel(tool: ToolRowModel, displayStatus: 'running' | 'done' | 'error'): string {
+  if (displayStatus === 'running') {
     return '进行中'
   }
   return isToolFailure(tool) ? '失败' : '成功'
@@ -81,6 +83,12 @@ export const ToolActionRow = memo(function ToolActionRow(props: ToolActionRowPro
     }
     props.onExpandedChange?.(nextExpanded)
   }
+
+  // 展示层状态：动作类工具启用最小可见时间，避免快速完成时 running 态一闪而过
+  const displayStatus = useMinVisibleStatus(props.tool.status, {
+    enabled: isMinVisibleActionTool(props.tool.toolName),
+  })
+
   const summary = createToolEventSummary(
     props.tool.toolName,
     props.tool.args,
@@ -90,8 +98,14 @@ export const ToolActionRow = memo(function ToolActionRow(props: ToolActionRowPro
     props.tool.toolName,
     props.tool.args,
   )
+  // 视觉状态基于 displayStatus，而非直接读 tool.status
+  // 当 displayStatus 仍为 running（min-visible 延迟中），不提前显示失败样式
+  const isRunning = displayStatus === 'running'
+  const isFailure = !isRunning && (displayStatus === 'error' || isToolFailure(props.tool))
   const durationText = formatDurationLabel(props.tool.durationMs)
-  const failureSummary = getVisibleFailureSummary(props.tool)
+  const rawFailureSummary = getVisibleFailureSummary(props.tool)
+  // min-visible 延迟期间继续保持 running 观感，避免同时出现 spinner 和失败文案
+  const failureSummary = isFailure ? (rawFailureSummary ?? '工具执行失败') : null
   const detailResultSummary =
     failureSummary === null && props.tool.resultSummary?.trim()
       ? truncateText(props.tool.resultSummary.trim(), 160)
@@ -100,8 +114,6 @@ export const ToolActionRow = memo(function ToolActionRow(props: ToolActionRowPro
     typeof props.tool.resultFull === 'string' &&
     props.tool.resultFull.trim().length > 0 &&
     props.tool.resultFull !== props.tool.resultSummary
-  const isRunning = props.tool.status === 'running'
-  const isFailure = isToolFailure(props.tool)
   const hasExpandableDetails =
     argumentDetails.length > 0 || detailResultSummary !== null || hasResultFull
   const resultLang = inferResultLang(props.tool)
@@ -150,7 +162,7 @@ export const ToolActionRow = memo(function ToolActionRow(props: ToolActionRowPro
         </span>
 
         <span className="tool-action-row-meta">
-          <span className="tool-action-row-status-text">{getToolStatusLabel(props.tool)}</span>
+          <span className="tool-action-row-status-text">{getToolStatusLabel(props.tool, displayStatus)}</span>
           {durationText ? (
             <span className="tool-action-row-duration">{durationText}</span>
           ) : null}
