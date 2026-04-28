@@ -26,6 +26,17 @@ interface SummaryLineInput {
   to: string
 }
 
+/** 模型请求阶段：initial=首次 / after_tool_result=工具反馈后 / retry=重试 */
+type ModelRequestPhase = 'initial' | 'after_tool_result' | 'retry'
+
+/** 单轮模型请求的聚合统计 */
+interface ModelRequestRecord {
+  phase: ModelRequestPhase
+  startedAt: number
+  finishedAt?: number
+  failedAt?: number
+}
+
 const SAFE_DETAIL_KEYS = new Set([
   'providerId',
   'modelId',
@@ -39,6 +50,27 @@ const SAFE_DETAIL_KEYS = new Set([
 
 const SENSITIVE_DETAIL_KEY_PATTERN =
   /(api[_-]?key|authorization|token|secret|password|prompt|content|messages|headers|cookie)/i
+
+/** bootstrap 子阶段 — 从 timing_mark 的 stage 前缀 `bootstrap.` 提取 */
+const BOOTSTRAP_STAGE_LABELS: Record<string, string> = {
+  'bootstrap.skills': 'skills',
+  'bootstrap.instructions': 'instructions',
+  'bootstrap.hooks': 'hooks',
+  'bootstrap.sessionStartHooks': 'sessionStartHooks',
+  'bootstrap.fileIndex': 'fileIndex',
+  'bootstrap.plugins': 'plugins',
+  'bootstrap.memory': 'memory',
+  'bootstrap.shellSnapshot': 'shellSnapshot',
+  'bootstrap.gitContext': 'gitContext',
+  'bootstrap.systemPrompt': 'systemPrompt',
+  'bootstrap.total': 'total',
+}
+
+/**
+ * bootstrap 子阶段超过此阈值（毫秒）时，在开发态日志中标记为慢阶段。
+ * 帮助开发者快速定位首次响应瓶颈。
+ */
+const BOOTSTRAP_SLOW_THRESHOLD_MS = 500
 
 const SUMMARY_LINES: SummaryLineInput[] = [
   {
@@ -190,6 +222,72 @@ function buildSummaryLines(marks: TimingMark[]): string[] {
   })
 }
 
+/**
+ * 从 marks 中提取 bootstrap 子阶段耗时 summary。
+ * bootstrap 子阶段的 mark 带有 `elapsedMs` detail，直接使用。
+ */
+function buildBootstrapSubStageSummary(marks: TimingMark[]): string[] {
+  const lines: string[] = []
+  const slowStages: string[] = []
+
+  for (const mark of marks) {
+    const label = BOOTSTRAP_STAGE_LABELS[mark.stage]
+    if (!label) continue
+
+    const elapsedMs =
+      typeof mark.details?.elapsedMs === 'number' ? mark.details.elapsedMs : null
+    if (elapsedMs === null) continue
+
+    const suffix =
+      label !== 'total' && elapsedMs > BOOTSTRAP_SLOW_THRESHOLD_MS ? ' ⚠ slow' : ''
+    lines.push(`  - ${label}: ${formatDuration(elapsedMs)}${suffix}`)
+
+    if (label !== 'total' && elapsedMs > BOOTSTRAP_SLOW_THRESHOLD_MS) {
+      slowStages.push(label)
+    }
+  }
+
+  if (lines.length === 0) return []
+
+  const header = ['- bootstrap sub-stages:']
+  if (slowStages.length > 0) {
+    header.push(`  ⚠ slow stages: ${slowStages.join(', ')}`)
+  }
+  return [...header, ...lines]
+}
+
+/**
+ * 从多轮模型请求记录中构建聚合 summary。
+ * 按 phase 分组统计次数和总耗时。
+ */
+function buildModelRequestSummary(records: ModelRequestRecord[]): string[] {
+  if (records.length === 0) return []
+
+  // 按 phase 聚合
+  const byPhase = new Map<ModelRequestPhase, { count: number; totalMs: number }>()
+  for (const record of records) {
+    const endAt = record.finishedAt ?? record.failedAt
+    const durationMs = endAt !== undefined ? endAt - record.startedAt : undefined
+
+    const existing = byPhase.get(record.phase) ?? { count: 0, totalMs: 0 }
+    existing.count += 1
+    if (durationMs !== undefined) {
+      existing.totalMs += durationMs
+    }
+    byPhase.set(record.phase, existing)
+  }
+
+  const lines: string[] = ['- model requests:']
+  for (const [phase, stats] of byPhase) {
+    const avgMs = stats.count > 0 ? Math.round(stats.totalMs / stats.count) : 0
+    lines.push(
+      `  - ${phase}: ${stats.count}x, total ${formatDuration(stats.totalMs)}, avg ${formatDuration(avgMs)}`,
+    )
+  }
+  lines.push(`  - total rounds: ${records.length}`)
+  return lines
+}
+
 export function isStudioSubmitTimingEnabled(
   env: NodeJS.ProcessEnv = process.env,
 ): boolean {
@@ -202,6 +300,9 @@ export function createStudioSubmitTiming(
   const marks: TimingMark[] = []
   const now = options.now ?? (() => Date.now())
   let finished = false
+
+  /** 多轮模型请求聚合记录 */
+  const modelRequestRecords: ModelRequestRecord[] = []
 
   const markAt = (
     stage: string,
@@ -259,31 +360,57 @@ export function createStudioSubmitTiming(
     markFirst,
     markRuntimeEvent(event: StudioRuntimeEvent): void {
       markFirst('runtime_first_event_received')
+
       if (event.type === 'timing_mark') {
         const stage =
           typeof event.payload?.stage === 'string' ? event.payload.stage : null
         if (stage) {
-          markFirst(stage, event.payload)
+          // bootstrap 子阶段允许重复记录（每个 stage 名称不同），不用 markFirst
+          if (stage in BOOTSTRAP_STAGE_LABELS) {
+            mark(stage, event.payload)
+          } else {
+            markFirst(stage, event.payload)
+          }
         }
         return
       }
 
       switch (event.type) {
-        case 'model_request_started':
+        case 'model_request_started': {
+          // 首次 mark 用于 summary line 计算
           markFirst('model_request_started', event.payload)
+          // 每轮都记录，用于多轮聚合统计
+          const phase =
+            (event.payload?.phase as ModelRequestPhase) ?? 'initial'
+          modelRequestRecords.push({
+            phase,
+            startedAt: now(),
+          })
           break
+        }
         case 'model_first_chunk':
           markFirst('model_first_chunk', event.payload)
           if (event.payload?.chunkType === 'tool_call') {
             markFirst('first_tool_intent_or_tool_start', event.payload)
           }
           break
-        case 'model_request_finished':
+        case 'model_request_finished': {
           markFirst('model_request_finished', event.payload)
+          // 更新最近一轮模型请求的完成时间
+          const lastRecord = modelRequestRecords.at(-1)
+          if (lastRecord && lastRecord.finishedAt === undefined) {
+            lastRecord.finishedAt = now()
+          }
           break
-        case 'model_request_failed':
+        }
+        case 'model_request_failed': {
           markFirst('model_request_failed', event.payload)
+          const lastFailedRecord = modelRequestRecords.at(-1)
+          if (lastFailedRecord && lastFailedRecord.failedAt === undefined) {
+            lastFailedRecord.failedAt = now()
+          }
           break
+        }
         case 'text_delta':
           markFirst('first_text_delta')
           markFirst('first_visible_progress')
@@ -308,17 +435,24 @@ export function createStudioSubmitTiming(
       finished = true
 
       const lines = buildSummaryLines(marks)
-      if (lines.length === 0) {
+      const bootstrapLines = buildBootstrapSubStageSummary(marks)
+      const modelRequestLines = buildModelRequestSummary(modelRequestRecords)
+
+      const allLines = [...lines, ...bootstrapLines, ...modelRequestLines]
+      if (allLines.length === 0) {
         return
       }
 
-      options.logger.info(`Submit timing:\n${lines.join('\n')}`, {
+      options.logger.info(`Submit timing:\n${allLines.join('\n')}`, {
         status,
         marks: marks.map((markItem) => ({
           stage: markItem.stage,
           at: markItem.at,
           ...(markItem.details ? { details: markItem.details } : {}),
         })),
+        ...(modelRequestRecords.length > 1
+          ? { modelRequestRounds: modelRequestRecords.length }
+          : {}),
       })
     },
   }

@@ -285,7 +285,10 @@ export async function createRuntime(
       try {
         emitTimingMark('createRuntime.submit_start')
         emitTimingMark('runtime_bootstrap_start')
-        const bootstrapResult = await bootstrapAll(input.cwd)
+        const bootstrapResult = await bootstrapAll(input.cwd, (stage, durationMs) => {
+          // 将 bootstrap 子阶段耗时逐项转发为 timing_mark 事件
+          emitTimingMark(stage, { elapsedMs: Math.round(durationMs) })
+        })
         emitTimingMark('runtime_bootstrap_done')
         warnings = [...bootstrapResult.warnings]
         agentCatalog.ensureInitialized()

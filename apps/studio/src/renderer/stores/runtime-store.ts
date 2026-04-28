@@ -531,8 +531,21 @@ export const useRuntimeStore = create<RuntimeStoreState & RuntimeStoreActions>()
               typeof event.payload?.stage === 'string'
                 ? event.payload.stage
                 : undefined
+
+            // bootstrap 子阶段中文文案映射，避免 bootstrap 阶段 UI 死寂
             const stepMap: Record<string, string> = {
               runtime_bootstrap_start: '正在加载工作区配置',
+              'bootstrap.skills': '正在发现 Skills',
+              'bootstrap.instructions': '正在加载指令',
+              'bootstrap.hooks': '正在发现 Hooks',
+              'bootstrap.sessionStartHooks': '正在执行启动钩子',
+              'bootstrap.fileIndex': '正在扫描文件索引',
+              'bootstrap.plugins': '正在加载插件',
+              'bootstrap.memory': '正在初始化记忆系统',
+              'bootstrap.shellSnapshot': '正在创建 Shell 快照',
+              'bootstrap.gitContext': '正在收集 Git 上下文',
+              'bootstrap.systemPrompt': '正在构建系统提示词',
+              'bootstrap.total': '启动编排已完成',
               tool_registry_ready: '工具与插件已就绪',
               history_hydration_start: '正在恢复对话上下文',
               context_build_start: '正在构建模型上下文',

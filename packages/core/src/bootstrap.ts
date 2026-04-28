@@ -554,10 +554,20 @@ export interface BootstrapTimings {
   instructions: number
   hooks: number
   sessionStartHooks: number
-  systemPrompt: number
   fileIndex: number
+  plugins: number
+  memory: number
+  shellSnapshot: number
+  gitContext: number
+  systemPrompt: number
   total: number
 }
+
+/**
+ * Bootstrap timing sink — 每完成一个子阶段就回调一次，
+ * 供 runtime 层逐项转发 timing_mark 事件给 Studio。
+ */
+export type BootstrapTimingSink = (stage: string, durationMs: number) => void
 
 const bootstrapPromises = new Map<string, Promise<BootstrapResult>>()
 
@@ -579,14 +589,39 @@ export const isDevMode = (process.argv[1] ?? '').endsWith('.ts')
  *
  * MCP 不在此编排内 — 通过 startMcpBackground() 后台静默加载。
  */
-export function bootstrapAll(cwd = process.cwd()): Promise<BootstrapResult> {
+export function bootstrapAll(
+  cwd = process.cwd(),
+  timingSink?: BootstrapTimingSink,
+): Promise<BootstrapResult> {
   const runtimeCwd = cwd.trim() || process.cwd()
   const cached = bootstrapPromises.get(runtimeCwd)
   if (cached) return cached
 
   const bootstrapPromise = (async (): Promise<BootstrapResult> => {
     const t0 = performance.now()
-    const timings: Record<string, number> = {}
+    // 直接使用 BootstrapTimings 类型，避免 `as unknown as BootstrapTimings` 掩盖字段缺失
+    const timings: BootstrapTimings = {
+      skills: 0,
+      instructions: 0,
+      hooks: 0,
+      sessionStartHooks: 0,
+      fileIndex: 0,
+      plugins: 0,
+      memory: 0,
+      shellSnapshot: 0,
+      gitContext: 0,
+      systemPrompt: 0,
+      total: 0,
+    }
+
+    /**
+     * 记录子阶段耗时并通过 sink 逐项发出，
+     * 让 runtime 层能实时转发 timing_mark 给 Studio。
+     */
+    const recordStage = (stage: keyof BootstrapTimings, durationMs: number) => {
+      timings[stage] = durationMs
+      timingSink?.(`bootstrap.${stage}`, durationMs)
+    }
 
     // 链 A' 产出的 hookContext，链 F' 产出的 gitContext，需要跨 Promise.all 传递
     let hookContext = ''
@@ -597,49 +632,49 @@ export function bootstrapAll(cwd = process.cwd()): Promise<BootstrapResult> {
       (async () => {
         let t = performance.now()
         await ensureSkillsDiscovered()
-        timings['skills'] = performance.now() - t
+        recordStage('skills', performance.now() - t)
 
         t = performance.now()
         ensureInstructionsLoaded(runtimeCwd)
-        timings['instructions'] = performance.now() - t
+        recordStage('instructions', performance.now() - t)
 
         t = performance.now()
         await ensureHooksDiscovered(runtimeCwd)
-        timings['hooks'] = performance.now() - t
+        recordStage('hooks', performance.now() - t)
 
         t = performance.now()
         hookContext = await runSessionStartHooks('startup', runtimeCwd)
-        timings['sessionStartHooks'] = performance.now() - t
+        recordStage('sessionStartHooks', performance.now() - t)
       })(),
       // 链 B'：文件索引扫描（磁盘 IO，完全独立）
       (async () => {
         const t = performance.now()
         await ensureFileIndexReady(runtimeCwd)
-        timings['fileIndex'] = performance.now() - t
+        recordStage('fileIndex', performance.now() - t)
       })(),
       // 链 C'：Runtime Plugin 发现与激活（独立于 Skills/Hooks）
       (async () => {
         const t = performance.now()
         await ensurePluginsLoaded()
-        timings['plugins'] = performance.now() - t
+        recordStage('plugins', performance.now() - t)
       })(),
       // 链 D'：MemoryManager 同步阶段（扫描文件 + BM25，毫秒级）
       (async () => {
         const t = performance.now()
         await ensureMemoryInitialized(runtimeCwd)
-        timings['memory'] = performance.now() - t
+        recordStage('memory', performance.now() - t)
       })(),
       // 链 E'：Shell 快照创建（完全独立，后续 bash 命令 source 快照跳过 login shell）
       (async () => {
         const t = performance.now()
         await startSnapshotCreation()
-        timings['shellSnapshot'] = performance.now() - t
+        recordStage('shellSnapshot', performance.now() - t)
       })(),
       // 链 F'：Git 上下文收集（非 git 仓库返回提示，超时降级）
       (async () => {
         const t = performance.now()
         gitContext = await collectGitContext(runtimeCwd)
-        timings['gitContext'] = performance.now() - t
+        recordStage('gitContext', performance.now() - t)
       })(),
     ])
 
@@ -651,7 +686,7 @@ export function bootstrapAll(cwd = process.cwd()): Promise<BootstrapResult> {
       memoryContext = await memoryManagerInstance.getRelevantContext(runtimeCwd)
     }
     buildSystemPrompt(runtimeCwd, hookContext, memoryContext || undefined, gitContext || undefined)
-    timings['systemPrompt'] = performance.now() - t
+    recordStage('systemPrompt', performance.now() - t)
 
     // 后台：增量 embed（不阻塞启动和首次对话）
     if (memoryManagerInstance) {
@@ -661,13 +696,15 @@ export function bootstrapAll(cwd = process.cwd()): Promise<BootstrapResult> {
     // 退出时清理 shell 快照文件
     process.on('exit', () => { void cleanupSnapshot() })
 
-    timings['total'] = performance.now() - t0
+    const totalMs = performance.now() - t0
+    timings.total = totalMs
+    timingSink?.('bootstrap.total', totalMs)
 
     return {
       skillsReady: true,
       fileIndexReady: true,
       systemPromptReady: true,
-      timings: timings as unknown as BootstrapTimings,
+      timings,
       warnings: [...bootstrapWarnings],
     }
   })()
