@@ -830,6 +830,55 @@ const nativeRuntimeExternals = ['libsql', /^@libsql\//]
   - `apps/studio/src/main/studio-runtime-inspector.ts`
   - `apps/studio/src/shared/studio-bridge-contract.ts`
 
+## 场景：Windows 下 shell 文件操作必须被工具策略纠偏
+
+### 1. Scope / Trigger
+
+- 触发条件：
+  - 修改 `packages/core/src/bootstrap.ts` 的 system prompt / behavior guidance
+  - 修改 `packages/tools/src/core/bash.ts`
+  - 修改工具结果 `ToolResultMeta` 或 Studio 工具错误摘要展示
+- 这是 Windows 真实运行体验约束：模型可以使用 bash 执行 git、pnpm、测试、构建等系统命令，但不允许继续用 shell 代替结构化文件工具。
+
+### 2. Contracts
+
+- Windows 平台的 system prompt 必须额外注入 Windows 工具策略：
+  - 读文件用 `read_file`
+  - 创建文件用 `write_file`
+  - 修改文件用 `edit_file`
+  - 搜索内容用 `grep`
+  - 匹配文件用 `glob`
+  - 切换工作目录用 bash 工具的 `cwd` 参数，不用 `cd && command`
+- 非 Windows 平台不得注入 Windows 专属策略，避免污染跨平台提示。
+- `bash` 工具在 Windows 下遇到常见文件操作误用时，必须快速返回结构化 hint，而不是真的执行后让模型猜原因：
+  - `cat/type/Get-Content/head/tail` -> `read_file`
+  - `dir/ls/Get-ChildItem/find` -> `glob`
+  - `grep/findstr/Select-String` -> `grep`
+  - `echo > / >> / Set-Content / Out-File / Add-Content` -> `write_file`
+  - `sed/awk` -> `edit_file`
+  - `cd ... && ...` 或 `Set-Location ...; ...` -> `bash.cwd`
+- hint 必须进入 `ToolResult.error/output/meta`，让 AgentLoop 下一轮能看到“建议工具”和“原因”。
+
+### 3. Validation & Error Matrix
+
+| 条件 | 处理方式 |
+|---|---|
+| Windows 下模型用 `cat index.html` | `bash` 返回失败 + 建议 `read_file` |
+| Windows 下模型用 `echo ... > index.html` | `bash` 返回失败 + 建议 `write_file` |
+| Windows 下模型用 `cd src && pnpm test` | `bash` 返回失败 + 建议传 `cwd` |
+| 模型用 `pnpm test`、`git status`、`node --version` | 保持允许，不触发工具策略拦截 |
+| 非 Windows 平台构建 system prompt | 不出现 Windows 专属段落 |
+
+### 4. Tests Required
+
+- `packages/tools/src/__tests__/tool-priority-enforcement.test.ts`
+  - Windows prompt 注入 / 非 Windows 不注入
+  - 常见 shell 误用命中 hint
+  - git/pnpm/node 等系统命令不被拦截
+  - Windows 下 `BashTool.execute()` 返回结构化 hint
+- `apps/studio/tests/tool-event-summary.test.ts`
+  - bash resultSummary 中的工具策略 hint 能被摘要为可读建议
+
 ## 反模式
 
 - 不要把 runtime contract 只留在聊天记录里，不写进 spec 与测试。

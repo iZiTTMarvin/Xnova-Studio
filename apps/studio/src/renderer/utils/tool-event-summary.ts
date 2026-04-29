@@ -57,6 +57,26 @@ function resolveGitTarget(args: Record<string, unknown>): string | null {
   return pieces.length > 0 ? truncateText(pieces.join(' '), COMMAND_TARGET_MAX_LENGTH) : null
 }
 
+function extractToolPolicySuggestion(resultSummary?: string | null): string | null {
+  const summary = resultSummary?.trim()
+  if (!summary) {
+    return null
+  }
+
+  const lines = summary.split(/\r\n|\r|\n/).map((line) => line.trim()).filter(Boolean)
+  const policyLine = lines.find((line) => line.includes('工具策略提示'))
+  if (!policyLine) {
+    return null
+  }
+
+  const suggestedToolLine = lines.find((line) => /^建议工具[:：]/.test(line))
+  const normalizedPolicyLine = policyLine.replace(/^\[工具策略提示\]\s*/, '')
+  const suggestion = suggestedToolLine
+    ? `${normalizedPolicyLine}（${suggestedToolLine}）`
+    : normalizedPolicyLine
+  return truncateText(suggestion, 120)
+}
+
 export function createToolEventSummary(
   toolName: string,
   args: Record<string, unknown>,
@@ -145,11 +165,12 @@ export function createToolEventSummary(
 
     case 'bash': {
       const command = getStringArg(args, ['command'])
+      const policySuggestion = extractToolPolicySuggestion(resultSummary)
       return {
         title: '执行命令',
         target: command ? truncateText(command, COMMAND_TARGET_MAX_LENGTH) : null,
-        detail: getStringArg(args, ['cwd']),
-        severity: 'warning',
+        detail: policySuggestion ?? getStringArg(args, ['cwd']),
+        severity: policySuggestion ? 'error' : 'warning',
       }
     }
 

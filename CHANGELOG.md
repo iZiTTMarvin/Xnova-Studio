@@ -1,4 +1,8 @@
 ## 2026-04-29
+- **Studio Windows 工具策略**：减少模型在 Windows 下误用 shell 读写文件导致的失败
+  - Windows system prompt 追加专属工具策略，明确读写、编辑、搜索、列目录和 cwd 切换应使用 `read_file/write_file/edit_file/grep/glob/bash.cwd`
+  - `bash` 工具在 Windows 下拦截 `cat/type/Get-Content/dir/ls/cd &&/echo >` 等常见误用，返回结构化 hint 给模型自我纠正
+  - Studio 工具行会把工具策略 hint 摘要成“建议工具”提示，用户能看到失败原因和推荐操作
 - **Studio AgentLoop 卡死保护**：为工具反馈后的模型循环增加轮次预算与安全停止
   - AgentLoop 在 `after_tool_result` 请求过多或连续低进展时先发出收束提醒，模型仍继续调用工具时会停止并给出原因
   - Runtime 将保护事件转为 warning 和 timing mark，Submit timing 可显示 guard 原因、模型轮次和低进展计数

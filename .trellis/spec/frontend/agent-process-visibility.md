@@ -58,6 +58,7 @@ interface RuntimeWarmupViewState {
 - thinking 应独立成可折叠行；实时思考中默认展开，完成后可自动折叠，但用户手动展开状态要保留。
 - warmup 状态必须是辅助提示，不能禁用输入框；submit 仍由 runtime-ready / workspace 门禁控制。
 - AgentLoop 触发轮次预算或低进展保护时，renderer 必须展示可读 warning；终态文案应表达“已触发安全停止”，不能伪装成普通成功，也不能留下 pending/running 工具 spinner。
+- bash 工具返回 `[工具策略提示]` 这类结构化失败摘要时，工具行必须把“建议改用哪个工具”作为可见摘要展示，不能只显示泛化的命令失败或退出码。
 
 ### 4. Validation & Error Matrix
 
@@ -70,6 +71,7 @@ interface RuntimeWarmupViewState {
 | warmup failed | 显示“运行时准备失败，将在提交时重试”，但不禁用 composer |
 | thinking 内容为空但模型已开始推理 | 展示 thinking placeholder 和计时 |
 | AgentLoop 达到轮次预算或低进展阈值 | 显示安全停止 warning，并用终态状态块说明“已触发安全停止” |
+| bash 因 Windows 工具策略拦截返回 hint | 显示建议工具，例如“建议工具: read_file / write_file / glob”，帮助用户理解下一步 |
 
 ### 5. Good / Base / Bad Cases
 
@@ -99,6 +101,8 @@ interface RuntimeWarmupViewState {
 - `runtime-store` 测试：
   - AgentLoop guard warning 能追加 system warning
   - `budget_exceeded/stalled/max_turns` 终态显示为安全停止，而非普通完成
+- `tool-event-summary` 测试：
+  - bash 工具策略 hint 能从 resultSummary 中提取为可读摘要，并标记为错误严重度
 
 ### 7. Wrong vs Correct
 

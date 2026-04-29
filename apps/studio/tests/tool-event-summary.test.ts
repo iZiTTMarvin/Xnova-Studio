@@ -44,4 +44,27 @@ describe('tool event summary', () => {
     expect(summary.detail).toBe('D:/workspace/demo')
     expect(summary.severity).toBe('warning')
   })
+
+  it('bash 失败摘要包含工具策略提示时展示建议工具并标记为 error', () => {
+    const resultSummary = [
+      '[工具策略提示] 不要用 bash 读文件，请改用 read_file 工具并传 path。',
+      '建议工具: read_file',
+      '原因: read_file 会走统一的 workspace、截断和摘要策略。',
+    ].join('\n')
+
+    const summary = createToolEventSummary(
+      'bash',
+      {
+        command: 'cat index.html',
+        cwd: 'D:/workspace/demo',
+      },
+      resultSummary,
+    )
+
+    expect(summary.title).toBe('执行命令')
+    expect(summary.target).toBe('cat index.html')
+    expect(summary.detail).toContain('改用 read_file')
+    expect(summary.detail).toContain('建议工具: read_file')
+    expect(summary.severity).toBe('error')
+  })
 })

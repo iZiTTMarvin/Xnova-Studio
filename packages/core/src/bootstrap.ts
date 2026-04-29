@@ -46,6 +46,7 @@ import { LibsqlVectorStore } from '@memory/storage/libsql-vector-store.js'
 import { configManager } from '@config/config-manager.js'
 import { loadEffectiveRuntimeConfig } from '@config/resolver.js'
 import { startSnapshotCreation, cleanupSnapshot } from '@platform/shell-snapshot.js'
+import { detectPlatform } from '@platform/detector.js'
 import { execa } from 'execa'
 import { join } from 'node:path'
 import { homedir } from 'node:os'
@@ -368,6 +369,27 @@ export interface SystemPromptSection {
 let cachedSections: SystemPromptSection[] = []
 
 /**
+ * Windows 专属工具策略。
+ *
+ * 这段独立成纯函数，既方便 system prompt 按平台注入，也方便测试覆盖
+ * “Windows 注入 / 非 Windows 不注入”的契约，避免后续只改通用提示词时回退。
+ */
+export function buildWindowsToolPolicyPrompt(isWindows = detectPlatform().isWindows): string {
+  if (!isWindows) return ''
+
+  return [
+    '# Windows 工具策略',
+    '',
+    '- 当前运行在 Windows / PowerShell 语义下。处理文件内容时必须用结构化工具，不要用 shell 命令绕过工具层。',
+    '- 读文件：必须用 read_file；不要用 cat、type、Get-Content、head、tail。',
+    '- 写文件或创建文件：必须用 write_file；修改已有文件必须用 edit_file；不要用 echo >、>>、Set-Content、Out-File、Add-Content。',
+    '- 搜索内容：必须用 grep 工具；匹配文件：必须用 glob 工具；不要用 grep 命令、findstr、Select-String、dir、ls、Get-ChildItem、find。',
+    '- 切换目录：不要用 cd、Set-Location 或 cd && command 改长期 cwd；需要在某目录执行命令时，给 bash 工具传 cwd 参数。',
+    '- bash 只用于 git、pnpm/npm、构建、测试、安装依赖、进程管理等系统命令；写 HTML/CSS/JS 文件也必须走 write_file/edit_file。',
+  ].join('\n')
+}
+
+/**
  * 构建并缓存 system prompt（幂等，只构建一次）。
  *
  * 需要在 ensureSkillsDiscovered / ensureHooksDiscovered / ensureInstructionsLoaded 之后调用。
@@ -384,6 +406,7 @@ export function buildSystemPrompt(cwd: string, hookContext: string, memoryContex
 
   const instructionsPrompt = getInstructionsPrompt()
   const skillsPrompt = getSkillsSystemPrompt()
+  const windowsToolPolicyPrompt = buildWindowsToolPolicyPrompt()
 
   // 保存各段元信息（供记忆全景面板展示）
   cachedSections = []
@@ -447,8 +470,9 @@ export function buildSystemPrompt(cwd: string, hookContext: string, memoryContex
     '3. 简洁报告完成状态，不要重复展示已做的事情',
   ].join('\n')
 
-  const parts = [behaviorGuidance, instructionsPrompt, skillsPrompt, hookContext, memoryContext, gitContext].filter(Boolean)
+  const parts = [behaviorGuidance, windowsToolPolicyPrompt, instructionsPrompt, skillsPrompt, hookContext, memoryContext, gitContext].filter(Boolean)
   if (behaviorGuidance) cachedSections.unshift({ name: 'Behavior', charLength: behaviorGuidance.length })
+  if (windowsToolPolicyPrompt) cachedSections.push({ name: 'WindowsToolPolicy', charLength: windowsToolPolicyPrompt.length })
   cachedSystemPrompt = parts.length > 0 ? parts.join('\n\n') : undefined
   cachedSystemPromptCwd = cwd
 }

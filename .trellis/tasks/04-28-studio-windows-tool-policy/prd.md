@@ -37,10 +37,10 @@
 
 ## Acceptance Criteria
 
-- [ ] Windows 平台 system prompt 包含明确工具策略。
-- [ ] 常见 shell 误用返回结构化 hint。
-- [ ] UI 工具错误摘要能显示建议。
-- [ ] 非 Windows 平台不注入 Windows 专属策略。
+- [x] Windows 平台 system prompt 包含明确工具策略。
+- [x] 常见 shell 误用返回结构化 hint。
+- [x] UI 工具错误摘要能显示建议。
+- [x] 非 Windows 平台不注入 Windows 专属策略。
 
 ## Tests Required
 

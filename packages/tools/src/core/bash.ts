@@ -11,6 +11,21 @@ import type { Tool, ToolContext, ToolResult } from './types.js'
 const DEFAULT_TIMEOUT_MS = 120_000
 /** 最大超时 600 秒（10 分钟） */
 const MAX_TIMEOUT_MS = 600_000
+/** Bash 工具策略拦截使用的退出码，不代表真实 shell 进程退出。 */
+const POLICY_BLOCK_EXIT_CODE = -2
+
+export interface BashToolPolicyHint {
+  code:
+    | 'windows-use-cwd'
+    | 'windows-use-read-file'
+    | 'windows-use-glob'
+    | 'windows-use-write-file'
+    | 'windows-use-edit-file'
+    | 'windows-use-grep'
+  suggestedTool: string
+  message: string
+  reason: string
+}
 
 export class BashTool implements Tool {
   readonly name = 'bash'
@@ -58,6 +73,16 @@ export class BashTool implements Tool {
     const cwd = String(args['cwd'] ?? ctx.cwd)
     const shell = resolveShell()
     const runInBackground = args['run_in_background'] === true
+    const platform = detectPlatform()
+    const policyHint = platform.isWindows ? getWindowsBashToolPolicyHint(command) : null
+
+    /**
+     * Windows 下最常见的卡点不是 shell 真失败，而是模型用 shell 去做本该由结构化工具
+     * 负责的文件操作。这里直接失败并返回可执行 hint，让 AgentLoop 下一轮能改用正确工具。
+     */
+    if (policyHint) {
+      return buildPolicyFailureResult(command, policyHint)
+    }
 
     // 解析 timeout：无效值 / 负数 / 0 → 默认值，超过上限 → 截断
     const rawTimeout = Number(args['timeout'])
@@ -204,6 +229,134 @@ export class BashTool implements Tool {
       const message = err instanceof Error ? err.message : String(err)
       return { success: false, output: '', error: message }
     }
+  }
+}
+
+/**
+ * 识别 Windows/PowerShell 下容易导致黑盒失败的 shell 文件操作。
+ *
+ * bash 仍然允许 git、pnpm、测试、构建、进程管理等系统命令；这里只拦截项目已经有
+ * 专用工具覆盖的文件读写、搜索、列目录和 cwd 切换写法。
+ */
+export function getWindowsBashToolPolicyHint(command: string): BashToolPolicyHint | null {
+  const normalized = unwrapShellLauncher(command.trim())
+  if (!normalized) return null
+
+  if (usesInlineCd(normalized)) {
+    return {
+      code: 'windows-use-cwd',
+      suggestedTool: 'bash.cwd',
+      message: '不要用 cd 或 cd && command 改工作目录，请把目标目录传给 bash 工具的 cwd 参数。',
+      reason: 'Windows / PowerShell 的目录切换只影响当前 shell 进程，容易让后续工具仍在旧目录执行。',
+    }
+  }
+
+  if (/^\s*(?:cat|type|get-content|gc|head|tail)\b/i.test(normalized)) {
+    return {
+      code: 'windows-use-read-file',
+      suggestedTool: 'read_file',
+      message: '不要用 bash 读文件，请改用 read_file 工具并传 path。',
+      reason: 'read_file 会走统一的 workspace、截断和摘要策略，比 shell 读文件更安全可控。',
+    }
+  }
+
+  if (/^\s*(?:dir|ls|get-childitem|gci)\b/i.test(normalized)) {
+    return {
+      code: 'windows-use-glob',
+      suggestedTool: 'glob',
+      message: '不要用 bash 列目录，请改用 glob 工具并传 pattern。',
+      reason: 'glob 会按项目忽略规则匹配文件，避免 Windows shell 别名和路径语义差异。',
+    }
+  }
+
+  if (/^\s*find\b/i.test(normalized)) {
+    return {
+      code: 'windows-use-glob',
+      suggestedTool: 'glob',
+      message: '不要用 bash 查找文件，请改用 glob 工具；需要搜索文件内容时使用 grep 工具。',
+      reason: 'Windows 下 find 语义容易与 Unix find 混淆，结构化工具能返回稳定结果。',
+    }
+  }
+
+  if (usesShellWrite(normalized)) {
+    return {
+      code: 'windows-use-write-file',
+      suggestedTool: 'write_file',
+      message: '不要用 bash 写入或创建文件，请改用 write_file；修改已有文件时用 edit_file。',
+      reason: 'write_file/edit_file 会做 workspace 边界检查和结构化结果上报，避免重定向写入失败后不可见。',
+    }
+  }
+
+  if (/^\s*(?:sed|awk)\b/i.test(normalized)) {
+    return {
+      code: 'windows-use-edit-file',
+      suggestedTool: 'edit_file',
+      message: '不要用 bash 编辑文件，请改用 edit_file 工具并提供 old_str/new_str。',
+      reason: 'edit_file 能返回明确 diff 和失败原因，避免 sed/awk 在 Windows shell 中行为不一致。',
+    }
+  }
+
+  if (/^\s*(?:grep|findstr|select-string)\b/i.test(normalized)) {
+    return {
+      code: 'windows-use-grep',
+      suggestedTool: 'grep',
+      message: '不要用 bash 搜索文件内容，请改用 grep 工具并传 pattern。',
+      reason: 'grep 工具会按 workspace 和忽略规则搜索，并给 UI 返回稳定摘要。',
+    }
+  }
+
+  return null
+}
+
+function unwrapShellLauncher(command: string): string {
+  const trimmed = command.trim()
+  const shellLauncher = /^(?:powershell(?:\.exe)?|pwsh(?:\.exe)?|cmd(?:\.exe)?)\s+(?:-NoProfile\s+)?(?:-Command|-c|\/c)\s+(.+)$/i.exec(trimmed)
+  if (!shellLauncher?.[1]) return trimmed
+  return stripOuterQuotes(shellLauncher[1].trim())
+}
+
+function stripOuterQuotes(value: string): string {
+  if (
+    (value.startsWith('"') && value.endsWith('"')) ||
+    (value.startsWith("'") && value.endsWith("'"))
+  ) {
+    return value.slice(1, -1).trim()
+  }
+  return value
+}
+
+function usesInlineCd(command: string): boolean {
+  return /^\s*(?:cd|chdir|set-location|sl)\b[\s\S]*(?:&&|;)/i.test(command)
+}
+
+function usesShellWrite(command: string): boolean {
+  if (/^\s*(?:set-content|out-file|add-content)\b/i.test(command)) return true
+  if (/^\s*new-item\b[\s\S]*\b(?:-itemtype|-type)\s+file\b/i.test(command)) return true
+  return /^\s*(?:echo|printf)\b[\s\S]*(?:^|[^>])(?:>{1,2})(?![>&])/i.test(command)
+}
+
+function formatPolicyHint(hint: BashToolPolicyHint): string {
+  return [
+    `[工具策略提示] ${hint.message}`,
+    `建议工具: ${hint.suggestedTool}`,
+    `原因: ${hint.reason}`,
+  ].join('\n')
+}
+
+function buildPolicyFailureResult(command: string, hint: BashToolPolicyHint): ToolResult {
+  return {
+    success: false,
+    output: formatPolicyHint(hint),
+    error: formatPolicyHint(hint),
+    meta: {
+      type: 'bash',
+      exitCode: POLICY_BLOCK_EXIT_CODE,
+      command: command.length > 200 ? command.slice(0, 200) + '...' : command,
+      timedOut: false,
+      policyCode: hint.code,
+      suggestedTool: hint.suggestedTool,
+      hint: hint.message,
+    },
   }
 }
 

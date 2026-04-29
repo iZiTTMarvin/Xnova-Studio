@@ -10,8 +10,8 @@
  */
 import { describe, it, expect } from 'vitest'
 import fc from 'fast-check'
-import { BashTool } from '../core/bash.js'
-import { buildSystemPrompt, getSystemPrompt } from '@core/bootstrap.js'
+import { BashTool, getWindowsBashToolPolicyHint } from '../core/bash.js'
+import { buildSystemPrompt, buildWindowsToolPolicyPrompt, getSystemPrompt } from '@core/bootstrap.js'
 
 describe('Bug Condition — 系统提示词工具优先级不足', () => {
   /**
@@ -72,6 +72,71 @@ describe('Bug Condition — 系统提示词工具优先级不足', () => {
     // 当前代码：'bash 只用于系统命令' — 缺少明确的"禁止"条款
     // 期望代码：包含"禁止使用 bash 执行"或"禁止用于文件操作"等措辞
     expect(prompt).toMatch(/禁止.*bash|bash.*禁止/)
+  })
+})
+
+describe('Windows 工具策略提示', () => {
+  it('Windows 平台提示词应注入明确的结构化工具策略', () => {
+    const prompt = buildWindowsToolPolicyPrompt(true)
+
+    expect(prompt).toContain('Windows 工具策略')
+    expect(prompt).toContain('read_file')
+    expect(prompt).toContain('write_file')
+    expect(prompt).toContain('edit_file')
+    expect(prompt).toContain('grep')
+    expect(prompt).toContain('glob')
+    expect(prompt).toMatch(/cd.*cwd|cwd.*cd/i)
+    expect(prompt).toContain('PowerShell')
+  })
+
+  it('非 Windows 平台不应注入 Windows 专属提示', () => {
+    expect(buildWindowsToolPolicyPrompt(false)).toBe('')
+  })
+
+  it.each([
+    ['cat index.html', 'windows-use-read-file', 'read_file'],
+    ['type index.html', 'windows-use-read-file', 'read_file'],
+    ['Get-Content index.html', 'windows-use-read-file', 'read_file'],
+    ['dir src', 'windows-use-glob', 'glob'],
+    ['ls src', 'windows-use-glob', 'glob'],
+    ['cd src && pnpm test', 'windows-use-cwd', 'bash.cwd'],
+    ['echo "<html></html>" > index.html', 'windows-use-write-file', 'write_file'],
+    ['Set-Content index.html "<html></html>"', 'windows-use-write-file', 'write_file'],
+    ['grep "title" index.html', 'windows-use-grep', 'grep'],
+  ])('识别 Windows shell 误用：%s', (command, expectedCode, expectedTool) => {
+    const hint = getWindowsBashToolPolicyHint(command)
+
+    expect(hint?.code).toBe(expectedCode)
+    expect(hint?.suggestedTool).toBe(expectedTool)
+    expect(hint?.message).toMatch(/不要用 bash|不要用 cd/)
+  })
+
+  it('不拦截 bash 的系统命令能力', () => {
+    expect(getWindowsBashToolPolicyHint('pnpm --filter xnova-studio test')).toBeNull()
+    expect(getWindowsBashToolPolicyHint('git status --short')).toBeNull()
+    expect(getWindowsBashToolPolicyHint('node --version')).toBeNull()
+  })
+
+  it('Windows 下 bash 执行常见文件误用时返回结构化 hint', async () => {
+    if (process.platform !== 'win32') {
+      return
+    }
+
+    const bash = new BashTool()
+    const result = await bash.execute(
+      { command: 'cd src && pnpm test' },
+      { cwd: process.cwd() },
+    )
+
+    expect(result.success).toBe(false)
+    expect(result.error).toContain('工具策略提示')
+    expect(result.error).toContain('cwd')
+    expect(result.meta).toMatchObject({
+      type: 'bash',
+      exitCode: -2,
+      policyCode: 'windows-use-cwd',
+      suggestedTool: 'bash.cwd',
+    })
   })
 })
 
