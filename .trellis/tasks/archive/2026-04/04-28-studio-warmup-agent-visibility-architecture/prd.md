@@ -56,11 +56,11 @@
 
 ## Acceptance Criteria
 
-- [ ] 父任务下所有子任务都已创建并写好 PRD。
-- [ ] backend/frontend spec 已补充 runtime warmup、事件观测、agent 过程可见性约束。
-- [ ] 子任务之间的依赖清晰，前序任务不会阻断后续完整 snapshot fast path。
-- [ ] 每个子任务都有测试建议和验收标准。
-- [ ] 所有术语第一次出现都有中文解释或中文职责说明。
+- [x] 父任务下所有子任务都已创建并写好 PRD。
+- [x] backend/frontend spec 已补充 runtime warmup、事件观测、agent 过程可见性约束。
+- [x] 子任务之间的依赖清晰，前序任务不会阻断后续完整 snapshot fast path。
+- [x] 每个子任务都有测试建议和验收标准。
+- [x] 所有术语第一次出现都有中文解释或中文职责说明。
 
 ## Definition of Done
 
