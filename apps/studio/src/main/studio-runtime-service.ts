@@ -531,6 +531,7 @@ interface ActiveStudioRun {
         phase?: 'initial' | 'after_tool_result' | 'retry'
       }
     | null
+  terminalFallbackTimer: ReturnType<typeof setTimeout> | null
   resolveSubmit?: (result: RuntimeTurnResult) => void
   rejectSubmit?: (error: Error) => void
 }
@@ -864,6 +865,13 @@ export function createStudioRuntimeService(
     }, firstChunkTimeoutMs)
   }
 
+  function clearTerminalFallbackTimer(run: ActiveStudioRun): void {
+    if (run.terminalFallbackTimer) {
+      clearTimeout(run.terminalFallbackTimer)
+      run.terminalFallbackTimer = null
+    }
+  }
+
   function releaseActiveRun(run: ActiveStudioRun): void {
     if (run.released) {
       return
@@ -871,6 +879,7 @@ export function createStudioRuntimeService(
 
     run.released = true
     clearFirstChunkGuard(run)
+    clearTerminalFallbackTimer(run)
     run.submitActivity?.clear()
     run.runtimeEntry.bridgeState.submitActivity = null
     runtimeManager.releaseRuntime(run.runtimeEntry)
@@ -943,7 +952,17 @@ export function createStudioRuntimeService(
         },
       })
     }
-    run.resolveSubmit?.(result)
+    // Runtime 的 terminal event（turn_end/session_end）会早于 submit Promise resolve。
+    // 这里先让 UI 收敛，但把 IPC resolve 延后一拍：正常 runtime 会在微任务里返回
+    // 含 preparedSnapshot 的真实 RuntimeTurnResult；只有 Promise 卡死时才用合成结果兜底。
+    clearTerminalFallbackTimer(run)
+    run.terminalFallbackTimer = setTimeout(() => {
+      run.terminalFallbackTimer = null
+      if (run.released || currentRun?.runId !== run.runId) {
+        return
+      }
+      run.resolveSubmit?.(result)
+    }, 0)
   }
 
   function cancelPendingRuntimeInteractions(reason: string): void {
@@ -1329,6 +1348,7 @@ export function createStudioRuntimeService(
           timing: submitTiming,
           firstChunkTimer: null,
           pendingModelRequest: null,
+          terminalFallbackTimer: null,
         }
         currentRun = activeRun
         const runtimeSubmitInput: RuntimeSubmitInput = {
@@ -1362,6 +1382,9 @@ export function createStudioRuntimeService(
                 return
               }
               settled = true
+              if (activeRun) {
+                clearTerminalFallbackTimer(activeRun)
+              }
               runtimeHandle.entry.bridgeState.submitActivity = null
               submitActivity.clear()
               callback()

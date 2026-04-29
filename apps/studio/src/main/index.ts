@@ -1,5 +1,6 @@
 import { stat } from 'node:fs/promises'
 import { loadResolvedConfig } from '@config/resolver.js'
+import { agentCatalog } from '@tools/agent/catalog.js'
 import { app, BrowserWindow, dialog, ipcMain } from 'electron'
 import { registerStudioMainIpcHandlers } from './studio-ipc'
 import { startMainProcess } from './lifecycle'
@@ -18,6 +19,7 @@ import {
   buildProviderFingerprint,
   createRuntimeWarmupManager,
 } from './studio-runtime-warmup'
+import { normalizeRuntimePath } from './normalize-runtime-path'
 import { createMainWindowManager } from './window'
 import { selectWorkspaceDirectory } from './workspace'
 import { STUDIO_BRIDGE_CHANNELS } from '../shared/studio-bridge-contract'
@@ -112,18 +114,28 @@ const skillsPluginsService = createStudioSkillsPluginsService({
 function startWorkspaceWarmup(workspacePath: string): void {
   try {
     const config = loadResolvedConfig(workspacePath).effective
-    const provider = config.defaultProvider
-    const model = config.defaultModel
+    const warmupAgentId =
+      config.agent?.default ?? agentCatalog.resolvePrimaryAgent().agent.agentType
+    const warmupRuntimeConfig = {
+      ...config,
+      agent: {
+        ...(config.agent ?? {}),
+        default: warmupAgentId,
+      },
+    }
+    const provider = warmupRuntimeConfig.defaultProvider
+    const model = warmupRuntimeConfig.defaultModel
     warmupManager.startWarmup({
       cwd: workspacePath,
       workspaceRoot: workspacePath,
+      agentId: warmupAgentId,
       providerFingerprint: buildProviderFingerprint({
         provider,
         model,
-        baseURL: config.providers[provider]?.baseURL ?? null,
+        baseURL: warmupRuntimeConfig.providers[provider]?.baseURL ?? null,
       }),
       configFingerprint: buildConfigFingerprint(
-        config as unknown as Record<string, unknown>,
+        warmupRuntimeConfig as unknown as Record<string, unknown>,
       ),
     })
   } catch (error) {
@@ -219,11 +231,15 @@ registerStudioMainIpcHandlers({
     // 跟踪上一个 warmup workspace，切换时先 abort 旧路径再 start 新路径
     let previousWarmupWorkspace: string | null = null
     return (workspacePath: string) => {
-      if (previousWarmupWorkspace && previousWarmupWorkspace !== workspacePath) {
+      const normalizedWorkspace = normalizeRuntimePath(workspacePath)
+      if (!normalizedWorkspace) {
+        return
+      }
+      if (previousWarmupWorkspace && previousWarmupWorkspace !== normalizedWorkspace) {
         warmupManager.abortWarmup(previousWarmupWorkspace)
       }
-      previousWarmupWorkspace = workspacePath
-      startWorkspaceWarmup(workspacePath)
+      previousWarmupWorkspace = normalizedWorkspace
+      startWorkspaceWarmup(normalizedWorkspace)
     }
   })(),
   logger,

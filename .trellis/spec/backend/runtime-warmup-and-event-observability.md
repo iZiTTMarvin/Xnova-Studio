@@ -89,10 +89,12 @@ interface RuntimeTurnResult {
 - Warmup 必须由 Studio main 调度，不允许 renderer 直接调用 `bootstrapAll()` 或访问 runtime internals。
 - Warmup 不得调用 LLM，不得创建 `AgentLoop`，不得消耗 token。
 - Warmup cache key 必须使用规范化 cwd / workspaceRoot；Windows 上不得只依赖 `trim()`。
+- Workspace 打开后启动 warmup 时，main 侧必须使用与 renderer 默认 submit 一致的身份维度：默认 Agent、provider、model、mode 与配置指纹必须和 `StudioShellInspector -> hydrateStudioBridgeSnapshot -> RuntimeSubmitRequest` 这条链路一致。尤其当默认 Agent 非空时，warmup key 不能落成 `__default_agent__`，否则首次 submit 会查另一个 key。
 - `PreparedRuntimeSnapshot` 可以在内存保存 system prompt、tool definitions 与可执行 tool registry，但不得通过 IPC 发给 renderer，也不得写入日志。
 - `PreparedRuntimeSnapshot` 进入 `ready` 前必须具备真正可复用的装配产物：至少包含 `systemPrompt`、完整 `toolDefinitions`（含参数 schema）和可执行 `toolRegistry`。只填充 `bootstrapReady` 的空壳 snapshot 不允许命中 fast path。
 - Runtime fast path 必须实际消费 `RuntimeSubmitInput.preparedSnapshot`：命中时跳过已准备好的 `bootstrapAll()`、`getSystemPrompt()`、`getRegistry()`、`registerMcpTools()`，并把 snapshot 内的 `toolRegistry` 传给 `AgentLoop`。
 - Runtime slow path 成功后必须通过 `RuntimeTurnResult.preparedSnapshot` 返回真实装配结果，Studio main 用它刷新 warmup snapshot；不得用只有 `skillsReady/fileIndexReady/systemPromptReady` 的空对象伪装 ready。
+- Studio main 可以用 `turn_end/session_end` terminal event 让 UI 先收敛，但不能让合成的 terminal result 抢先替代真实 `RuntimeTurnResult`；否则 slow path 返回的 `preparedSnapshot` 会丢失，后续 submit 仍然无法命中 fast path。
 - Submit 入口必须统一执行 snapshot validate：
   - 命中且未过期：走 fast path，跳过已准备好的装配步骤。
   - 未命中、过期或 warmup failed：走 slow path，并在成功后刷新 snapshot。

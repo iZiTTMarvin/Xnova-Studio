@@ -2458,4 +2458,125 @@ describe('studio runtime service', () => {
       }),
     )
   })
+
+  it('runtime 先发 turn_end 时仍等待真实 submit 结果刷新 preparedSnapshot', async () => {
+    let runtimeBridge: RuntimeHostBridge | null = null
+    const toolDefinitions = [
+      {
+        name: 'read_file',
+        description: 'Read file',
+        parameters: {},
+      },
+    ]
+    const toolRegistry = {
+      toToolDefinitions: vi.fn(() => toolDefinitions),
+    }
+    const warmupManager = {
+      startWarmup: vi.fn(),
+      abortWarmup: vi.fn(),
+      getStatus: vi.fn(() => 'idle' as const),
+      validateSnapshot: vi.fn(() => ({
+        hit: false,
+        snapshot: null,
+        missReason: 'no-snapshot' as const,
+      })),
+      invalidateSnapshot: vi.fn(),
+      invalidateAll: vi.fn(),
+      refreshSnapshot: vi.fn(),
+      getEntryKeys: vi.fn(() => []),
+      dispose: vi.fn(),
+    }
+    const runtimeInstance: RuntimeInstance = {
+      submit: vi.fn(async (): Promise<RuntimeTurnResult> => {
+        runtimeBridge?.emit({
+          type: 'turn_end',
+          timestamp: '2026-04-26T00:00:02.000Z',
+          sessionId: 'session-1',
+          payload: {
+            stopReason: 'end_turn',
+            aborted: false,
+          },
+        })
+        return {
+          text: 'done',
+          thinking: '',
+          stopReason: 'end_turn',
+          llmCallCount: 1,
+          toolCallCount: 0,
+          usage: {
+            inputTokens: 1,
+            outputTokens: 1,
+            cacheReadTokens: 0,
+            cacheWriteTokens: 0,
+          },
+          aborted: false,
+          historyCompacted: false,
+          sessionId: 'session-1',
+          preparedSnapshot: {
+            systemPrompt: 'real prepared prompt',
+            toolDefinitions,
+            toolRegistry: toolRegistry as never,
+          },
+        }
+      }),
+      abort: vi.fn(),
+      dispose: vi.fn(async () => undefined),
+      getSnapshot: vi.fn(() => ({
+        sessionId: 'session-1',
+        isRunning: false,
+        provider: 'openai',
+        model: 'gpt-4o',
+        warnings: [],
+      })),
+    }
+
+    const service = createStudioRuntimeService({
+      warmupManager,
+      createRuntimeFn: vi.fn(async (_input, bridge) => {
+        runtimeBridge = bridge
+        return runtimeInstance
+      }),
+      loadResolvedConfigFn: vi.fn(() => ({
+        effective: {
+          defaultProvider: 'openai',
+          defaultModel: 'gpt-4o',
+          providers: {
+            openai: {
+              apiKey: 'sk-test',
+              models: ['gpt-4o'],
+            },
+          },
+        },
+        source: {},
+        warnings: [],
+      })),
+    })
+
+    await expect(
+      service.submit(
+        {
+          text: '继续',
+          projectPath: 'D:/workspace/demo',
+        },
+        {
+          workspacePath: 'D:/workspace/demo',
+          lastSelection: null,
+        },
+        vi.fn(),
+      ),
+    ).resolves.toEqual({
+      ok: true,
+      sessionId: 'session-1',
+    })
+
+    expect(warmupManager.refreshSnapshot).toHaveBeenCalledWith(
+      expect.objectContaining({
+        bootstrapResult: expect.objectContaining({
+          systemPrompt: 'real prepared prompt',
+          toolDefinitions,
+          toolRegistry,
+        }),
+      }),
+    )
+  })
 })

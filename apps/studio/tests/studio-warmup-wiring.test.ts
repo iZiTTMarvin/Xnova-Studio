@@ -15,6 +15,7 @@ import {
   createRuntimeWarmupManager,
   buildWarmupCacheKey,
 } from '../src/main/studio-runtime-warmup'
+import { normalizeRuntimePath } from '../src/main/normalize-runtime-path'
 
 // 基于测试文件位置推导 studio 根目录，避免硬编码本机路径
 const testDir = dirname(fileURLToPath(import.meta.url))
@@ -37,6 +38,15 @@ describe('studio warmup 装配链路', () => {
     expect(source).toContain('onWorkspaceChanged')
     // onWorkspaceChanged 内部调用 warmupManager.startWarmup
     expect(source).toContain('warmupManager.startWarmup')
+  })
+
+  it('main/index.ts 启动 warmup 时带上默认 agent，避免 submit key 漂移', () => {
+    const source = readFileSync(join(studioRoot, 'src/main/index.ts'), 'utf-8')
+
+    expect(source).toContain('agentCatalog.resolvePrimaryAgent')
+    expect(source).toContain('const warmupRuntimeConfig')
+    expect(source).toContain('agentId: warmupAgentId')
+    expect(source).toContain('default: warmupAgentId')
   })
 
   it('main/index.ts workspace 切换时 abort 旧 warmup', () => {
@@ -136,11 +146,15 @@ describe('IPC handler onWorkspaceChanged 集成', () => {
     // 模拟 main/index.ts 中的 onWorkspaceChanged 闭包
     let previousWarmupWorkspace: string | null = null
     const onWorkspaceChanged = (workspacePath: string) => {
-      if (previousWarmupWorkspace && previousWarmupWorkspace !== workspacePath) {
+      const normalizedWorkspace = normalizeRuntimePath(workspacePath)
+      if (!normalizedWorkspace) {
+        return
+      }
+      if (previousWarmupWorkspace && previousWarmupWorkspace !== normalizedWorkspace) {
         warmupManager.abortWarmup(previousWarmupWorkspace)
       }
-      previousWarmupWorkspace = workspacePath
-      warmupManager.startWarmup({ cwd: workspacePath })
+      previousWarmupWorkspace = normalizedWorkspace
+      warmupManager.startWarmup({ cwd: normalizedWorkspace })
     }
 
     registerStudioMainIpcHandlers({
@@ -177,11 +191,15 @@ describe('IPC handler onWorkspaceChanged 集成', () => {
 
     let previousWarmupWorkspace: string | null = null
     const onWorkspaceChanged = (workspacePath: string) => {
-      if (previousWarmupWorkspace && previousWarmupWorkspace !== workspacePath) {
+      const normalizedWorkspace = normalizeRuntimePath(workspacePath)
+      if (!normalizedWorkspace) {
+        return
+      }
+      if (previousWarmupWorkspace && previousWarmupWorkspace !== normalizedWorkspace) {
         warmupManager.abortWarmup(previousWarmupWorkspace)
       }
-      previousWarmupWorkspace = workspacePath
-      warmupManager.startWarmup({ cwd: workspacePath })
+      previousWarmupWorkspace = normalizedWorkspace
+      warmupManager.startWarmup({ cwd: normalizedWorkspace })
     }
 
     registerStudioMainIpcHandlers({
@@ -194,10 +212,10 @@ describe('IPC handler onWorkspaceChanged 集成', () => {
       logger: { info: vi.fn(), error: vi.fn() },
     })
 
-    await ipcMain.invoke('studio:host:bind-workspace', { workspacePath: 'D:/project-a' })
+    await ipcMain.invoke('studio:host:bind-workspace', { workspacePath: 'D:\\project-a\\' })
     await ipcMain.invoke('studio:host:bind-workspace', { workspacePath: 'D:/project-a' })
 
-    // bootstrapFn 只调用一次（startWarmup 幂等）
+    // 斜杠写法不同也应视为同一个 workspace，只启动一次。
     expect(bootstrapFn).toHaveBeenCalledTimes(1)
 
     warmupManager.dispose()
