@@ -18,16 +18,7 @@
   "commit": null,
   "pr_url": null,
   "subtasks": [],
-  "children": [
-    "04-28-studio-bootstrap-timing-observability",
-    "04-28-studio-runtime-warmup-snapshot-skeleton",
-    "04-28-studio-snapshot-fast-path-invalidation",
-    "04-28-studio-warmup-ui-bridge-contract",
-    "04-28-studio-tool-running-min-visible",
-    "04-28-studio-tool-lifecycle-intent-args-delta",
-    "04-28-studio-windows-tool-policy",
-    "04-29-studio-agent-loop-budget-hang-guard"
-  ],
+  "children": [],
   "parent": null,
   "relatedFiles": [],
   "notes": "",

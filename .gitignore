@@ -104,3 +104,6 @@ venv/
 废弃
 .playwright-mcp
 .codebuddy
+.kiro
+.kilocode
+.spec-workflow
