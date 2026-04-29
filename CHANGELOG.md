@@ -1,3 +1,9 @@
+## 2026-04-29
+- **Studio 运行态体验修复**：减少运行中冗余动画，并修正取消后的工具状态
+  - 移除实时 assistant 消息标题旁的冗余 spinner，保留思考占位符中的进度提示
+  - 用户停止运行后，仍处于 pending/running 的工具卡片会切到 error 并显示“已取消”
+  - 强化系统提示词和 bash 工具描述，引导模型使用 `read_file/write_file/edit_file/grep/glob` 等专用工具处理文件操作
+
 ## 2026-04-28
 - **审查文档**：新增 Studio 首次响应、Runtime Warmup 与工具可见性多 Phase 审查文档
   - 新增 `docs/audits/studio-first-response-warmup-and-tool-visibility-audit.md`，覆盖：当前 submit timing 解读、`bootstrapAll` 6 条并行链拆解与阶段表、openWorkspace warmup 状态机与失效规则、prompt/toolDefs/context snapshot cache 设计、submit fast path 链路对比与 budget、工具可见性短期/中期改进（`MIN_RUNNING_VISIBLE_MS` + `tool_intent/tool_args_delta/tool_ready` 事件链）、first chunk guard 现状校验、Windows 工具策略观察、A→F 六个 Phase 修复路线（含验收标准、测试建议、风险点、依赖关系）

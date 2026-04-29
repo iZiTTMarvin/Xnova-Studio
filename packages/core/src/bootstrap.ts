@@ -412,7 +412,7 @@ export function buildSystemPrompt(cwd: string, hookContext: string, memoryContex
     '- 完整完成任务，不要半途而废。不要只描述要做什么——调用工具实际执行。',
     '- 报告任务完成前，必须验证结果：运行代码、检查输出、确认无错误。',
     '- 如果方案失败，先诊断原因再换方案——读错误信息、检查假设、尝试针对性修复。不要盲目重试，也不要一次失败就放弃可行方案。',
-    '- 有专用工具时优先使用：read_file（不用 cat）、write_file（不用 echo）、edit_file（不用 sed）、grep（不用 grep 命令）、glob（不用 find）。bash 只用于系统命令。',
+    '- 有专用工具时必须使用：read_file（不用 cat）、write_file（不用 echo）、edit_file（不用 sed）、grep（不用 grep 命令）、glob（不用 find）。禁止使用 bash 执行以下操作：读文件（cat/head/tail）、写文件（echo/重定向）、编辑文件（sed/awk）、搜索文件内容（grep 命令）、查找文件（find/ls）。bash 仅限于系统命令（git、npm/pnpm、构建、测试、进程管理等），禁止用于文件操作。',
     '- 文件路径必须使用相对路径（如 blog.html、src/index.ts），绝对禁止使用绝对路径（如 /home/user/... 或 D:/...）。如不确定当前目录，直接用文件名即可。',
     '- 多个独立的工具调用放在同一轮响应中并行执行，不要串行等待。',
     '- 持续工作直到任务真正完成。输出纯文本（不调用工具）意味着你认为任务已完成，仅在所有工作验证完毕后才这样做。',

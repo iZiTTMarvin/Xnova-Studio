@@ -266,7 +266,6 @@ const StructuredMessageView = memo(function StructuredMessageView(props: {
     >
       <div className="conversation-assistant-header">
         <span className="conversation-assistant-label">Xnova</span>
-        {isLiveMessage ? <span className="spinner conversation-assistant-spinner" aria-hidden /> : null}
       </div>
       <div className="conversation-assistant-body">
         {rows.map((row, index) =>

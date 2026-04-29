@@ -958,12 +958,27 @@ export const useRuntimeStore = create<RuntimeStoreState & RuntimeStoreActions>()
             state.currentRunId = null
             state.currentRunStep = '运行失败'
             break
-          case 'run_cancelled':
+          case 'run_cancelled': {
             state.isSubmitting = false
             state.runStatus = 'cancelled'
             state.currentRunId = null
             state.currentRunStep = '已停止当前运行'
+            // 取消运行时，批量将未终结的工具块（pending/running）标记为 error，
+            // 避免 UI 上残留"准备中"/"进行中"的工具卡片。
+            // 正常完成时 tool_end 事件会逐个更新，但取消场景下不会触发 tool_end。
+            const cancelledConv = finalizeOpenThinkingBlocks(state.liveConversation)
+            const cancelledBlocks = cancelledConv.blocks.map((block) => {
+              if (
+                block.type === 'tool' &&
+                (block.status === 'pending' || block.status === 'running')
+              ) {
+                return { ...block, status: 'error' as const, resultSummary: '已取消' }
+              }
+              return block
+            })
+            state.liveConversation = replaceLiveBlocks(cancelledConv, cancelledBlocks)
             break
+          }
           default:
             break
         }
