@@ -77,6 +77,7 @@ export function useStudioBridgeState() {
       currentRunStep: state.currentRunStep,
       liveConversation: state.liveConversation,
       contextState: state.contextState,
+      warmupStatus: state.warmupStatus,
     })),
   )
 

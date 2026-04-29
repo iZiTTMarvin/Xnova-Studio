@@ -10,6 +10,8 @@
 
 import { describe, expect, it, vi } from 'vitest'
 import {
+  parseStudioWarmupPrepareRequest,
+  parseStudioWarmupPrepareResult,
   parseStudioWarmupStatusChangedEvent,
   StudioBridgeValidationError,
 } from '../src/preload/studio-validators'
@@ -37,6 +39,19 @@ describe('parseStudioWarmupStatusChangedEvent', () => {
       durationMs: 1234,
     })
     expect(result).toEqual({ status: 'ready', durationMs: 1234 })
+  })
+
+  it('合法事件可携带 selectionKey 供 renderer 过滤当前选择', () => {
+    const result = parseStudioWarmupStatusChangedEvent({
+      status: 'ready',
+      selectionKey: 'selection-1',
+      durationMs: 1234,
+    })
+    expect(result).toEqual({
+      status: 'ready',
+      selectionKey: 'selection-1',
+      durationMs: 1234,
+    })
   })
 
   it('合法 failed 事件带 error 通过校验', () => {
@@ -240,6 +255,63 @@ describe('warmup shared contract', () => {
       'studio:runtime:warmup-status-changed',
     )
   })
+
+  it('warmup prepare channel 存在于 STUDIO_BRIDGE_CHANNELS', () => {
+    expect(STUDIO_BRIDGE_CHANNELS.runtimeWarmupPrepare).toBe(
+      'studio:runtime:warmup-prepare',
+    )
+  })
+})
+
+describe('warmup prepare preload validators', () => {
+  it('合法当前选择 prepare 请求通过校验', () => {
+    expect(
+      parseStudioWarmupPrepareRequest({
+        projectPath: 'D:/workspace/demo',
+        agentId: 'general',
+        providerId: 'minimax',
+        modelId: 'MiniMax-M2.7',
+        mode: 'standard',
+      }),
+    ).toEqual({
+      projectPath: 'D:/workspace/demo',
+      agentId: 'general',
+      providerId: 'minimax',
+      modelId: 'MiniMax-M2.7',
+      mode: 'standard',
+    })
+  })
+
+  it('prepare 请求不允许空 projectPath', () => {
+    expect(() =>
+      parseStudioWarmupPrepareRequest({
+        projectPath: '   ',
+      }),
+    ).toThrow(StudioBridgeValidationError)
+  })
+
+  it('prepare 请求拒绝未知字段，避免敏感配置穿透', () => {
+    expect(() =>
+      parseStudioWarmupPrepareRequest({
+        projectPath: 'D:/workspace/demo',
+        apiKey: 'sk-test',
+      }),
+    ).toThrow(StudioBridgeValidationError)
+  })
+
+  it('合法 prepare 结果通过校验', () => {
+    expect(
+      parseStudioWarmupPrepareResult({
+        ok: true,
+        status: 'warming',
+        selectionKey: 'selection-1',
+      }),
+    ).toEqual({
+      ok: true,
+      status: 'warming',
+      selectionKey: 'selection-1',
+    })
+  })
 })
 
 // ═══ Preload Bridge 订阅测试 ═══
@@ -250,6 +322,13 @@ describe('preload bridge warmup subscription', () => {
     readonly invoke = vi.fn(async (channel: string, _payload?: unknown) => {
       if (channel === STUDIO_BRIDGE_CHANNELS.hostGetState) {
         return { workspacePath: null, lastSelection: null }
+      }
+      if (channel === STUDIO_BRIDGE_CHANNELS.runtimeWarmupPrepare) {
+        return {
+          ok: true,
+          status: 'warming',
+          selectionKey: 'selection-1',
+        }
       }
       return {}
     })
@@ -291,6 +370,36 @@ describe('preload bridge warmup subscription', () => {
     })
 
     expect(received).toEqual([{ status: 'warming' }])
+  })
+
+  it('warmup.prepare 会通过 IPC 请求当前选择并解析结果', async () => {
+    const ipcRenderer = new FakeIpcRenderer()
+    const api = createStudioBridgeApi({ ipcRenderer })
+
+    await expect(
+      api.warmup.prepare({
+        projectPath: 'D:/workspace/demo',
+        agentId: 'general',
+        providerId: 'minimax',
+        modelId: 'MiniMax-M2.7',
+        mode: 'standard',
+      }),
+    ).resolves.toEqual({
+      ok: true,
+      status: 'warming',
+      selectionKey: 'selection-1',
+    })
+
+    expect(ipcRenderer.invoke).toHaveBeenCalledWith(
+      STUDIO_BRIDGE_CHANNELS.runtimeWarmupPrepare,
+      {
+        projectPath: 'D:/workspace/demo',
+        agentId: 'general',
+        providerId: 'minimax',
+        modelId: 'MiniMax-M2.7',
+        mode: 'standard',
+      },
+    )
   })
 
   it('非法 warmup 事件被静默丢弃', () => {

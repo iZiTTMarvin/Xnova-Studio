@@ -23,6 +23,8 @@ import {
   type RuntimeCancelResult,
   type RuntimeSubmitRequest,
   type RuntimeSubmitResult,
+  type RuntimeWarmupPrepareRequest,
+  type RuntimeWarmupPrepareResult,
   type PermissionDialogResponse,
   type UserQuestionDialogResponse,
   type StudioHostState,
@@ -270,6 +272,76 @@ function parseRuntimeCancelPayload(payload: unknown): RuntimeCancelRequest {
   return {
     ...(runId === undefined ? {} : { runId }),
     ...(reason ? { reason } : {}),
+  }
+}
+
+function parseRuntimeWarmupPreparePayload(
+  payload: unknown,
+): RuntimeWarmupPrepareRequest {
+  if (!isPlainObject(payload)) {
+    throw new Error('studio.runtime.warmup.prepare 参数必须是对象。')
+  }
+  const allowedKeys = new Set([
+    'projectPath',
+    'agentId',
+    'providerId',
+    'modelId',
+    'mode',
+  ])
+  if (Object.keys(payload).some((key) => !allowedKeys.has(key))) {
+    throw new Error('studio.runtime.warmup.prepare 包含未知字段。')
+  }
+  if (typeof payload.projectPath !== 'string' || !payload.projectPath.trim()) {
+    throw new Error('studio.runtime.warmup.prepare.projectPath 必须是非空字符串。')
+  }
+  const parseNullableString = (
+    value: unknown,
+    subject: string,
+  ): string | null | undefined => {
+    if (value === undefined) return undefined
+    if (value === null) return null
+    if (typeof value !== 'string') {
+      throw new Error(`${subject} 必须是字符串或 null。`)
+    }
+    return value.trim() || null
+  }
+  if (
+    payload.mode !== undefined &&
+    payload.mode !== 'standard' &&
+    payload.mode !== 'xforge'
+  ) {
+    throw new Error('studio.runtime.warmup.prepare.mode 必须是 standard 或 xforge。')
+  }
+
+  return {
+    projectPath: payload.projectPath.trim(),
+    ...(payload.agentId === undefined
+      ? {}
+      : {
+          agentId: parseNullableString(
+            payload.agentId,
+            'studio.runtime.warmup.prepare.agentId',
+          ),
+        }),
+    ...(payload.providerId === undefined
+      ? {}
+      : {
+          providerId: parseNullableString(
+            payload.providerId,
+            'studio.runtime.warmup.prepare.providerId',
+          ),
+        }),
+    ...(payload.modelId === undefined
+      ? {}
+      : {
+          modelId: parseNullableString(
+            payload.modelId,
+            'studio.runtime.warmup.prepare.modelId',
+          ),
+        }),
+    ...(payload.mode === undefined
+      ? {}
+      : { mode: payload.mode as RuntimeWarmupPrepareRequest['mode'] }),
   }
 }
 
@@ -675,6 +747,10 @@ export interface RegisterStudioMainIpcHandlersOptions {
   getSkillsPluginsOverview?: (
     state: StudioHostState,
   ) => Promise<StudioSkillsPluginsOverviewSnapshot>
+  prepareWarmupSelection?: (
+    request: RuntimeWarmupPrepareRequest,
+    state: StudioHostState,
+  ) => RuntimeWarmupPrepareResult | Promise<RuntimeWarmupPrepareResult>
   selectWorkspaceDirectory: () => Promise<WorkspaceSelectionResult>
   /** workspace 变更后的回调（用于触发 warmup 等后续动作） */
   onWorkspaceChanged?: (workspacePath: string) => void
@@ -886,6 +962,21 @@ export function registerStudioMainIpcHandlers(
         options.logger.error('runtime cancel 失败', error)
         return result
       }
+    },
+  )
+
+  options.ipcMainLike.handle(
+    STUDIO_BRIDGE_CHANNELS.runtimeWarmupPrepare,
+    async (_event, payload): Promise<RuntimeWarmupPrepareResult> => {
+      const request = parseRuntimeWarmupPreparePayload(payload)
+      if (!options.prepareWarmupSelection) {
+        return {
+          ok: false,
+          status: 'failed',
+          error: 'runtime warmup prepare handler 未注册。',
+        }
+      }
+      return options.prepareWarmupSelection(request, hostState)
     },
   )
 

@@ -177,6 +177,13 @@ function HookHarness() {
       >
         切换项目
       </button>
+      <button
+        onClick={() => {
+          bridgeController.setCurrentProviderModel('minimax', 'MiniMax-M2.7')
+        }}
+      >
+        切换模型
+      </button>
       <input
         data-testid="select-session-target"
         value={selectSessionTarget}
@@ -184,6 +191,7 @@ function HookHarness() {
       />
       <div data-testid="shell-status">{bridgeState.shellStatus}</div>
       <div data-testid="run-status">{bridgeState.runStatus}</div>
+      <div data-testid="warmup-status">{bridgeState.warmupStatus}</div>
       <div data-testid="run-active">{bridgeState.isRunActive ? 'yes' : 'no'}</div>
       <div data-testid="submitting">{bridgeState.isSubmitting ? 'yes' : 'no'}</div>
       <div data-testid="submit-result">{submitResult}</div>
@@ -220,6 +228,118 @@ afterEach(() => {
 })
 
 describe('useStudioBridge runtime submit', () => {
+  it('初始化和切模型都会按当前 UI 选择请求 warmup，并忽略旧选择状态', async () => {
+    let warmupListener:
+      | ((event: { status: string; selectionKey?: string }) => void)
+      | null = null
+    const prepareWarmup = vi
+      .fn()
+      .mockResolvedValueOnce({
+        ok: true as const,
+        status: 'warming' as const,
+        selectionKey: 'selection-default',
+      })
+      .mockResolvedValueOnce({
+        ok: true as const,
+        status: 'warming' as const,
+        selectionKey: 'selection-minimax',
+      })
+
+    ;(window as Window & { xnovaStudio?: unknown }).xnovaStudio = {
+      host: {
+        getState: vi.fn(async () => ({
+          workspacePath: 'D:/workspace/demo',
+          lastSelection: null,
+        })),
+        openWorkspace: vi.fn(),
+        onStateChanged: () => () => {},
+      },
+      runtime: {
+        inspect: vi.fn(async () => createRuntimeInspectResult()),
+        submit: vi.fn(),
+        onEvent: () => () => {},
+      },
+      warmup: {
+        prepare: prepareWarmup,
+        onStatusChanged: (listener: (event: { status: string; selectionKey?: string }) => void) => {
+          warmupListener = listener
+          return () => {
+            warmupListener = null
+          }
+        },
+      },
+      shell: {
+        getSnapshot: vi.fn(async () => createShellSnapshot(null)),
+      },
+      settings: {
+        getProviderSettings: vi.fn(),
+        saveProviderSettings: vi.fn(),
+        testProviderConnection: vi.fn(),
+      },
+      memory: {
+        getOverview: vi.fn(),
+        rebuild: vi.fn(),
+      },
+      mcp: {
+        getOverview: vi.fn(),
+        addServer: vi.fn(),
+        deleteServer: vi.fn(),
+      },
+      skillsPlugins: {
+        getOverview: vi.fn(),
+      },
+    }
+
+    render(<HookHarness />)
+
+    await waitFor(() => {
+      expect(prepareWarmup).toHaveBeenCalledWith({
+        projectPath: 'D:/workspace/demo',
+        agentId: 'general',
+        providerId: 'anthropic',
+        modelId: 'claude-sonnet-4-6',
+        mode: 'standard',
+      })
+    })
+    await waitFor(() => {
+      expect(screen.getByTestId('warmup-status').textContent).toBe('warming')
+    })
+
+    act(() => {
+      warmupListener?.({ status: 'ready', selectionKey: 'other-selection' })
+    })
+    expect(screen.getByTestId('warmup-status').textContent).toBe('warming')
+
+    act(() => {
+      warmupListener?.({ status: 'ready', selectionKey: 'selection-default' })
+    })
+    expect(screen.getByTestId('warmup-status').textContent).toBe('ready')
+
+    fireEvent.click(screen.getByRole('button', { name: '切换模型' }))
+    await waitFor(() => {
+      expect(prepareWarmup).toHaveBeenLastCalledWith({
+        projectPath: 'D:/workspace/demo',
+        agentId: 'general',
+        providerId: 'minimax',
+        modelId: 'MiniMax-M2.7',
+        mode: 'standard',
+      })
+    })
+    await waitFor(() => {
+      expect(screen.getByTestId('warmup-status').textContent).toBe('warming')
+    })
+
+    act(() => {
+      warmupListener?.({ status: 'ready', selectionKey: 'selection-default' })
+    })
+    expect(screen.getByTestId('warmup-status').textContent).toBe('warming')
+
+    act(() => {
+      warmupListener?.({ status: 'ready', selectionKey: 'selection-minimax' })
+    })
+    expect(screen.getByTestId('warmup-status').textContent).toBe('ready')
+  })
+
   it('submit 成功后会刷新 shell snapshot 与 runtime inspect，并清理 submitting 状态', async () => {
     const inspect = vi
       .fn()

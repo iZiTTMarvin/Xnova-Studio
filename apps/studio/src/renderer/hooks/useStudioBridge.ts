@@ -13,6 +13,7 @@ import type {
   StudioRuntimeEvent,
   UserQuestionDialogRequest,
   UserQuestionDialogResponse,
+  RuntimeWarmupPrepareRequest,
   RuntimeWarmupStatusChangedEvent,
 } from '../../shared/studio-bridge-contract'
 import {
@@ -305,6 +306,8 @@ export function useStudioBridge() {
     addFinalizedRunIdToLruSet(finalizedRunIdsRef.current, runId, FINALIZED_RUN_IDS_LIMIT)
   }
   const finalizedTerminalStatusRef = useRef<StudioRunStatus | null>(null)
+  const activeWarmupSelectionKeyRef = useRef<string | null>(null)
+  const warmupPrepareSequenceRef = useRef(0)
   /**
    * submit / 会话切换 / 项目切换的 epoch。
    * submit 成功后的 refreshStateAsync 是 fire-and-forget 异步，
@@ -336,6 +339,36 @@ export function useStudioBridge() {
   const clearPendingLiveDeltaChunks = (): void => {
     cancelPendingLiveDeltaFlush()
     pendingLiveDeltaChunksRef.current = []
+  }
+
+  const prepareWarmupForSelection = (
+    input: RuntimeWarmupPrepareRequest,
+  ): void => {
+    if (!bridge?.warmup?.prepare || !input.projectPath?.trim()) {
+      activeWarmupSelectionKeyRef.current = null
+      setWarmupStatus('idle')
+      return
+    }
+
+    const requestSequence = warmupPrepareSequenceRef.current + 1
+    warmupPrepareSequenceRef.current = requestSequence
+
+    void bridge.warmup
+      .prepare(input)
+      .then((result) => {
+        if (warmupPrepareSequenceRef.current !== requestSequence) {
+          return
+        }
+        activeWarmupSelectionKeyRef.current = result.selectionKey ?? null
+        setWarmupStatus(result.ok ? result.status : 'failed')
+      })
+      .catch(() => {
+        if (warmupPrepareSequenceRef.current !== requestSequence) {
+          return
+        }
+        activeWarmupSelectionKeyRef.current = null
+        setWarmupStatus('failed')
+      })
   }
 
   const updateLiveConversationWithPending = (
@@ -478,6 +511,8 @@ export function useStudioBridge() {
       activeRunIdRef.current = null
       finalizedRunIdsRef.current.clear()
       finalizedTerminalStatusRef.current = null
+      activeWarmupSelectionKeyRef.current = null
+      warmupPrepareSequenceRef.current += 1
       cancelRequestedRef.current = false
       clearPendingLiveDeltaChunks()
       return
@@ -495,6 +530,8 @@ export function useStudioBridge() {
     activeRunIdRef.current = null
     finalizedRunIdsRef.current.clear()
     finalizedTerminalStatusRef.current = null
+    activeWarmupSelectionKeyRef.current = null
+    warmupPrepareSequenceRef.current += 1
     cancelRequestedRef.current = false
     clearPendingLiveDeltaChunks()
   }, [
@@ -530,6 +567,13 @@ export function useStudioBridge() {
       setCurrentProviderId(hydrated.providerId)
       setCurrentModelId(hydrated.modelId)
       setRecoveryState(hydrated.recoveryState)
+      prepareWarmupForSelection({
+        projectPath: hydrated.projectPath ?? '',
+        agentId: hydrated.agentId,
+        providerId: hydrated.providerId,
+        modelId: hydrated.modelId,
+        mode: hydrated.mode,
+      })
     }
 
     const loadShellSnapshot = async (
@@ -594,6 +638,8 @@ export function useStudioBridge() {
       setHostState(state)
       setHostStatus('ready')
       // workspace 切换时重置 warmup 状态，避免旧 workspace 的状态残留
+      activeWarmupSelectionKeyRef.current = null
+      warmupPrepareSequenceRef.current += 1
       setWarmupStatus('idle')
       const storedPreference = readProjectWorkPreference(state.workspacePath)
       void loadShellSnapshot(state.workspacePath, storedPreference?.sessionId ?? undefined)
@@ -738,6 +784,14 @@ export function useStudioBridge() {
         if (disposed) {
           return
         }
+        const activeSelectionKey = activeWarmupSelectionKeyRef.current
+        if (event.selectionKey) {
+          if (event.selectionKey !== activeSelectionKey) {
+            return
+          }
+        } else if (activeSelectionKey) {
+          return
+        }
         setWarmupStatus(event.status)
       }) ?? (() => undefined)
 
@@ -813,6 +867,13 @@ export function useStudioBridge() {
       setCurrentProviderId(hydrated.providerId)
       setCurrentModelId(hydrated.modelId)
       setRecoveryState(hydrated.recoveryState)
+      prepareWarmupForSelection({
+        projectPath: hydrated.projectPath ?? '',
+        agentId: hydrated.agentId,
+        providerId: hydrated.providerId,
+        modelId: hydrated.modelId,
+        mode: hydrated.mode,
+      })
       await inspectRuntime(bridge, true)
     } catch (error) {
       const message = getErrorMessage(error)
@@ -859,6 +920,13 @@ export function useStudioBridge() {
       setCurrentProviderId(hydrated.providerId)
       setCurrentModelId(hydrated.modelId)
       setRecoveryState(hydrated.recoveryState)
+      prepareWarmupForSelection({
+        projectPath: hydrated.projectPath ?? '',
+        agentId: hydrated.agentId,
+        providerId: hydrated.providerId,
+        modelId: hydrated.modelId,
+        mode: hydrated.mode,
+      })
       await inspectRuntime(bridge, true)
     } catch (error) {
       setShellStatus('error')
@@ -899,6 +967,13 @@ export function useStudioBridge() {
       setCurrentProviderId(hydrated.providerId)
       setCurrentModelId(hydrated.modelId)
       setRecoveryState(hydrated.recoveryState)
+      prepareWarmupForSelection({
+        projectPath: hydrated.projectPath ?? '',
+        agentId: hydrated.agentId,
+        providerId: hydrated.providerId,
+        modelId: hydrated.modelId,
+        mode: hydrated.mode,
+      })
       writeProjectWorkPreference(selectedProjectPath, {
         sessionId,
         modelId: hydrated.modelId ?? recoveryState.projectDefaults.modelId,
@@ -920,6 +995,13 @@ export function useStudioBridge() {
 
     setCurrentMode(mode)
     writeProjectWorkPreference(selectedProjectPath, { mode })
+    prepareWarmupForSelection({
+      projectPath: selectedProjectPath ?? '',
+      agentId: currentAgentId,
+      providerId: currentProviderId,
+      modelId: currentModelId,
+      mode,
+    })
     return null
   }
 
@@ -933,6 +1015,13 @@ export function useStudioBridge() {
     setCurrentAgentId(recoveryState.projectDefaults.agentId)
     setCurrentProviderId(shellSnapshot?.defaults.providerId ?? null)
     setCurrentModelId(recoveryState.projectDefaults.modelId)
+    prepareWarmupForSelection({
+      projectPath: selectedProjectPath,
+      agentId: recoveryState.projectDefaults.agentId,
+      providerId: shellSnapshot?.defaults.providerId ?? null,
+      modelId: recoveryState.projectDefaults.modelId,
+      mode: recoveryState.projectDefaults.mode,
+    })
     setRecoveryState((current) => ({
       ...current,
       status: {
@@ -957,6 +1046,13 @@ export function useStudioBridge() {
     if (selectedProjectPath) {
       writeProjectWorkPreference(selectedProjectPath, { agentId })
     }
+    prepareWarmupForSelection({
+      projectPath: selectedProjectPath ?? '',
+      agentId,
+      providerId: currentProviderId,
+      modelId: currentModelId,
+      mode: currentMode,
+    })
   }
 
   const submitPrompt = async (text: string): Promise<SubmitPromptResult> => {
@@ -1107,6 +1203,13 @@ export function useStudioBridge() {
           setCurrentProviderId(hydrated.providerId)
           setCurrentModelId(hydrated.modelId)
           setRecoveryState(hydrated.recoveryState)
+          prepareWarmupForSelection({
+            projectPath: hydrated.projectPath ?? '',
+            agentId: hydrated.agentId,
+            providerId: hydrated.providerId,
+            modelId: hydrated.modelId,
+            mode: hydrated.mode,
+          })
           const inspectResult = await inspectRuntime(bridge, true)
           // 第二次 epoch 守卫：inspectRuntime 期间又可能发起新 submit
           if (submitEpochRef.current !== submitEpoch) {
@@ -1303,6 +1406,13 @@ export function useStudioBridge() {
     setCurrentProviderModel: (providerId: string, modelId: string) => {
       setCurrentProviderId(providerId || null)
       setCurrentModelId(modelId || null)
+      prepareWarmupForSelection({
+        projectPath: selectedProjectPath ?? '',
+        agentId: currentAgentId,
+        providerId: providerId || null,
+        modelId: modelId || null,
+        mode: currentMode,
+      })
     },
     restoreProjectDefaults,
     switchMode,

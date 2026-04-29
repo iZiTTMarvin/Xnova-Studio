@@ -138,6 +138,53 @@ describe('IPC handler onWorkspaceChanged 集成', () => {
     expect(onWorkspaceChanged).toHaveBeenCalledWith('D:/project-b')
   })
 
+  it('warmup prepare IPC 会把当前 UI 选择转给 main handler', async () => {
+    const ipcMain = createMockIpcMain()
+    const prepareWarmupSelection = vi.fn(() => ({
+      ok: true,
+      status: 'warming' as const,
+      selectionKey: 'selection-1',
+    }))
+
+    registerStudioMainIpcHandlers({
+      ipcMainLike: ipcMain,
+      selectWorkspaceDirectory: vi.fn(),
+      prepareWarmupSelection,
+      mainWindowManager: { getMainWindow: () => null },
+      inspectRuntime: vi.fn().mockResolvedValue({ ok: true, status: 'ready', snapshot: {}, workspacePath: null, configWarnings: [], issues: [] }),
+      inspectShell: vi.fn().mockResolvedValue({}),
+      logger: { info: vi.fn(), error: vi.fn() },
+    })
+
+    await expect(
+      ipcMain.invoke('studio:runtime:warmup-prepare', {
+        projectPath: 'D:/project-b',
+        agentId: 'general',
+        providerId: 'minimax',
+        modelId: 'MiniMax-M2.7',
+        mode: 'standard',
+      }),
+    ).resolves.toEqual({
+      ok: true,
+      status: 'warming',
+      selectionKey: 'selection-1',
+    })
+
+    expect(prepareWarmupSelection).toHaveBeenCalledWith(
+      {
+        projectPath: 'D:/project-b',
+        agentId: 'general',
+        providerId: 'minimax',
+        modelId: 'MiniMax-M2.7',
+        mode: 'standard',
+      },
+      {
+        workspacePath: null,
+        lastSelection: null,
+      },
+    )
+  })
+
   it('workspace 切换时 warmupManager 先 abort 旧路径再 start 新路径', async () => {
     const ipcMain = createMockIpcMain()
     const bootstrapFn = vi.fn().mockReturnValue(new Promise(() => {}))

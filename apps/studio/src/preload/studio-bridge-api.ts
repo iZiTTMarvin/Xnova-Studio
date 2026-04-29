@@ -23,6 +23,8 @@ import type {
   StudioShellSnapshot,
   StudioShellSnapshotRequest,
   StudioRuntimeEvent,
+  RuntimeWarmupPrepareRequest,
+  RuntimeWarmupPrepareResult,
   RuntimeWarmupStatusChangedEvent,
 } from '../shared/studio-bridge-contract'
 import { STUDIO_BRIDGE_CHANNELS, type StudioIpcRendererLike } from './studio-ipc-contract'
@@ -49,6 +51,8 @@ import {
   parseStudioShellSnapshot,
   parseStudioShellSnapshotRequest,
   parseStudioRuntimeInspectRequest,
+  parseStudioWarmupPrepareRequest,
+  parseStudioWarmupPrepareResult,
   parseStudioWarmupStatusChangedEvent,
 } from './studio-validators'
 import {
@@ -250,6 +254,17 @@ export function createStudioBridgeApi(
     return parseStudioSkillsPluginsOverviewSnapshot(payload)
   }
 
+  async function prepareWarmup(
+    input: RuntimeWarmupPrepareRequest,
+  ): Promise<RuntimeWarmupPrepareResult> {
+    const request = parseStudioWarmupPrepareRequest(input)
+    const payload = await options.ipcRenderer.invoke(
+      STUDIO_BRIDGE_CHANNELS.runtimeWarmupPrepare,
+      request,
+    )
+    return parseStudioWarmupPrepareResult(payload)
+  }
+
   async function respondPermission(
     input: PermissionDialogResponse,
   ): Promise<void> {
@@ -328,6 +343,9 @@ export function createStudioBridgeApi(
       },
     },
     warmup: {
+      async prepare(input: RuntimeWarmupPrepareRequest) {
+        return prepareWarmup(input)
+      },
       onStatusChanged(listener: (event: RuntimeWarmupStatusChangedEvent) => void) {
         warmupListeners.add(listener)
         return () => {

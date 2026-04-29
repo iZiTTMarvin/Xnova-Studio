@@ -132,6 +132,7 @@ const displayStatus = useMinimumVisibleRunningStatus(tool.status, {
 interface RuntimeWarmupStatusChangedEvent {
   status: 'idle' | 'warming' | 'ready' | 'stale' | 'failed'
   cwd: string
+  selectionKey?: string
   durationMs?: number
   error?: string
 }
@@ -145,6 +146,7 @@ interface RuntimeWarmupStatusChangedEvent {
 - `failed` 文案：“运行时准备失败，将在提交时重试”
 - warmup 文案只解释后台准备状态，不替代 runtime inspect 的 ready/not-ready 门禁。
 - renderer 不得展示 cwd 之外的敏感细节，不得展示 system prompt 或 API 配置。
+- renderer 必须在当前 `agent / provider / model / mode` 确定后请求 selection-aware warmup，并只接收匹配当前 `selectionKey` 的 warmup 状态；旧模型或旧 Agent 的 `ready` 事件不能让当前 UI 显示“运行时已就绪”。
 
 ### 4. Validation & Error Matrix
 

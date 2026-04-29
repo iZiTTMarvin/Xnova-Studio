@@ -38,6 +38,8 @@ import type {
   UserQuestionDialogRequest,
   UserQuestionDialogResponse,
   WorkspaceSelectionResult,
+  RuntimeWarmupPrepareRequest,
+  RuntimeWarmupPrepareResult,
   RuntimeWarmupStatusChangedEvent,
 } from '../shared/studio-bridge-contract'
 import { VALID_WARMUP_STATUSES } from '../shared/studio-bridge-contract'
@@ -2052,6 +2054,12 @@ export function parseStudioWarmupStatusChangedEvent(
     )
   }
 
+  if (value.selectionKey !== undefined && typeof value.selectionKey !== 'string') {
+    throw new StudioBridgeValidationError(
+      'warmup.statusChanged.selectionKey 必须是字符串。',
+    )
+  }
+
   // durationMs 可选正数
   if (
     value.durationMs !== undefined &&
@@ -2088,7 +2096,122 @@ export function parseStudioWarmupStatusChangedEvent(
 
   return {
     status: value.status as RuntimeWarmupStatusChangedEvent['status'],
+    ...(value.selectionKey !== undefined ? { selectionKey: value.selectionKey } : {}),
     ...(value.durationMs !== undefined ? { durationMs: value.durationMs as number } : {}),
     ...(error !== undefined ? { error } : {}),
+  }
+}
+
+export function parseStudioWarmupPrepareRequest(
+  payload: unknown,
+): RuntimeWarmupPrepareRequest {
+  const value = assertPlainObject(payload, 'warmup.prepare')
+  const allowedKeys = new Set([
+    'projectPath',
+    'agentId',
+    'providerId',
+    'modelId',
+    'mode',
+  ])
+  for (const key of Object.keys(value)) {
+    if (!allowedKeys.has(key)) {
+      throw new StudioBridgeValidationError(
+        `warmup.prepare 不允许包含 ${key} 字段。`,
+      )
+    }
+  }
+  if (typeof value.projectPath !== 'string' || !value.projectPath.trim()) {
+    throw new StudioBridgeValidationError(
+      'warmup.prepare.projectPath 必须是非空字符串。',
+    )
+  }
+  const parseNullableSelectionString = (
+    field: unknown,
+    subject: string,
+  ): string | null | undefined => {
+    if (field === undefined) return undefined
+    if (field === null) return null
+    if (typeof field !== 'string') {
+      throw new StudioBridgeValidationError(`${subject} 必须是字符串或 null。`)
+    }
+    return field.trim() || null
+  }
+  if (
+    value.mode !== undefined &&
+    value.mode !== 'standard' &&
+    value.mode !== 'xforge'
+  ) {
+    throw new StudioBridgeValidationError(
+      'warmup.prepare.mode 必须是 standard 或 xforge。',
+    )
+  }
+
+  return {
+    projectPath: value.projectPath.trim(),
+    ...(value.agentId === undefined
+      ? {}
+      : {
+          agentId: parseNullableSelectionString(
+            value.agentId,
+            'warmup.prepare.agentId',
+          ),
+        }),
+    ...(value.providerId === undefined
+      ? {}
+      : {
+          providerId: parseNullableSelectionString(
+            value.providerId,
+            'warmup.prepare.providerId',
+          ),
+        }),
+    ...(value.modelId === undefined
+      ? {}
+      : {
+          modelId: parseNullableSelectionString(
+            value.modelId,
+            'warmup.prepare.modelId',
+          ),
+        }),
+    ...(value.mode === undefined
+      ? {}
+      : { mode: value.mode as RuntimeWarmupPrepareRequest['mode'] }),
+  }
+}
+
+export function parseStudioWarmupPrepareResult(
+  payload: unknown,
+): RuntimeWarmupPrepareResult {
+  const value = assertPlainObject(payload, 'warmup.prepare.result')
+  if (typeof value.ok !== 'boolean') {
+    throw new StudioBridgeValidationError('warmup.prepare.result.ok 必须是布尔值。')
+  }
+  if (typeof value.status !== 'string' || !VALID_WARMUP_STATUSES.has(value.status)) {
+    throw new StudioBridgeValidationError(
+      `warmup.prepare.result.status 非法: ${String(value.status)}`,
+    )
+  }
+  if (value.selectionKey !== undefined && typeof value.selectionKey !== 'string') {
+    throw new StudioBridgeValidationError(
+      'warmup.prepare.result.selectionKey 必须是字符串。',
+    )
+  }
+  if (value.error !== undefined && typeof value.error !== 'string') {
+    throw new StudioBridgeValidationError(
+      'warmup.prepare.result.error 必须是字符串。',
+    )
+  }
+
+  return {
+    ok: value.ok,
+    status: value.status as RuntimeWarmupPrepareResult['status'],
+    ...(value.selectionKey === undefined ? {} : { selectionKey: value.selectionKey }),
+    ...(value.error === undefined
+      ? {}
+      : {
+          error:
+            value.error.length > 500
+              ? value.error.slice(0, 500)
+              : value.error,
+        }),
   }
 }

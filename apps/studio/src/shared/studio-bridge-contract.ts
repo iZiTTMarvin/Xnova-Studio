@@ -594,7 +594,30 @@ export type RuntimeWarmupStatus =
  */
 export interface RuntimeWarmupStatusChangedEvent {
   status: RuntimeWarmupStatus
+  /** 当前 warmup 选择的不透明标识；renderer 只用于匹配当前 UI 选择，不展示。 */
+  selectionKey?: string | undefined
   durationMs?: number | undefined
+  error?: string | undefined
+}
+
+/**
+ * Renderer 请求 main 按当前 UI 选择预热 runtime。
+ *
+ * 只包含用户界面本来可见的选择信息；main 会自行加载配置、计算 fingerprint，
+ * renderer 不接触 provider secret、cacheKey、system prompt 或工具注册表。
+ */
+export interface RuntimeWarmupPrepareRequest {
+  projectPath: string
+  agentId?: string | null | undefined
+  providerId?: string | null | undefined
+  modelId?: string | null | undefined
+  mode?: StudioModeId | undefined
+}
+
+export interface RuntimeWarmupPrepareResult {
+  ok: boolean
+  status: RuntimeWarmupStatus
+  selectionKey?: string | undefined
   error?: string | undefined
 }
 
@@ -617,6 +640,9 @@ export const VALID_WARMUP_STATUSES: ReadonlySet<string> = new Set<RuntimeWarmupS
 ])
 
 export interface StudioWarmupApi {
+  prepare(
+    input: RuntimeWarmupPrepareRequest,
+  ): Promise<RuntimeWarmupPrepareResult>
   onStatusChanged(
     listener: (event: RuntimeWarmupStatusChangedEvent) => void,
   ): () => void
@@ -647,5 +673,6 @@ export const STUDIO_BRIDGE_CHANNELS = {
   mcpAddServer: 'studio:mcp:add-server',
   mcpDeleteServer: 'studio:mcp:delete-server',
   skillsPluginsGetOverview: 'studio:skills-plugins:get-overview',
+  runtimeWarmupPrepare: 'studio:runtime:warmup-prepare',
   runtimeWarmupStatusChanged: 'studio:runtime:warmup-status-changed',
 } as const

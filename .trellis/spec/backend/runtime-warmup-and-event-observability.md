@@ -36,8 +36,17 @@ interface RuntimeWarmupStatusChangedEvent {
   status: RuntimeWarmupStatus
   cwd: string
   cacheKey: string
+  selectionKey?: string
   durationMs?: number
   error?: string
+}
+
+interface RuntimeWarmupPrepareRequest {
+  projectPath: string
+  agentId?: string | null
+  providerId?: string | null
+  modelId?: string | null
+  mode?: 'standard' | 'xforge'
 }
 
 interface BootstrapTimingSink {
@@ -90,6 +99,8 @@ interface RuntimeTurnResult {
 - Warmup 不得调用 LLM，不得创建 `AgentLoop`，不得消耗 token。
 - Warmup cache key 必须使用规范化 cwd / workspaceRoot；Windows 上不得只依赖 `trim()`。
 - Workspace 打开后启动 warmup 时，main 侧必须使用与 renderer 默认 submit 一致的身份维度：默认 Agent、provider、model、mode 与配置指纹必须和 `StudioShellInspector -> hydrateStudioBridgeSnapshot -> RuntimeSubmitRequest` 这条链路一致。尤其当默认 Agent 非空时，warmup key 不能落成 `__default_agent__`，否则首次 submit 会查另一个 key。
+- Renderer 确定当前 `projectPath / agentId / providerId / modelId / mode` 后，必须通过 shared bridge 调用 `warmup.prepare(...)` 通知 main 按当前 UI 选择启动或复用 warmup；用户切换 Agent、provider/model 或 mode 后也必须重新 prepare。Renderer 不得自行计算 provider/config fingerprint，也不得接触 warmup cacheKey。
+- Main 广播 warmup 状态到 renderer 时，可以携带不透明 `selectionKey`，renderer 只用它匹配“当前 UI 选择”；不得通过 IPC 发送 cwd、cacheKey、system prompt、tool definitions 或 provider secrets。
 - `PreparedRuntimeSnapshot` 可以在内存保存 system prompt、tool definitions 与可执行 tool registry，但不得通过 IPC 发给 renderer，也不得写入日志。
 - `PreparedRuntimeSnapshot` 进入 `ready` 前必须具备真正可复用的装配产物：至少包含 `systemPrompt`、完整 `toolDefinitions`（含参数 schema）和可执行 `toolRegistry`。只填充 `bootstrapReady` 的空壳 snapshot 不允许命中 fast path。
 - Runtime fast path 必须实际消费 `RuntimeSubmitInput.preparedSnapshot`：命中时跳过已准备好的 `bootstrapAll()`、`getSystemPrompt()`、`getRegistry()`、`registerMcpTools()`，并把 snapshot 内的 `toolRegistry` 传给 `AgentLoop`。

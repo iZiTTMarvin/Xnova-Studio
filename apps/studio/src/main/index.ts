@@ -1,4 +1,5 @@
 import { stat } from 'node:fs/promises'
+import { createHash } from 'node:crypto'
 import { loadResolvedConfig } from '@config/resolver.js'
 import { agentCatalog } from '@tools/agent/catalog.js'
 import { app, BrowserWindow, dialog, ipcMain } from 'electron'
@@ -15,6 +16,7 @@ import { createStudioRuntimeInspector } from './studio-runtime-inspector'
 import { createStudioRuntimeManager } from './studio-runtime-manager'
 import { createStudioRuntimeService } from './studio-runtime-service'
 import {
+  buildWarmupCacheKey,
   buildConfigFingerprint,
   buildProviderFingerprint,
   createRuntimeWarmupManager,
@@ -22,7 +24,11 @@ import {
 import { normalizeRuntimePath } from './normalize-runtime-path'
 import { createMainWindowManager } from './window'
 import { selectWorkspaceDirectory } from './workspace'
-import { STUDIO_BRIDGE_CHANNELS } from '../shared/studio-bridge-contract'
+import {
+  STUDIO_BRIDGE_CHANNELS,
+  type RuntimeWarmupPrepareRequest,
+  type RuntimeWarmupPrepareResult,
+} from '../shared/studio-bridge-contract'
 
 function waitForLogFlush(): Promise<void> {
   return new Promise((resolve) => {
@@ -32,6 +38,7 @@ function waitForLogFlush(): Promise<void> {
 
 const logger = createMainLogger()
 const smokeConfig = readSmokeConfig(process.env)
+const warmupSelectionKeys = new Map<string, string>()
 const runtimeManager = createStudioRuntimeManager()
 const warmupManager = createRuntimeWarmupManager({
   onStatusChanged(event) {
@@ -46,6 +53,9 @@ const warmupManager = createRuntimeWarmupManager({
     // 广播安全的 warmup 状态到 renderer（不含 cwd、cacheKey 等内部标识）
     const safeEvent: import('../shared/studio-bridge-contract').RuntimeWarmupStatusChangedEvent = {
       status: event.status,
+      ...(warmupSelectionKeys.get(event.cacheKey)
+        ? { selectionKey: warmupSelectionKeys.get(event.cacheKey) }
+        : {}),
       ...(event.durationMs !== undefined ? { durationMs: event.durationMs } : {}),
       // error 只保留摘要，截断到 200 字符，不透出堆栈或敏感配置
       ...(event.error !== undefined
@@ -111,11 +121,34 @@ const skillsPluginsService = createStudioSkillsPluginsService({
   },
 })
 
-function startWorkspaceWarmup(workspacePath: string): void {
+function createWarmupSelectionKey(cacheKey: string): string {
+  return createHash('sha256').update(cacheKey).digest('hex').slice(0, 16)
+}
+
+function startWorkspaceWarmup(
+  input: {
+    workspacePath: string
+    agentId?: string | null | undefined
+    providerId?: string | null | undefined
+    modelId?: string | null | undefined
+    mode?: 'standard' | 'xforge' | undefined
+  },
+): RuntimeWarmupPrepareResult {
+  const workspacePath = normalizeRuntimePath(input.workspacePath)
+  if (!workspacePath) {
+    return {
+      ok: false,
+      status: 'failed',
+      error: 'workspacePath 为空，无法启动 runtime warmup。',
+    }
+  }
+
   try {
     const config = loadResolvedConfig(workspacePath).effective
     const warmupAgentId =
-      config.agent?.default ?? agentCatalog.resolvePrimaryAgent().agent.agentType
+      input.agentId?.trim() ||
+      config.agent?.default ||
+      agentCatalog.resolvePrimaryAgent().agent.agentType
     const warmupRuntimeConfig = {
       ...config,
       agent: {
@@ -123,27 +156,67 @@ function startWorkspaceWarmup(workspacePath: string): void {
         default: warmupAgentId,
       },
     }
-    const provider = warmupRuntimeConfig.defaultProvider
-    const model = warmupRuntimeConfig.defaultModel
+    const provider = input.providerId?.trim() || warmupRuntimeConfig.defaultProvider
+    const model =
+      input.modelId?.trim() ||
+      (provider === warmupRuntimeConfig.defaultProvider
+        ? warmupRuntimeConfig.defaultModel
+        : warmupRuntimeConfig.providers[provider]?.models[0]) ||
+      warmupRuntimeConfig.defaultModel
+    const providerFingerprint = buildProviderFingerprint({
+      provider,
+      model,
+      baseURL: warmupRuntimeConfig.providers[provider]?.baseURL ?? null,
+    })
+    const configFingerprint = buildConfigFingerprint(
+      warmupRuntimeConfig as unknown as Record<string, unknown>,
+    )
+    const cacheKey = buildWarmupCacheKey({
+      cwd: workspacePath,
+      workspaceRoot: workspacePath,
+      agentId: warmupAgentId,
+      mode: input.mode,
+      providerFingerprint,
+      configFingerprint,
+    })
+    const selectionKey = createWarmupSelectionKey(cacheKey)
+    warmupSelectionKeys.set(cacheKey, selectionKey)
     warmupManager.startWarmup({
       cwd: workspacePath,
       workspaceRoot: workspacePath,
       agentId: warmupAgentId,
-      providerFingerprint: buildProviderFingerprint({
-        provider,
-        model,
-        baseURL: warmupRuntimeConfig.providers[provider]?.baseURL ?? null,
-      }),
-      configFingerprint: buildConfigFingerprint(
-        warmupRuntimeConfig as unknown as Record<string, unknown>,
-      ),
+      mode: input.mode,
+      providerFingerprint,
+      configFingerprint,
     })
+    return {
+      ok: true,
+      status: warmupManager.getStatus(cacheKey),
+      selectionKey,
+    }
   } catch (error) {
     logger.warn('[Warmup] workspace 预热启动失败，submit 将回退 slow path', {
       workspacePath,
       error: error instanceof Error ? error.message : String(error),
     })
+    return {
+      ok: false,
+      status: 'failed',
+      error: error instanceof Error ? error.message : String(error),
+    }
   }
+}
+
+function prepareWarmupSelection(
+  request: RuntimeWarmupPrepareRequest,
+): RuntimeWarmupPrepareResult {
+  return startWorkspaceWarmup({
+    workspacePath: request.projectPath,
+    agentId: request.agentId,
+    providerId: request.providerId,
+    modelId: request.modelId,
+    mode: request.mode,
+  })
 }
 
 function invalidateWorkspaceWarmup(
@@ -227,6 +300,7 @@ registerStudioMainIpcHandlers({
     return result
   },
   getSkillsPluginsOverview: (state) => skillsPluginsService.getOverview(state),
+  prepareWarmupSelection: (request) => prepareWarmupSelection(request),
   onWorkspaceChanged: (() => {
     // 跟踪上一个 warmup workspace，切换时先 abort 旧路径再 start 新路径
     let previousWarmupWorkspace: string | null = null
@@ -239,7 +313,7 @@ registerStudioMainIpcHandlers({
         warmupManager.abortWarmup(previousWarmupWorkspace)
       }
       previousWarmupWorkspace = normalizedWorkspace
-      startWorkspaceWarmup(normalizedWorkspace)
+      startWorkspaceWarmup({ workspacePath: normalizedWorkspace })
     }
   })(),
   logger,
