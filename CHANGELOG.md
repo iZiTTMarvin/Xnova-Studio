@@ -1,4 +1,8 @@
 ## 2026-04-29
+- **Studio AgentLoop 卡死保护**：为工具反馈后的模型循环增加轮次预算与安全停止
+  - AgentLoop 在 `after_tool_result` 请求过多或连续低进展时先发出收束提醒，模型仍继续调用工具时会停止并给出原因
+  - Runtime 将保护事件转为 warning 和 timing mark，Submit timing 可显示 guard 原因、模型轮次和低进展计数
+  - Renderer 收到预算停止后显示“已触发安全停止”，避免用户误以为运行普通完成或卡死
 - **Studio 运行态体验修复**：减少运行中冗余动画，并修正取消后的工具状态
   - 移除实时 assistant 消息标题旁的冗余 spinner，保留思考占位符中的进度提示
   - 用户停止运行后，仍处于 pending/running 的工具卡片会切到 error 并显示“已取消”

@@ -1,0 +1,6 @@
+{"file": ".trellis/workflow.md", "reason": "Project workflow and conventions"}
+{"file": ".trellis/spec/backend/index.md", "reason": "Backend development guide"}
+{"file": ".trellis/spec/frontend/index.md", "reason": "Frontend development guide"}
+{"file": ".trellis/spec/backend/runtime-warmup-and-event-observability.md", "reason": "模型请求、工具事件、timing 与 runtime 事件 contract"}
+{"file": ".trellis/spec/backend/runtime-boundary.md", "reason": "AgentLoop -> runtime -> Studio 边界与事件转发"}
+{"file": ".trellis/spec/frontend/agent-process-visibility.md", "reason": "预算告警与停止原因需要在 Studio UI 可见"}

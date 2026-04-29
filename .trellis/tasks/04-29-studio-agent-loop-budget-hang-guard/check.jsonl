@@ -1,0 +1,4 @@
+{"file": ".agents/skills/trellis-finish-work/SKILL.md", "reason": "Finish work checklist"}
+{"file": ".agents/skills/trellis-check/SKILL.md", "reason": "Code quality check spec"}
+{"file": ".trellis/spec/backend/quality-guidelines.md", "reason": "AgentLoop 保护逻辑需要测试覆盖与验证门禁"}
+{"file": ".trellis/spec/frontend/quality-guidelines.md", "reason": "UI 告警和运行状态需要回归验证"}

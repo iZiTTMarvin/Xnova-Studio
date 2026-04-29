@@ -229,6 +229,8 @@ type RuntimeToolLifecycleEvent =
 - 每轮 LLM 调用都必须发 `model_request_started`，并带 `phase`。
 - `model_first_chunk` 必须区分 `text / thinking / tool_call`。
 - submit timing 需要同时支持首个 mark 和多轮聚合；不能只用 `markFirst` 覆盖后续 `after_tool_result` 请求。
+- AgentLoop 必须有交互式轮次预算和卡死保护；当 `after_tool_result` 请求过多或连续低进展时，必须先发可观测 warning 并要求模型收束，仍不收束时以 `budget_exceeded` 或 `stalled` 停止，不能让一次 Studio submit 无限自转。
+- AgentLoop guard 事件只能记录计数、原因、级别和工具名摘要，不得记录完整 prompt、messages、工具参数全文或工具输出全文。
 - 工具事件必须按生命周期递进：
   - `tool_intent`：模型刚产生工具名，UI 可先出壳。
   - `tool_args_delta`：参数边生成边展示，必须做摘要，不展示全文内容。
@@ -245,6 +247,8 @@ type RuntimeToolLifecycleEvent =
 | 条件 | 处理方式 |
 |---|---|
 | 第二轮模型请求没有 phase | 视为观测缺口，必须补 `after_tool_result` |
+| `after_tool_result` 连续过多但仍继续请求模型 | 视为 AgentLoop 预算缺陷，必须软收束后硬停止 |
+| 连续多轮只有工具调用且没有可见文本进展 | 视为低进展卡死风险，必须触发 guard warning / stalled |
 | provider 无法提供 tool args delta | 允许降级为 `tool_ready`，但不得伪造增量 |
 | 工具参数全文包含大文件内容 | UI 只显示摘要，timing 不记录 |
 | `tool_end` 早于 `tool_start` | 视为事件序列违规，必须修 core/runtime |
@@ -273,7 +277,12 @@ type RuntimeToolLifecycleEvent =
   - 新事件完整转发到 Studio runtime event
 - `studio-submit-timing.test.ts`：
   - 多轮 `model_request_started` 按 phase 聚合
+  - AgentLoop guard 原因和轮次计数进入 summary 且脱敏
   - 敏感字段脱敏
+- `agent-loop` 预算测试：
+  - 超过 after_tool_result 预算前先软收束
+  - 软收束后仍调用工具时以 `budget_exceeded` 停止
+  - 连续低进展时以 `stalled` 停止
 
 ### 7. Wrong vs Correct
 

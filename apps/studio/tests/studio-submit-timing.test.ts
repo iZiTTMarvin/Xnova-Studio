@@ -324,6 +324,44 @@ describe('studio submit timing', () => {
     expect(output).toContain('42')
   })
 
+  it('AgentLoop guard 会进入 timing summary 且只记录脱敏计数', () => {
+    const logger = { info: vi.fn() }
+    let tick = 1_000
+    const timing = createStudioSubmitTiming({
+      enabled: true,
+      logger,
+      now: () => ++tick,
+      clientMarks: {
+        rendererRuntimeSubmitInvokedAt: 1_000,
+      },
+    })
+
+    timing.markRuntimeEvent({
+      type: 'timing_mark',
+      timestamp: new Date().toISOString(),
+      payload: {
+        stage: 'agent_loop.guard',
+        reason: 'budget_exceeded',
+        level: 'stopped',
+        modelRequestCount: 9,
+        afterToolResultCount: 8,
+        lowProgressRounds: 5,
+        recentTools: 'read_file,grep',
+        prompt: 'should-not-leak',
+        messages: 'should-not-leak',
+      },
+    })
+
+    timing.finish('completed')
+
+    const output = JSON.stringify(logger.info.mock.calls)
+    expect(output).toContain('agent loop guard')
+    expect(output).toContain('stopped/budget_exceeded')
+    expect(output).toContain('model requests 9')
+    expect(output).toContain('recent tools read_file,grep')
+    expect(output).not.toContain('should-not-leak')
+  })
+
   it('单轮 model request 不输出 modelRequestRounds 元数据', () => {
     const logger = { info: vi.fn() }
     let tick = 1_000

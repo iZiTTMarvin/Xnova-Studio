@@ -57,6 +57,7 @@ interface RuntimeWarmupViewState {
 - `tool_args_delta` 只能展示安全摘要，例如 path、command 摘要、行数、文件名；不得展示 `write_file.content` 全文。
 - thinking 应独立成可折叠行；实时思考中默认展开，完成后可自动折叠，但用户手动展开状态要保留。
 - warmup 状态必须是辅助提示，不能禁用输入框；submit 仍由 runtime-ready / workspace 门禁控制。
+- AgentLoop 触发轮次预算或低进展保护时，renderer 必须展示可读 warning；终态文案应表达“已触发安全停止”，不能伪装成普通成功，也不能留下 pending/running 工具 spinner。
 
 ### 4. Validation & Error Matrix
 
@@ -68,6 +69,7 @@ interface RuntimeWarmupViewState {
 | provider 不支持 intent | 从 `tool_start` 补建工具行 |
 | warmup failed | 显示“运行时准备失败，将在提交时重试”，但不禁用 composer |
 | thinking 内容为空但模型已开始推理 | 展示 thinking placeholder 和计时 |
+| AgentLoop 达到轮次预算或低进展阈值 | 显示安全停止 warning，并用终态状态块说明“已触发安全停止” |
 
 ### 5. Good / Base / Bad Cases
 
@@ -94,6 +96,9 @@ interface RuntimeWarmupViewState {
   - 动作类工具单独展示，探索类工具分组展示
 - `ConversationTimeline` 测试：
   - warmup / thinking / tool pending / running / done 都能渲染
+- `runtime-store` 测试：
+  - AgentLoop guard warning 能追加 system warning
+  - `budget_exceeded/stalled/max_turns` 终态显示为安全停止，而非普通完成
 
 ### 7. Wrong vs Correct
 

@@ -25,7 +25,8 @@
     "04-28-studio-warmup-ui-bridge-contract",
     "04-28-studio-tool-running-min-visible",
     "04-28-studio-tool-lifecycle-intent-args-delta",
-    "04-28-studio-windows-tool-policy"
+    "04-28-studio-windows-tool-policy",
+    "04-29-studio-agent-loop-budget-hang-guard"
   ],
   "parent": null,
   "relatedFiles": [],

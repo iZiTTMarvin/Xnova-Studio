@@ -51,6 +51,8 @@
    - 打通 tool intent、args delta、tool ready 等生命周期事件。
 7. `04-28-studio-windows-tool-policy`
    - 降低 Windows shell 工具误用和失败黑盒。
+8. `04-29-studio-agent-loop-budget-hang-guard`
+   - 针对真实测试中出现的 30 轮 `after_tool_result` 长循环，增加 AgentLoop 轮次预算、无进展检测、软收束和安全停止。
 
 ## Acceptance Criteria
 

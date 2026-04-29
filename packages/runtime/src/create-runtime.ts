@@ -578,6 +578,34 @@ export async function createRuntime(
               }, lastSessionId ?? undefined))
               break
 
+            case 'loop_guard': {
+              const payload = {
+                code: `agent_loop_${event.reason}`,
+                level: event.level,
+                reason: event.reason,
+                message: event.message,
+                modelRequestCount: event.modelRequestCount,
+                afterToolResultCount: event.afterToolResultCount,
+                toolRoundCount: event.toolRoundCount,
+                lowProgressRounds: event.lowProgressRounds,
+                recentTools: event.recentTools.join(','),
+              }
+              bridge.emit(makeEvent('timing_mark', {
+                stage: 'agent_loop.guard',
+                ...payload,
+              }, lastSessionId ?? undefined))
+              bridge.emit(makeEvent('warning', payload, lastSessionId ?? undefined))
+              if (event.level === 'stopped') {
+                assistantBlocks = appendAssistantSystemBlock(
+                  assistantBlocks,
+                  nextAssistantBlockId('system'),
+                  event.message,
+                  'warning',
+                )
+              }
+              break
+            }
+
             case 'subagent_spawn':
               bridge.emit(makeEvent('subagent_spawn', {
                 parentToolCallId: event.parentToolCallId,
@@ -623,6 +651,9 @@ export async function createRuntime(
               break
 
             case 'done':
+              if (event.reason && event.reason !== 'complete') {
+                result.stopReason = event.reason
+              }
               break
 
             default:

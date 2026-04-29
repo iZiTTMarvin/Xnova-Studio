@@ -60,6 +60,10 @@ const INITIAL_CONTEXT_STATE: ContextState = {
 export const RUN_STEP_CALLING_MODEL = '正在调用模型'
 export const RUN_STEP_STOPPING = '正在停止当前运行'
 
+function isAgentLoopGuardStopReason(stopReason: string): boolean {
+  return stopReason === 'budget_exceeded' || stopReason === 'stalled' || stopReason === 'max_turns'
+}
+
 /**
  * 敏感字段名模式 — 匹配可能包含 token、密钥、密码等敏感信息的字段。
  * 这些字段的值在 UI 展示时会被替换为占位符。
@@ -922,18 +926,26 @@ export const useRuntimeStore = create<RuntimeStoreState & RuntimeStoreActions>()
                 : RUN_STEP_CALLING_MODEL
             return
           case 'run_completed':
-          case 'session_end':
+          case 'session_end': {
+            const stopReason =
+              typeof event.payload?.stopReason === 'string' ? event.payload.stopReason : ''
+            const guardedStop = isAgentLoopGuardStopReason(stopReason)
+            const finalStep = guardedStop ? '已触发安全停止' : '运行已完成'
             state.isSubmitting = false
             state.runStatus = 'completed'
             state.currentRunId = null
-            state.currentRunStep = '运行已完成'
+            state.currentRunStep = finalStep
             state.liveConversation = appendLiveStatusBlock(
               finalizeOpenThinkingBlocks(state.liveConversation),
               createLiveBlockId('status'),
-              '运行已完成',
+              finalStep,
             )
             return
-          case 'turn_end':
+          }
+          case 'turn_end': {
+            const stopReason =
+              typeof event.payload?.stopReason === 'string' ? event.payload.stopReason : ''
+            const guardedStop = isAgentLoopGuardStopReason(stopReason)
             state.isSubmitting = false
             state.runStatus =
               event.payload?.error || event.payload?.aborted === true
@@ -943,15 +955,20 @@ export const useRuntimeStore = create<RuntimeStoreState & RuntimeStoreActions>()
             state.currentRunStep =
               event.payload?.error || event.payload?.aborted === true
                 ? '运行失败'
-                : '运行已完成'
+                : guardedStop
+                  ? '已触发安全停止'
+                  : '运行已完成'
             state.liveConversation = appendLiveStatusBlock(
               finalizeOpenThinkingBlocks(state.liveConversation),
               createLiveBlockId('status'),
               event.payload?.error || event.payload?.aborted === true
                 ? '运行失败'
-                : '运行已完成',
+                : guardedStop
+                  ? '已触发安全停止'
+                  : '运行已完成',
             )
             return
+          }
           case 'run_failed':
             state.isSubmitting = false
             state.runStatus = 'failed'

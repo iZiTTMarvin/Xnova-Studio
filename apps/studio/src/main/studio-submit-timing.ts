@@ -46,6 +46,14 @@ const SAFE_DETAIL_KEYS = new Set([
   'attempt',
   'status',
   'source',
+  'code',
+  'level',
+  'reason',
+  'modelRequestCount',
+  'afterToolResultCount',
+  'toolRoundCount',
+  'lowProgressRounds',
+  'recentTools',
 ])
 
 const SENSITIVE_DETAIL_KEY_PATTERN =
@@ -288,6 +296,38 @@ function buildModelRequestSummary(records: ModelRequestRecord[]): string[] {
   return lines
 }
 
+function buildAgentLoopGuardSummary(marks: TimingMark[]): string[] {
+  const guardMarks = marks.filter((mark) => mark.stage === 'agent_loop.guard')
+  if (guardMarks.length === 0) return []
+
+  return [
+    '- agent loop guard:',
+    ...guardMarks.map((mark) => {
+      const reason =
+        typeof mark.details?.reason === 'string' ? mark.details.reason : 'unknown'
+      const level =
+        typeof mark.details?.level === 'string' ? mark.details.level : 'warning'
+      const modelRequestCount =
+        typeof mark.details?.modelRequestCount === 'number'
+          ? mark.details.modelRequestCount
+          : 0
+      const afterToolResultCount =
+        typeof mark.details?.afterToolResultCount === 'number'
+          ? mark.details.afterToolResultCount
+          : 0
+      const lowProgressRounds =
+        typeof mark.details?.lowProgressRounds === 'number'
+          ? mark.details.lowProgressRounds
+          : 0
+      const recentTools =
+        typeof mark.details?.recentTools === 'string' && mark.details.recentTools
+          ? `, recent tools ${mark.details.recentTools}`
+          : ''
+      return `  - ${level}/${reason}: model requests ${modelRequestCount}, after_tool_result ${afterToolResultCount}, low progress ${lowProgressRounds}${recentTools}`
+    }),
+  ]
+}
+
 export function isStudioSubmitTimingEnabled(
   env: NodeJS.ProcessEnv = process.env,
 ): boolean {
@@ -365,8 +405,8 @@ export function createStudioSubmitTiming(
         const stage =
           typeof event.payload?.stage === 'string' ? event.payload.stage : null
         if (stage) {
-          // bootstrap 子阶段允许重复记录（每个 stage 名称不同），不用 markFirst
-          if (stage in BOOTSTRAP_STAGE_LABELS) {
+          // bootstrap 子阶段和 AgentLoop guard 都需要保留多条记录。
+          if (stage in BOOTSTRAP_STAGE_LABELS || stage === 'agent_loop.guard') {
             mark(stage, event.payload)
           } else {
             markFirst(stage, event.payload)
@@ -437,8 +477,9 @@ export function createStudioSubmitTiming(
       const lines = buildSummaryLines(marks)
       const bootstrapLines = buildBootstrapSubStageSummary(marks)
       const modelRequestLines = buildModelRequestSummary(modelRequestRecords)
+      const loopGuardLines = buildAgentLoopGuardSummary(marks)
 
-      const allLines = [...lines, ...bootstrapLines, ...modelRequestLines]
+      const allLines = [...lines, ...bootstrapLines, ...modelRequestLines, ...loopGuardLines]
       if (allLines.length === 0) {
         return
       }

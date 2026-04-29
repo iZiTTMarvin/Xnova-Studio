@@ -68,6 +68,21 @@ export interface AgentPermissionResolution {
 }
 
 type AgentPermissionResolveInput = boolean | AgentPermissionResolution
+type AgentDoneReason = 'complete' | 'max_turns' | 'aborted' | 'stopped' | 'budget_exceeded' | 'stalled'
+type AgentLoopGuardReason = 'budget_near_limit' | 'budget_exceeded' | 'stalled'
+type AgentLoopGuardLevel = 'warning' | 'stopped'
+
+interface AgentLoopGuardEvent {
+    type: 'loop_guard'
+    level: AgentLoopGuardLevel
+    reason: AgentLoopGuardReason
+    message: string
+    modelRequestCount: number
+    afterToolResultCount: number
+    toolRoundCount: number
+    lowProgressRounds: number
+    recentTools: string[]
+}
 
 /**
  * AgentEvent — run() 的 yield 类型。
@@ -102,7 +117,8 @@ export type AgentEvent =
     | { type: 'permission_request'; toolName: string; args: Record<string, unknown>; resolve: (resolution: AgentPermissionResolveInput) => void }
     | { type: 'user_question_request'; questions: UserQuestion[]; resolve: (result: UserQuestionResult) => void }
     | { type: 'error'; error: string }
-    | { type: 'done'; reason?: 'complete' | 'max_turns' | 'aborted' | 'stopped' }
+    | { type: 'done'; reason?: AgentDoneReason }
+    | AgentLoopGuardEvent
     // 观测事件
     | { type: 'llm_start'; provider: string; model: string; messageCount: number; systemPrompt?: string }
     | { type: 'timing_mark'; stage: string; elapsedMs?: number }
@@ -172,6 +188,10 @@ export interface AgentConfig {
     systemPrompt?: string | undefined
     /** 最大轮次（默认 20，子 Agent 可设更小值防止过长执行） */
     maxTurns?: number | undefined
+    /** 工具结果后的模型请求最大轮数（主 Agent 默认较小，避免长循环） */
+    maxAfterToolResultRequests?: number | undefined
+    /** 连续低进展工具轮数上限，到达后先收束，再继续低进展则停止 */
+    maxLowProgressRounds?: number | undefined
     /** 标记为侧链（子 Agent），跳过权限检查弹窗 */
     isSidechain?: boolean | undefined
     /** 子 Agent ID（日志和事件用） */
@@ -194,8 +214,14 @@ export interface AgentConfig {
 // 常量
 // ═══════════════════════════════════════════════
 
-/** 主 Agent 默认最大轮次 */
-const DEFAULT_MAX_TURNS = 100
+/** 主 Agent 交互式默认最大模型请求轮数，防止一次 submit 长时间自转 */
+const DEFAULT_MAIN_MAX_TURNS = 12
+/** 子 Agent / 后台任务保留较宽预算；它们通常已有 agent 定义的 maxTurns。 */
+const DEFAULT_SIDECHAIN_MAX_TURNS = 100
+/** 主 Agent 默认允许的 after_tool_result 请求轮数。 */
+const DEFAULT_MAIN_MAX_AFTER_TOOL_RESULT_REQUESTS = 8
+/** 连续“只有工具、没有文本”的低进展轮数阈值。 */
+const DEFAULT_MAX_LOW_PROGRESS_ROUNDS = 5
 
 /** resultSummary 最大长度（CLI 展示用） */
 const RESULT_SUMMARY_MAX_LENGTH = 200
@@ -268,10 +294,19 @@ export class AgentLoop {
         // 直接引用传入数组（不复制）。ContextManager 通过 getHistoryRef() 传入，
         // run() 中追加的 assistant + tool_result 自动反映到 ContextManager 内部。
         const history = messages
-        const maxTurns = this.#config.maxTurns ?? DEFAULT_MAX_TURNS
+        const maxTurns = resolveMaxTurns(this.#config)
+        const maxAfterToolResultRequests = resolveMaxAfterToolResultRequests(this.#config, maxTurns)
+        const maxLowProgressRounds = this.#config.maxLowProgressRounds ?? DEFAULT_MAX_LOW_PROGRESS_ROUNDS
         const minToolRounds = this.#config.minTurns ?? 0
         /** 实际执行了工具的轮次数（不含纯文本轮） */
         let toolRounds = 0
+        /** 实际发起的模型请求次数。 */
+        let modelRequestCount = 0
+        /** 连续低进展工具轮数：模型只给工具调用、没有可见文本时递增。 */
+        let lowProgressRounds = 0
+        let budgetConvergenceInjected = false
+        let stalledConvergenceInjected = false
+        let recentTools: string[] = []
 
         for (let turn = 0; turn < maxTurns; turn++) {
             // 检查点 1：新一轮开始前（安全 — history 末尾是 tool_result 或初始 user 消息）
@@ -280,6 +315,43 @@ export class AgentLoop {
                 return
             }
 
+            const nextModelRequestCount = modelRequestCount + 1
+            const nextAfterToolResultCount = Math.max(0, nextModelRequestCount - 1)
+
+            if (nextAfterToolResultCount > maxAfterToolResultRequests) {
+                const guard = buildLoopGuardEvent({
+                    level: 'stopped',
+                    reason: 'budget_exceeded',
+                    modelRequestCount,
+                    afterToolResultCount: nextAfterToolResultCount,
+                    toolRoundCount: toolRounds,
+                    lowProgressRounds,
+                    recentTools,
+                })
+                yield guard
+                yield {type: 'done', reason: 'budget_exceeded'}
+                return
+            }
+
+            if (
+                nextAfterToolResultCount === maxAfterToolResultRequests &&
+                !budgetConvergenceInjected
+            ) {
+                const guard = buildLoopGuardEvent({
+                    level: 'warning',
+                    reason: 'budget_near_limit',
+                    modelRequestCount,
+                    afterToolResultCount: nextAfterToolResultCount,
+                    toolRoundCount: toolRounds,
+                    lowProgressRounds,
+                    recentTools,
+                })
+                history.push({role: 'user', content: buildBudgetConvergenceMessage()})
+                budgetConvergenceInjected = true
+                yield guard
+            }
+
+            modelRequestCount = nextModelRequestCount
             const llmResult = yield* this.#callLLM(history)
             if (llmResult.aborted) return
 
@@ -317,7 +389,45 @@ export class AgentLoop {
             }
 
             toolRounds++
+            const hasVisibleText = llmResult.text.trim().length > 0
+            if (hasVisibleText) {
+                lowProgressRounds = 0
+            } else {
+                lowProgressRounds++
+            }
+            recentTools = llmResult.toolCalls.map(tc => tc.toolName).slice(-6)
+
             yield* this.#executeToolCalls(llmResult.toolCalls, history)
+
+            if (lowProgressRounds >= maxLowProgressRounds) {
+                if (stalledConvergenceInjected) {
+                    const guard = buildLoopGuardEvent({
+                        level: 'stopped',
+                        reason: 'stalled',
+                        modelRequestCount,
+                        afterToolResultCount: Math.max(0, modelRequestCount - 1),
+                        toolRoundCount: toolRounds,
+                        lowProgressRounds,
+                        recentTools,
+                    })
+                    yield guard
+                    yield {type: 'done', reason: 'stalled'}
+                    return
+                }
+
+                const guard = buildLoopGuardEvent({
+                    level: 'warning',
+                    reason: 'stalled',
+                    modelRequestCount,
+                    afterToolResultCount: Math.max(0, modelRequestCount - 1),
+                    toolRoundCount: toolRounds,
+                    lowProgressRounds,
+                    recentTools,
+                })
+                history.push({role: 'user', content: buildStalledConvergenceMessage()})
+                stalledConvergenceInjected = true
+                yield guard
+            }
 
             // 检查点 2：工具执行完毕后（安全 — tool_result 已写入 history）
             if (this.#shouldStop()) {
@@ -327,6 +437,15 @@ export class AgentLoop {
         }
 
         // 超过最大轮次：以 done + max_turns 结束，不再 yield error（调用方可按 reason 区分）
+        yield buildLoopGuardEvent({
+            level: 'stopped',
+            reason: 'budget_exceeded',
+            modelRequestCount,
+            afterToolResultCount: Math.max(0, modelRequestCount - 1),
+            toolRoundCount: toolRounds,
+            lowProgressRounds,
+            recentTools,
+        })
         yield {type: 'done', reason: 'max_turns'}
     }
 
@@ -858,6 +977,80 @@ export class AgentLoop {
 // ═══════════════════════════════════════════════
 // 工具函数
 // ═══════════════════════════════════════════════
+
+function resolveMaxTurns(config: AgentConfig): number {
+    if (typeof config.maxTurns === 'number' && Number.isFinite(config.maxTurns) && config.maxTurns > 0) {
+        return Math.floor(config.maxTurns)
+    }
+    return config.isSidechain || config.isBackground
+        ? DEFAULT_SIDECHAIN_MAX_TURNS
+        : DEFAULT_MAIN_MAX_TURNS
+}
+
+function resolveMaxAfterToolResultRequests(config: AgentConfig, maxTurns: number): number {
+    if (
+        typeof config.maxAfterToolResultRequests === 'number' &&
+        Number.isFinite(config.maxAfterToolResultRequests) &&
+        config.maxAfterToolResultRequests >= 0
+    ) {
+        return Math.floor(config.maxAfterToolResultRequests)
+    }
+    if (config.isSidechain || config.isBackground) {
+        return Math.max(0, maxTurns - 1)
+    }
+    return Math.min(DEFAULT_MAIN_MAX_AFTER_TOOL_RESULT_REQUESTS, Math.max(0, maxTurns - 1))
+}
+
+function buildLoopGuardEvent(input: {
+    level: AgentLoopGuardLevel
+    reason: AgentLoopGuardReason
+    modelRequestCount: number
+    afterToolResultCount: number
+    toolRoundCount: number
+    lowProgressRounds: number
+    recentTools: string[]
+}): AgentLoopGuardEvent {
+    return {
+        type: 'loop_guard',
+        level: input.level,
+        reason: input.reason,
+        message: buildLoopGuardMessage(input.reason, input.level),
+        modelRequestCount: input.modelRequestCount,
+        afterToolResultCount: input.afterToolResultCount,
+        toolRoundCount: input.toolRoundCount,
+        lowProgressRounds: input.lowProgressRounds,
+        recentTools: input.recentTools,
+    }
+}
+
+function buildLoopGuardMessage(reason: AgentLoopGuardReason, level: AgentLoopGuardLevel): string {
+    if (reason === 'budget_near_limit') {
+        return 'Agent 已接近工具反馈后的模型请求上限，正在要求模型基于已有结果收束回答。'
+    }
+    if (reason === 'stalled' && level === 'warning') {
+        return 'Agent 连续多轮只调用工具但没有产生可见进展，正在要求模型停止探索并总结当前结果。'
+    }
+    if (reason === 'stalled') {
+        return 'Agent 连续多轮没有产生有效进展，已安全停止继续调用工具。'
+    }
+    return 'Agent 已达到安全轮次上限，已停止继续调用工具。'
+}
+
+function buildBudgetConvergenceMessage(): string {
+    return [
+        '系统提醒：你已经接近本次运行的工具反馈轮次上限。',
+        '请停止发起新的探索性工具调用，除非这是完成任务必需的最后一步。',
+        '优先基于已有工具结果给出当前结论、已完成事项、未完成事项和下一步建议。',
+    ].join('\n')
+}
+
+function buildStalledConvergenceMessage(): string {
+    return [
+        '系统提醒：你已经连续多轮调用工具但没有产生可见文字进展。',
+        '请停止重复探索，基于已有工具结果总结当前状态。',
+        '如果确实无法继续，请说明阻塞原因和用户可以采取的下一步。',
+    ].join('\n')
+}
 
 function truncate(text: string, maxLength: number): string {
     if (text.length <= maxLength) return text
